@@ -7,9 +7,11 @@ import { tanstackStart } from '@tanstack/solid-start/plugin/vite'
 import solidPlugin from 'vite-plugin-solid'
 import { nitro } from 'nitro/vite'
 
+const isProd = process.env.NODE_ENV === 'production'
+
 export default defineConfig({
     plugins: [
-        devtools(),
+        !isProd && devtools(),
         nitro({
             vercel: {
                 functions: {
@@ -24,4 +26,7 @@ export default defineConfig({
         tanstackStart(),
         solidPlugin({ ssr: true }),
     ],
+    ssr: {
+        external: ['@fire/db'],
+    }
 })
