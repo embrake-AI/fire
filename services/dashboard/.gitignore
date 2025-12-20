@@ -8,3 +8,4 @@ dist-ssr
 .tanstack
 .wrangler
 .output
+.vercel
