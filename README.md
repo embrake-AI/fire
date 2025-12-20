@@ -85,8 +85,6 @@ Shared database schema using Drizzle ORM. Published as `@fire/db` for use across
 
 **Contains:**
 - `assignee` — Slack users/groups that can be assigned to incidents, with natural language prompts describing their expertise
-- `ignore` — Rules for filtering noise from alerting sources
-- Migrations for PostgreSQL
 
 ---
 
