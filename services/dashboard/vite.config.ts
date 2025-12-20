@@ -27,6 +27,6 @@ export default defineConfig({
         solidPlugin({ ssr: true }),
     ],
     ssr: {
-        external: ['@fire/db'],
+        external: ['@fire/db', 'tailwindcss', 'tailwindcss-animate'],
     }
 })
