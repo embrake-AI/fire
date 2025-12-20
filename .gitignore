@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.output/
+*.tsbuildinfo
+
+# Bun
+bun.lock
+
+# Vite
+*.local
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Cloudflare Workers
+.wrangler/
+.dev.vars
+
+# Drizzle
+*.db
+*.db-journal
+
+# Certificates and secrets
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+services/dashboard/src/certs/*
+!services/dashboard/src/certs/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+
+# Misc
+*.local
+.cache/
+

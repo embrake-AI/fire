@@ -1,0 +1,84 @@
+---
+description: When building UI
+alwaysApply: false
+---
+
+# UI Design Philosophy
+
+## Always Use Design System Components
+
+Never write raw HTML elements when a solid-ui component exists. Use components from `~/components/ui/`:
+
+- **Card** for any boxed content, sections, or clickable items
+- **Badge** for status indicators, labels, tags
+- **Button** for actions
+- **Collapsible** for expandable/hideable content
+
+To add new components: `echo "y" | npx solidui-cli@latest add <component-name>`
+
+## Semantic Color System
+
+Colors convey meaning. Use them consistently:
+
+| Semantic State            | Color Family                     |
+| ------------------------- | -------------------------------- |
+| Critical / Active / Error | Red                              |
+| Warning / In-Progress     | Amber                            |
+| Success / Complete        | Emerald                          |
+| Informational             | Blue                             |
+| Secondary / Muted         | Neutral grays via `muted` tokens |
+
+Apply colors consistently across backgrounds, borders, text, and icons within a semantic context.
+
+## Extract and Reuse Components
+
+When you find yourself repeating similar UI patterns:
+
+1. **Extract into a component** with props for the varying parts
+2. **Keep styling uniform** - differences should be in content and semantic colors, not arbitrary styling
+3. **Use props for variants** rather than creating multiple similar components
+
+Example: If you have "Active Items" and "Pending Items" sections with the same structure but different colors, create one `ItemSection` component with `variant` or color props.
+
+## Composition Over Customization
+
+- Prefer composing existing components over adding custom styles
+- When custom styling is needed, use Tailwind classes via the `class` prop
+- Use `cn()` from `~/lib/utils` for conditional class merging
+
+## Visual Hierarchy
+
+1. **Primary content** - Full color backgrounds, prominent borders, larger icons
+2. **Secondary content** - Subtle backgrounds (50% opacity), softer borders
+3. **Tertiary content** - Muted colors, collapsible by default, smaller text
+
+## Interactive States
+
+- All clickable elements need `cursor-pointer`
+- Hover states should provide visual feedback (`hover:shadow-md`, `hover:bg-*/50`)
+- Use `transition-all` or specific transitions for smooth state changes
+- Links wrapping block content need `class="block"` for proper layout
+
+## Spacing Consistency
+
+- Use `space-y-*` utilities for vertical rhythm between items
+- Section gaps: `space-y-8`
+- Item gaps within sections: `space-y-5`
+- Internal padding: `p-4` to `p-5`
+
+## Icons
+
+Use `lucide-solid` for all icons. Size conventions:
+
+- Compact UI (badges, inline): `w-4 h-4`
+- Standard (cards, headers): `w-5 h-5`
+- Hero/empty states: `w-10 h-10`
+
+## Empty States
+
+Empty states should be:
+
+- Centered in their container
+- Include a relevant icon (consider subtle animation like `animate-pulse`)
+- Have a clear heading and helpful description
+- Feel intentional, not broken

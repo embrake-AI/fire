@@ -1,0 +1,24 @@
+{
+  "name": "fire-monorepo",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "packages/*",
+      "services/*"
+    ],
+    "catalog": {
+      "drizzle-orm": "^0.45.1",
+      "pg": "^8.16.3",
+      "typescript": "^5.9.3",
+      "@types/pg": "^8.16.0"
+    }
+  },
+  "scripts": {
+    "dev:dashboard": "bun --filter dashboard dev",
+    "dev:incidentd": "bun --filter incidentd dev",
+    "dev": "bun --filter '*' dev",
+    "build": "bun --filter '*' build",
+    "type-check": "bun --filter '*' type-check",
+    "clean": "rm -rf node_modules bun.lock && bun --filter '*' clean"
+  }
+}

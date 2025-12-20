@@ -1,0 +1,202 @@
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "prevId": "",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.assignee": {
+      "name": "assignee",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "type": {
+          "name": "type",
+          "type": "assignee_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt": {
+          "name": "prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false
+    },
+    "public.incident": {
+      "name": "incident",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "status": {
+          "name": "status",
+          "type": "incident_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "identifiers": {
+          "name": "identifiers",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{\"\"}'"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {},
+      "policies": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.assignee_type": {
+      "name": "assignee_type",
+      "values": [
+        "slack-user",
+        "slack-user-group"
+      ],
+      "schema": "public"
+    },
+    "public.incident_status": {
+      "name": "incident_status",
+      "values": [
+        "open",
+        "mitigating",
+        "resolved"
+      ],
+      "schema": "public"
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {
+    "public.pg_buffercache": {
+      "name": "pg_buffercache",
+      "schema": "public",
+      "columns": {
+        "bufferid": {
+          "name": "bufferid",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "relfilenode": {
+          "name": "relfilenode",
+          "type": "oid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reltablespace": {
+          "name": "reltablespace",
+          "type": "oid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reldatabase": {
+          "name": "reldatabase",
+          "type": "oid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "relforknumber": {
+          "name": "relforknumber",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "relblocknumber": {
+          "name": "relblocknumber",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "isdirty": {
+          "name": "isdirty",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usagecount": {
+          "name": "usagecount",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pinning_backends": {
+          "name": "pinning_backends",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "isExisting": false,
+      "definition": "SELECT bufferid, relfilenode, reltablespace, reldatabase, relforknumber, relblocknumber, isdirty, usagecount, pinning_backends FROM pg_buffercache_pages() p(bufferid integer, relfilenode oid, reltablespace oid, reldatabase oid, relforknumber smallint, relblocknumber bigint, isdirty boolean, usagecount smallint, pinning_backends integer)",
+      "materialized": false
+    }
+  },
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "tables": {
+      "incident": {
+        "columns": {
+          "identifiers": {
+            "isArray": true,
+            "dimensions": 1,
+            "rawType": "text"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,342 @@
+---
+description: TanStack Start server functions patterns
+globs: ['**/lib/**/*.ts', '**/routes/**/*.tsx']
+alwaysApply: false
+---
+
+# Server Functions Guide
+
+Server functions in TanStack Start provide type-safe RPC between client and server.
+
+## Basic Server Function
+
+```tsx
+import { createServerFn } from '@tanstack/solid-start'
+
+export const getServerTime = createServerFn({
+    method: 'GET',
+}).handler(async () => {
+    return new Date().toISOString()
+})
+```
+
+## HTTP Methods
+
+```tsx
+// GET - for fetching data (default)
+export const getData = createServerFn().handler(async () => {
+    return { data: '...' }
+})
+
+// POST - for mutations
+export const saveData = createServerFn({ method: 'POST' }).handler(async () => {
+    return { success: true }
+})
+```
+
+## Input Validation
+
+### Basic Type Validation
+
+```tsx
+export const greetUser = createServerFn({ method: 'GET' })
+    .inputValidator((data: { name: string }) => data)
+    .handler(async ({ data }) => {
+        return `Hello, ${data.name}!`
+    })
+
+// Call with:
+await greetUser({ data: { name: 'John' } })
+```
+
+### Zod Validation
+
+```tsx
+import { z } from 'zod'
+
+const CreateIncidentSchema = z.object({
+    title: z.string().min(1, 'Title required'),
+    severity: z.enum(['critical', 'major', 'minor']),
+    description: z.string().optional(),
+})
+
+export const createIncident = createServerFn({ method: 'POST' })
+    .inputValidator(CreateIncidentSchema)
+    .handler(async ({ data }) => {
+        // data is fully typed: { title: string, severity: "critical" | "major" | "minor", description?: string }
+        const incident = await db.incidents.create(data)
+        return incident
+    })
+```
+
+## Using in Route Loaders
+
+```tsx
+// lib/incidents.ts
+import { createServerFn } from '@tanstack/solid-start'
+
+export const getIncidents = createServerFn({
+    method: 'GET',
+}).handler(async () => {
+    return await db.incidents.findMany()
+})
+
+export const getIncidentById = createServerFn({ method: 'GET' })
+    .inputValidator((data: { id: string }) => data)
+    .handler(async ({ data }) => {
+        return await db.incidents.find(data.id)
+    })
+```
+
+```tsx
+// routes/index.tsx
+import { createFileRoute } from '@tanstack/solid-router'
+import { getIncidents } from '~/lib/incidents'
+
+export const Route = createFileRoute('/')({
+    component: IncidentsList,
+    loader: () => getIncidents(),
+})
+```
+
+```tsx
+// routes/incidents.$incidentId.tsx
+import { createFileRoute } from '@tanstack/solid-router'
+import { getIncidentById } from '~/lib/incidents'
+
+export const Route = createFileRoute('/incidents/$incidentId')({
+    component: IncidentDetail,
+    loader: ({ params }) => getIncidentById({ data: { id: params.incidentId } }),
+})
+```
+
+## Error Handling
+
+### Throwing Errors
+
+```tsx
+export const riskyOperation = createServerFn().handler(async () => {
+    const result = await someOperation()
+    if (!result) {
+        throw new Error('Operation failed')
+    }
+    return result
+})
+
+// Client receives serialized error
+try {
+    await riskyOperation()
+} catch (error) {
+    console.error(error.message) // "Operation failed"
+}
+```
+
+### Redirects
+
+```tsx
+import { createServerFn } from '@tanstack/solid-start'
+import { redirect } from '@tanstack/solid-router'
+
+export const requireAuth = createServerFn().handler(async () => {
+    const user = await getSession()
+    if (!user) {
+        throw redirect({ to: '/login' })
+    }
+    return user
+})
+
+// Use in beforeLoad for protected routes
+export const Route = createFileRoute('/dashboard')({
+    beforeLoad: async () => {
+        const user = await requireAuth()
+        return { user }
+    },
+})
+```
+
+### Not Found
+
+```tsx
+import { createServerFn } from '@tanstack/solid-start'
+import { notFound } from '@tanstack/solid-router'
+
+export const getPost = createServerFn()
+    .inputValidator((data: { id: string }) => data)
+    .handler(async ({ data }) => {
+        const post = await db.posts.find(data.id)
+        if (!post) {
+            throw notFound()
+        }
+        return post
+    })
+```
+
+## Request Context
+
+### Accessing Request Headers
+
+```tsx
+import { createServerFn, getRequestHeader } from '@tanstack/solid-start'
+
+export const getAuthenticatedData = createServerFn().handler(async () => {
+    const authHeader = getRequestHeader('authorization')
+    if (!authHeader) {
+        throw new Error('Unauthorized')
+    }
+    // Validate token and fetch data
+    return data
+})
+```
+
+### Setting Response Headers
+
+```tsx
+import { createServerFn, setResponseHeader, setResponseStatus } from '@tanstack/solid-start'
+
+export const createResource = createServerFn({ method: 'POST' })
+    .inputValidator(ResourceSchema)
+    .handler(async ({ data }) => {
+        const resource = await db.resources.create(data)
+        setResponseStatus(201)
+        setResponseHeader('location', `/resources/${resource.id}`)
+        return resource
+    })
+```
+
+### Full Request Object
+
+```tsx
+import { createServerFn, getRequest } from '@tanstack/solid-start'
+
+export const logRequest = createServerFn().handler(async () => {
+    const request = getRequest()
+    console.log('URL:', request.url)
+    console.log('Method:', request.method)
+    console.log('Headers:', Object.fromEntries(request.headers))
+    return { logged: true }
+})
+```
+
+## Using in Components with useServerFn
+
+```tsx
+import { useServerFn } from '@tanstack/solid-start'
+import { useQuery } from '@tanstack/solid-query'
+import { getIncidents } from '~/lib/incidents'
+
+function IncidentsList() {
+    const fetchIncidents = useServerFn(getIncidents)
+
+    const query = useQuery(() => ({
+        queryKey: ['incidents'],
+        queryFn: () => fetchIncidents(),
+    }))
+
+    return (
+        <Show when={query.data}>
+            {(incidents) => (
+                <For each={incidents()}>{(incident) => <IncidentCard incident={incident} />}</For>
+            )}
+        </Show>
+    )
+}
+```
+
+## Form Handling
+
+### Processing FormData
+
+```tsx
+export const submitContactForm = createServerFn({ method: 'POST' })
+    .inputValidator((data) => {
+        if (!(data instanceof FormData)) {
+            throw new Error('Expected FormData')
+        }
+        return {
+            name: data.get('name')?.toString() || '',
+            email: data.get('email')?.toString() || '',
+            message: data.get('message')?.toString() || '',
+        }
+    })
+    .handler(async ({ data }) => {
+        await sendEmail(data)
+        return { success: true }
+    })
+```
+
+### Progressive Enhancement (No JS)
+
+```tsx
+function ContactForm() {
+    return (
+        <form action={submitContactForm.url} method="POST">
+            <input name="name" required />
+            <input name="email" type="email" required />
+            <textarea name="message" required />
+            <button type="submit">Send</button>
+        </form>
+    )
+}
+```
+
+## Middleware Pattern
+
+### Composing Server Functions
+
+```tsx
+// lib/auth.ts
+export const withAuth = createServerFn().handler(async () => {
+    const user = await getSession()
+    if (!user) {
+        throw redirect({ to: '/login' })
+    }
+    return user
+})
+
+// lib/incidents.ts
+export const getMyIncidents = createServerFn().handler(async () => {
+    const user = await withAuth()
+    return await db.incidents.findMany({ where: { userId: user.id } })
+})
+```
+
+## Type Safety
+
+Server functions provide full end-to-end type safety:
+
+```tsx
+// The input type is inferred from inputValidator
+// The output type is inferred from handler return
+
+export const updateIncident = createServerFn({ method: 'POST' })
+    .inputValidator(
+        z.object({
+            id: z.string(),
+            title: z.string().optional(),
+            status: z.enum(['open', 'mitigating', 'resolved']).optional(),
+        })
+    )
+    .handler(async ({ data }) => {
+        // data: { id: string, title?: string, status?: "open" | "mitigating" | "resolved" }
+        const updated = await db.incidents.update(data.id, data)
+        return updated // Return type is inferred
+    })
+
+// When calling:
+const result = await updateIncident({ data: { id: '123', status: 'resolved' } })
+// result type is inferred from handler return
+```
+
+## Best Practices
+
+1. **Keep server functions in `/lib`** - Colocate related server functions
+
+2. **Use Zod for validation** - Runtime validation + TypeScript types
+
+3. **Handle errors gracefully** - Use redirect/notFound for expected cases
+
+4. **Use in loaders for initial data** - Avoids waterfall fetching
+
+5. **Use useServerFn for component data** - Integrates with TanStack Query
+
+6. **Avoid side effects in GET functions** - Use POST for mutations

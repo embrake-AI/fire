@@ -1,0 +1,348 @@
+---
+description: TanStack Router file-based routing conventions
+globs: ['**/routes/**/*.tsx']
+alwaysApply: false
+---
+
+# File-Based Routing Conventions
+
+TanStack Router uses the filesystem to define routes. This guide covers all naming conventions.
+
+## Route Directory
+
+All routes live in `src/routes/`. The router plugin watches this directory and auto-generates `routeTree.gen.ts`.
+
+## File Naming Reference
+
+| Pattern             | Purpose                | URL Result                             |
+| ------------------- | ---------------------- | -------------------------------------- |
+| `__root.tsx`        | Root layout (required) | Wraps all routes                       |
+| `index.tsx`         | Index route            | `/`                                    |
+| `about.tsx`         | Static segment         | `/about`                               |
+| `$paramName.tsx`    | Dynamic param          | `/:paramName`                          |
+| `posts.index.tsx`   | Nested index           | `/posts` (exact)                       |
+| `posts.$postId.tsx` | Nested dynamic         | `/posts/:postId`                       |
+| `_layout.tsx`       | Pathless layout        | No URL change                          |
+| `_layout.child.tsx` | Child of pathless      | Child's URL                            |
+| `posts_.edit.tsx`   | Non-nested route       | `/posts/edit` (not under posts layout) |
+| `-components/`      | Excluded folder        | Not a route                            |
+| `(group)/page.tsx`  | Route group            | `/page` (group ignored in URL)         |
+| `[.]special.tsx`    | Escaped character      | `/special`                             |
+
+## Examples by Use Case
+
+### Basic Pages
+
+```
+routes/
+├── __root.tsx      # Root layout
+├── index.tsx       # / (home)
+├── about.tsx       # /about
+└── contact.tsx     # /contact
+```
+
+### Dynamic Routes
+
+```
+routes/
+├── posts.tsx           # /posts (layout)
+├── posts.index.tsx     # /posts (index content)
+├── posts.$postId.tsx   # /posts/123
+└── users.$userId.tsx   # /users/abc
+```
+
+**Dynamic route component:**
+
+```tsx
+// routes/posts.$postId.tsx
+import { createFileRoute } from '@tanstack/solid-router'
+
+export const Route = createFileRoute('/posts/$postId')({
+    component: PostPage,
+    loader: ({ params }) => fetchPost(params.postId),
+})
+
+function PostPage() {
+    const params = Route.useParams()
+    const post = Route.useLoaderData()
+
+    return (
+        <article>
+            <h1>{post().title}</h1>
+            <p>Post ID: {params.postId}</p>
+        </article>
+    )
+}
+```
+
+### Nested Layouts
+
+**Directory approach:**
+
+```
+routes/
+├── dashboard.tsx           # /dashboard (layout)
+└── dashboard/
+    ├── index.tsx           # /dashboard (index)
+    ├── settings.tsx        # /dashboard/settings
+    └── analytics.tsx       # /dashboard/analytics
+```
+
+**Flat approach (using dots):**
+
+```
+routes/
+├── dashboard.tsx           # /dashboard (layout)
+├── dashboard.index.tsx     # /dashboard (index)
+├── dashboard.settings.tsx  # /dashboard/settings
+└── dashboard.analytics.tsx # /dashboard/analytics
+```
+
+**Layout component with Outlet:**
+
+```tsx
+// routes/dashboard.tsx
+import { createFileRoute, Outlet } from '@tanstack/solid-router'
+
+export const Route = createFileRoute('/dashboard')({
+    component: DashboardLayout,
+})
+
+function DashboardLayout() {
+    return (
+        <div class="dashboard-layout">
+            <aside class="sidebar">
+                <DashboardNav />
+            </aside>
+            <main class="content">
+                <Outlet /> {/* Renders child route */}
+            </main>
+        </div>
+    )
+}
+```
+
+### Pathless Layouts (No URL Segment)
+
+Use `_prefix` for layout routes that don't add to the URL:
+
+```
+routes/
+├── _auth.tsx           # Pathless auth layout
+├── _auth.login.tsx     # /login (wrapped by _auth)
+├── _auth.register.tsx  # /register (wrapped by _auth)
+└── dashboard.tsx       # /dashboard (not wrapped)
+```
+
+```tsx
+// routes/_auth.tsx
+import { createFileRoute, Outlet } from '@tanstack/solid-router'
+
+export const Route = createFileRoute('/_auth')({
+    component: AuthLayout,
+})
+
+function AuthLayout() {
+    return (
+        <div class="auth-container">
+            <div class="auth-card">
+                <Outlet />
+            </div>
+        </div>
+    )
+}
+```
+
+### Non-Nested Routes
+
+Use `_suffix` to escape parent layouts:
+
+```
+routes/
+├── posts.tsx            # /posts (layout with sidebar)
+├── posts.index.tsx      # /posts (shows in layout)
+├── posts.$postId.tsx    # /posts/123 (shows in layout)
+└── posts_.$postId.edit.tsx  # /posts/123/edit (OUTSIDE posts layout!)
+```
+
+The `posts_` prefix means "match /posts path but don't nest under posts.tsx layout".
+
+### Route Groups
+
+Group routes for organization without affecting URLs:
+
+```
+routes/
+├── (marketing)/
+│   ├── index.tsx       # / (home)
+│   ├── about.tsx       # /about
+│   └── pricing.tsx     # /pricing
+└── (app)/
+    ├── dashboard.tsx   # /dashboard
+    └── settings.tsx    # /settings
+```
+
+### Catch-All Routes
+
+```
+routes/
+└── $.tsx              # Matches any unmatched path
+```
+
+Or for a specific prefix:
+
+```
+routes/
+└── docs.$.tsx         # /docs/* (catches /docs/anything/here)
+```
+
+```tsx
+// routes/docs.$.tsx
+export const Route = createFileRoute('/docs/$')({
+    component: DocsPage,
+})
+
+function DocsPage() {
+    const params = Route.useParams()
+    // params["*"] contains "anything/here"
+    return <div>Path: {params['*']}</div>
+}
+```
+
+### Colocating Non-Route Files
+
+Use `-prefix` to exclude files/folders from routing:
+
+```
+routes/
+├── posts.tsx
+├── posts/
+│   ├── index.tsx
+│   ├── $postId.tsx
+│   └── -components/     # ❌ Not a route
+│       ├── PostCard.tsx
+│       └── PostList.tsx
+└── -utils/              # ❌ Not a route
+    └── helpers.ts
+```
+
+### Escaping Special Characters
+
+Use `[x]` to escape dots and other special chars:
+
+```
+routes/
+├── api[.]v1.tsx        # /api.v1
+├── script[.]js.tsx     # /script.js
+└── posts[$]all.tsx     # /posts$all
+```
+
+## Root Route Structure
+
+The `__root.tsx` is special - it wraps ALL routes:
+
+```tsx
+// routes/__root.tsx
+import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from '@tanstack/solid-router'
+import { Suspense } from 'solid-js'
+import { HydrationScript } from 'solid-js/web'
+
+interface RootContext {
+    queryClient: QueryClient
+}
+
+export const Route = createRootRouteWithContext<RootContext>()({
+    head: () => ({
+        links: [
+            { rel: 'stylesheet', href: '/styles.css' },
+            { rel: 'icon', href: '/favicon.ico' },
+        ],
+        meta: [{ charSet: 'utf-8' }, { name: 'viewport', content: 'width=device-width, initial-scale=1' }],
+    }),
+    shellComponent: RootComponent,
+})
+
+function RootComponent() {
+    return (
+        <html lang="en">
+            <head>
+                <HydrationScript />
+                <HeadContent />
+            </head>
+            <body>
+                <Suspense fallback={<Loading />}>
+                    <Header />
+                    <Outlet />
+                    <Footer />
+                </Suspense>
+                <Scripts />
+            </body>
+        </html>
+    )
+}
+```
+
+## Route Configuration Options
+
+Every route file exports a `Route` with these options:
+
+```tsx
+export const Route = createFileRoute('/path')({
+    // Component to render
+    component: MyComponent,
+
+    // Data loading
+    loader: async ({ params, context, deps }) => fetchData(),
+    loaderDeps: ({ search }) => ({ page: search.page }),
+
+    // Search params
+    validateSearch: searchSchema,
+
+    // Pre-load hook (runs before loader, can redirect)
+    beforeLoad: async ({ params, context }) => {
+        if (!context.auth) throw redirect({ to: '/login' })
+        return { user: context.auth.user }
+    },
+
+    // Caching
+    staleTime: 10_000, // Fresh for 10 seconds
+    gcTime: 30 * 60_000, // Keep 30 minutes
+
+    // Error handling
+    errorComponent: ErrorBoundary,
+    notFoundComponent: NotFound,
+    pendingComponent: Loading,
+
+    // Static data (available without loading)
+    staticData: { title: 'My Page' },
+})
+```
+
+## Common Patterns
+
+### Protected Routes
+
+```tsx
+// routes/_protected.tsx
+export const Route = createFileRoute('/_protected')({
+    beforeLoad: async ({ context }) => {
+        if (!context.user) {
+            throw redirect({ to: '/login', search: { from: location.pathname } })
+        }
+    },
+    component: () => <Outlet />,
+})
+```
+
+### Parallel Data Loading
+
+Routes load in parallel when possible. Parent `beforeLoad` runs first, then all loaders run in parallel.
+
+### Index vs Layout
+
+```
+posts.tsx       # Layout - has <Outlet />
+posts.index.tsx # Content for /posts exact match
+```
+
+Both render for `/posts`, but only `posts.$postId.tsx` renders for `/posts/123`.

@@ -1,0 +1,26 @@
+{
+	"name": "incidentd",
+	"version": "0.0.0",
+	"private": true,
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev",
+		"start": "wrangler dev",
+		"cf-typegen": "wrangler types",
+		"type-check": "bunx tsc --noEmit",
+		"clean": "rm -rf node_modules .wrangler"
+	},
+	"devDependencies": {
+		"@slack/types": "^2.19.0",
+		"@types/node": "^25.0.3",
+		"wrangler": "^4.56.0",
+    	"@types/pg": "catalog:"
+		
+	},
+	"dependencies": {
+		"hono": "^4.11.1",
+		"drizzle-orm": "catalog:",
+		"pg": "catalog:",
+		"@fire/db": "workspace:*"
+	}
+}

@@ -1,0 +1,38 @@
+import { createServerFn } from "@tanstack/solid-start";
+
+/**
+ * TODO: @Miquel -> Add title/description to incident
+ * and prob. move incident definition and types to a common package
+ */
+export type Incident = {
+	id: string;
+	status: "open" | "mitigating" | "resolved";
+	severity: "low" | "medium" | "high";
+	createdAt: string;
+	updatedAt: string;
+	prompt: string;
+	assignee: string | null;
+	source: "slack" | "dashboard";
+};
+
+export const getIncidents = createServerFn({
+	method: "GET",
+}).handler(async () => {
+	const response = await fetch(process.env.INCIDENTS_URL!);
+	if (!response.ok) {
+		throw new Error("Failed to fetch incidents");
+	}
+	const { incidents } = (await response.json()) as { incidents: Incident[] };
+	return incidents;
+});
+
+export const getIncidentById = createServerFn({ method: "GET" })
+	.inputValidator((data: { id: string }) => data)
+	.handler(async ({ data }) => {
+		const response = await fetch(`${process.env.INCIDENTS_URL}/${data.id}`);
+		if (!response.ok) {
+			throw new Error("Failed to fetch incident");
+		}
+		const { incident } = (await response.json()) as { incident: Incident };
+		return incident;
+	});

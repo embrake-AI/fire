@@ -1,0 +1,367 @@
+---
+description: Project-specific conventions and tools
+globs: ['**/*.ts', '**/*.tsx']
+alwaysApply: false
+---
+
+# Project Conventions
+
+This document covers project-specific conventions, tools, and patterns.
+
+## Package Manager: Bun
+
+```bash
+# Install dependencies
+bun install
+
+# Add a package
+bun add package-name
+
+# Add dev dependency
+bun add -d package-name
+
+# Run scripts
+bun run dev
+bun run build
+bun run type-check
+```
+
+## Linting & Formatting: Biome
+
+```bash
+# Check for issues
+bun run check
+
+# Lint only
+bun run lint
+
+# Format only
+bun run format
+```
+
+### Biome Rules in This Project
+
+- **Indent**: Tabs
+- **Quotes**: Double quotes for JS/TS
+- **Organize imports**: Auto-organized
+- **Recommended rules**: Enabled
+
+## Path Aliases
+
+Use `~/` to import from `src/`:
+
+```tsx
+// Instead of relative paths
+import { cn } from '../../lib/utils'
+
+// Use alias
+import { cn } from '~/lib/utils'
+```
+
+Configured in `tsconfig.json`:
+
+```json
+{
+    "compilerOptions": {
+        "baseUrl": ".",
+        "paths": {
+            "~/*": ["./src/*"]
+        }
+    }
+}
+```
+
+## Directory Structure
+
+```
+src/
+├── components/           # Reusable components
+│   ├── ui/               # UI primitives (Button, Card, etc.)
+│   │   └── button.tsx
+│   └── Header.tsx        # App-specific components
+│
+├── lib/                  # Utilities and server functions
+│   ├── utils.ts          # cn() helper
+│   └── incidents.ts      # Domain logic + server functions
+│
+├── routes/               # File-based routes
+│   ├── __root.tsx        # Root layout (HTML shell)
+│   ├── index.tsx         # Home page
+│   └── incidents.$incidentId.tsx
+│
+├── integrations/         # Third-party integrations
+│   └── tanstack-query/
+│       └── provider.tsx
+│
+├── router.tsx            # Router configuration
+├── routeTree.gen.ts      # Auto-generated route tree
+└── styles.css            # Global styles + Tailwind config
+```
+
+## UI Components: Kobalte
+
+Use [Kobalte](https://kobalte.dev/) for headless accessible components:
+
+```tsx
+import * as ButtonPrimitive from '@kobalte/core/button'
+import type { PolymorphicProps } from '@kobalte/core/polymorphic'
+
+function Button<T extends ValidComponent = 'button'>(props: PolymorphicProps<T, ButtonProps<T>>) {
+    const [local, others] = splitProps(props, ['variant', 'size', 'class'])
+    return (
+        <ButtonPrimitive.Root
+            class={cn(buttonVariants({ variant: local.variant, size: local.size }), local.class)}
+            {...others}
+        />
+    )
+}
+```
+
+## Styling: Tailwind CSS v4
+
+### CSS Variables (oklch colors)
+
+Colors are defined in `styles.css` using oklch:
+
+```css
+:root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.141 0.005 285.823);
+    --primary: oklch(0.21 0.006 285.885);
+    --destructive: oklch(0.577 0.245 27.325);
+}
+
+.dark {
+    --background: oklch(0.141 0.005 285.823);
+    --foreground: oklch(0.985 0 0);
+}
+```
+
+### cn() Utility
+
+Use `cn()` for conditional class merging:
+
+```tsx
+import { cn } from '~/lib/utils'
+;<div
+    class={cn(
+        'base-classes p-4 rounded',
+        isActive() && 'bg-primary text-primary-foreground',
+        isDisabled() && 'opacity-50 cursor-not-allowed',
+        props.class
+    )}
+/>
+```
+
+### Tailwind v4 Config
+
+Tailwind v4 uses CSS-based configuration:
+
+```css
+@import 'tailwindcss';
+@plugin "tailwindcss-animate";
+
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    /* ... */
+}
+```
+
+## Icons: lucide-solid
+
+```tsx
+import { Flame, ArrowLeft, CircleAlert, Info, TriangleAlert } from "lucide-solid";
+
+<Flame class="w-6 h-6 text-orange-500" />
+<ArrowLeft class="w-4 h-4" />
+```
+
+## Type Patterns
+
+### Incident Type (Example Domain Model)
+
+```tsx
+// lib/incidents.ts
+export type Incident = {
+    id: string
+    title: string
+    status: 'open' | 'mitigating' | 'resolved'
+    severity: 'critical' | 'major' | 'minor'
+    createdAt: string
+    description: string
+}
+```
+
+### Component Props with Variants
+
+```tsx
+import type { VariantProps } from 'class-variance-authority'
+import { cva } from 'class-variance-authority'
+
+const badgeVariants = cva('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium', {
+    variants: {
+        variant: {
+            default: 'bg-primary text-primary-foreground',
+            secondary: 'bg-secondary text-secondary-foreground',
+            destructive: 'bg-destructive text-destructive-foreground',
+        },
+    },
+    defaultVariants: {
+        variant: 'default',
+    },
+})
+
+interface BadgeProps extends VariantProps<typeof badgeVariants> {
+    class?: string
+    children: JSX.Element
+}
+```
+
+## Router Configuration
+
+```tsx
+// router.tsx
+import { createRouter } from '@tanstack/solid-router'
+import { setupRouterSsrQueryIntegration } from '@tanstack/solid-router-ssr-query'
+import { getContext } from './integrations/tanstack-query/provider'
+import { routeTree } from './routeTree.gen'
+
+export const getRouter = () => {
+    const rqContext = getContext()
+
+    const router = createRouter({
+        routeTree,
+        context: { ...rqContext },
+        defaultPreload: 'intent', // Preload on hover intent
+    })
+
+    setupRouterSsrQueryIntegration({
+        router,
+        queryClient: rqContext.queryClient,
+    })
+
+    return router
+}
+```
+
+## Vite Configuration
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite'
+import { devtools } from '@tanstack/devtools-vite'
+import viteTsConfigPaths from 'vite-tsconfig-paths'
+import tailwindcss from '@tailwindcss/vite'
+import { tanstackStart } from '@tanstack/solid-start/plugin/vite'
+import solidPlugin from 'vite-plugin-solid'
+import { nitro } from 'nitro/vite'
+
+export default defineConfig({
+    plugins: [
+        devtools(),
+        nitro({
+            /* deployment config */
+        }),
+        viteTsConfigPaths({ projects: ['./tsconfig.json'] }),
+        tailwindcss(),
+        tanstackStart(),
+        solidPlugin({ ssr: true }),
+    ],
+})
+```
+
+## TypeScript Configuration
+
+Key settings:
+
+```json
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "jsx": "preserve",
+        "jsxImportSource": "solid-js",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "verbatimModuleSyntax": true
+    }
+}
+```
+
+## Development Workflow
+
+### Adding a New Route
+
+1. Create file in `src/routes/` following naming conventions
+2. Export `Route` using `createFileRoute`
+3. `routeTree.gen.ts` auto-updates
+
+```tsx
+// src/routes/new-page.tsx
+import { createFileRoute } from '@tanstack/solid-router'
+
+export const Route = createFileRoute('/new-page')({
+    component: NewPage,
+})
+
+function NewPage() {
+    return <div>New Page</div>
+}
+```
+
+### Adding a Server Function
+
+1. Add to `src/lib/` file
+2. Use `createServerFn`
+3. Call from loader or component
+
+```tsx
+// src/lib/data.ts
+import { createServerFn } from '@tanstack/solid-start'
+
+export const getData = createServerFn().handler(async () => {
+    return await fetchFromDb()
+})
+```
+
+### Adding a UI Component
+
+1. Create in `src/components/ui/`
+2. Use Kobalte primitives for accessibility
+3. Style with CVA variants
+
+```tsx
+// src/components/ui/card.tsx
+import { cn } from '~/lib/utils'
+import type { JSX } from 'solid-js'
+
+interface CardProps {
+    class?: string
+    children: JSX.Element
+}
+
+export function Card(props: CardProps) {
+    return <div class={cn('rounded-lg border bg-card p-6', props.class)}>{props.children}</div>
+}
+```
+
+## Common Commands
+
+```bash
+# Development
+bun run dev              # Start dev server on port 3000
+
+# Build
+bun run build            # Build for production
+bun run preview          # Preview production build
+bun run start            # Start production server
+
+# Quality
+bun run type-check       # TypeScript check
+bun run lint             # Biome lint
+bun run check            # Biome check (lint + format)
+bun run format           # Biome format
+```

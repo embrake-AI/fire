@@ -1,0 +1,27 @@
+import { defineConfig } from 'vite'
+import { devtools } from '@tanstack/devtools-vite'
+import viteTsConfigPaths from 'vite-tsconfig-paths'
+import tailwindcss from '@tailwindcss/vite'
+
+import { tanstackStart } from '@tanstack/solid-start/plugin/vite'
+import solidPlugin from 'vite-plugin-solid'
+import { nitro } from 'nitro/vite'
+
+export default defineConfig({
+    plugins: [
+        devtools(),
+        nitro({
+            vercel: {
+                functions: {
+                    runtime: 'bun1.x',
+                },
+            },
+        }),
+        viteTsConfigPaths({
+            projects: ['./tsconfig.json'],
+        }),
+        tailwindcss(),
+        tanstackStart(),
+        solidPlugin({ ssr: true }),
+    ],
+})
