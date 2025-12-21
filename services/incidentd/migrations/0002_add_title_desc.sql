@@ -1,0 +1,3 @@
+-- Migration number: 0002 	 2025-12-21T10:15:00.000Z
+ALTER TABLE incident ADD COLUMN title TEXT NOT NULL;
+ALTER TABLE incident ADD COLUMN description TEXT NOT NULL;

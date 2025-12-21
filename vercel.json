@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "bun install && bun --filter dashboard build && cp -r services/dashboard/.vercel/output .vercel/output",
-  "installCommand": "echo 'handled in buildCommand'"
+  "buildCommand": "bun run build:dashboard && cp -r services/dashboard/.vercel/output .vercel/output",
+  "installCommand": "bun install"
 }
 

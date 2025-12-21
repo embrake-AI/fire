@@ -4,18 +4,17 @@
   "type": "module",
   "scripts": {
     "dev": "bun --bun vite dev --port 3000",
-    "build": "bun --filter @fire/db build && bun --bun vite build",
+    "build": "bun --bun vite build",
     "preview": "bun --bun vite preview",
     "test": "bun --bun vitest run",
     "type-check": "tsc --noEmit",
-    "format": "biome format",
     "lint": "biome lint",
-    "check": "biome check",
     "start": "bun .output/server/index.mjs",
-    "clean": "rm -rf .output node_modules"
+    "clean": "rm -rf .output node_modules .vercel"
   },
   "dependencies": {
     "@fire/db": "workspace:*",
+    "@fire/common": "workspace:*",
     "@fontsource/inter": "^5.2.8",
     "@kobalte/core": "^0.13.11",
     "@tanstack/solid-query": "^5.90.15",
@@ -34,7 +33,7 @@
     "pg": "catalog:"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.3.10",
+    "@biomejs/biome": "catalog:",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/devtools-vite": "^0.3.12",
     "@tanstack/router-plugin": "^1.141.8",

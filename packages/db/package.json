@@ -1,40 +1,42 @@
 {
-    "name": "@fire/db",
-    "private": true,
-    "type": "module",
-    "main": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "exports": {
-        ".": {
-            "types": "./dist/index.d.ts",
-            "import": "./dist/index.js",
-            "default": "./dist/index.js"
-        },
-        "./schema": {
-            "types": "./dist/schema/index.d.ts",
-            "import": "./dist/schema/index.js",
-            "default": "./dist/schema/index.js"
-        }
-    },
-    "files": [
-        "dist",
-        "migrations",
-        "drizzle.config.ts",
-        "README.md"
-    ],
-    "scripts": {
-        "build": "bunx tsc",
-        "type-check": "bunx tsc --noEmit",
-        "db:generate": "bunx drizzle-kit generate",
-        "db:migrate": "bunx drizzle-kit migrate",
-        "db:studio": "bunx drizzle-kit studio",
-        "clean": "rm -rf dist node_modules"
-    },
-    "dependencies": {
-        "drizzle-orm": "catalog:"
-    },
-    "devDependencies": {
-        "drizzle-kit": "^0.31.8"
-    },
-    "version": "0.0.71"
+	"name": "@fire/db",
+	"private": true,
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"default": "./dist/index.js"
+		},
+		"./schema": {
+			"types": "./dist/schema/index.d.ts",
+			"import": "./dist/schema/index.js",
+			"default": "./dist/schema/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"migrations",
+		"drizzle.config.ts",
+		"README.md"
+	],
+	"scripts": {
+		"build": "bunx tsc",
+		"type-check": "bunx tsc --noEmit",
+		"db:generate": "bunx drizzle-kit generate",
+		"db:migrate": "bunx drizzle-kit migrate",
+		"db:studio": "bunx drizzle-kit studio",
+		"lint": "biome check",
+		"clean": "rm -rf dist node_modules"
+	},
+	"dependencies": {
+		"drizzle-orm": "catalog:"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "catalog:",
+		"drizzle-kit": "^0.31.8"
+	},
+	"version": "0.0.71"
 }

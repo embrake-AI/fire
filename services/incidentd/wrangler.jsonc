@@ -38,7 +38,7 @@
 			"database_id": "9247b91c-2e42-4c61-af27-6ad3c77ada50"
 		}
 	],
-	"vars": {  "FRONTEND_URL": "https://fire-dashboard-murex.vercel.app/" },
+	"vars": { "FRONTEND_URL": "https://fire-dashboard-murex.vercel.app/" }
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

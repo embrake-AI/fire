@@ -3,25 +3,27 @@
 	"version": "0.0.0",
 	"private": true,
 	"scripts": {
-		"build": "bun --filter @fire/db build",
+		"build": "echo 'Nothing to build for incidentd'",
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
 		"cf-typegen": "wrangler types",
 		"type-check": "bunx tsc --noEmit",
+		"lint": "biome check",
 		"clean": "rm -rf node_modules .wrangler"
 	},
 	"devDependencies": {
+		"@biomejs/biome": "catalog:",
 		"@slack/types": "^2.19.0",
 		"@types/node": "^25.0.3",
-		"wrangler": "^4.56.0",
-    	"@types/pg": "catalog:"
-		
+		"@types/pg": "catalog:",
+		"wrangler": "^4.56.0"
 	},
 	"dependencies": {
 		"hono": "^4.11.1",
 		"drizzle-orm": "catalog:",
 		"pg": "catalog:",
-		"@fire/db": "workspace:*"
+		"@fire/db": "workspace:*",
+		"@fire/common": "workspace:*"
 	}
 }
