@@ -22,8 +22,8 @@ export async function startIncident({
 		source,
 	});
 	await c.env.incidents
-		.prepare("INSERT INTO incident (id, identifier, status, assignee, severity) VALUES (?, ?, ?, ?, ?)")
-		.bind(incidentId.toString(), identifier, "open", result.assignee, result.severity)
+		.prepare("INSERT INTO incident (id, identifier, status, assignee, severity, title, description) VALUES (?, ?, ?, ?, ?, ?, ?)")
+		.bind(incidentId.toString(), identifier, "open", result.assignee, result.severity, result.title, result.description)
 		.run();
 	return result;
 }

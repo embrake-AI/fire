@@ -66,10 +66,7 @@ export function AutoSaveTextarea(props: AutoSaveTextareaProps) {
 	return (
 		<div class="space-y-1.5">
 			<Show when={props.label}>
-				<label
-					for={props.id}
-					class="block text-xs font-medium text-muted-foreground"
-				>
+				<label for={props.id} class="block text-xs font-medium text-muted-foreground">
 					{props.label}
 				</label>
 			</Show>
@@ -88,12 +85,7 @@ export function AutoSaveTextarea(props: AutoSaveTextareaProps) {
 					)}
 				/>
 				<div class="absolute right-2 bottom-2 pointer-events-none">
-					<Show
-						when={isSaved()}
-						fallback={
-							<LoaderCircle class="w-4 h-4 animate-spin text-muted-foreground" />
-						}
-					>
+					<Show when={isSaved()} fallback={<LoaderCircle class="w-4 h-4 animate-spin text-muted-foreground" />}>
 						<Check class="w-4 h-4 text-emerald-500" />
 					</Show>
 				</div>

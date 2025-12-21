@@ -19,13 +19,9 @@ function EscalationConfig() {
 						<CircleArrowUp class="w-10 h-10 text-amber-600" />
 					</div>
 				</div>
-				<h2 class="text-xl font-semibold text-foreground mb-2">
-					Escalation Configuration
-				</h2>
+				<h2 class="text-xl font-semibold text-foreground mb-2">Escalation Configuration</h2>
 				<p class="text-muted-foreground text-center max-w-md">
-					Define escalation policies and rules. Set up automatic escalation
-					paths, timeouts, and notification preferences for unacknowledged
-					incidents.
+					Define escalation policies and rules. Set up automatic escalation paths, timeouts, and notification preferences for unacknowledged incidents.
 				</p>
 			</div>
 		</Card>

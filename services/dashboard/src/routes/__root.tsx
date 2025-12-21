@@ -1,10 +1,5 @@
 import { type QueryClient, QueryClientProvider } from "@tanstack/solid-query";
-import {
-	createRootRouteWithContext,
-	HeadContent,
-	Outlet,
-	Scripts,
-} from "@tanstack/solid-router";
+import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanstack/solid-router";
 import { Suspense } from "solid-js";
 import { HydrationScript } from "solid-js/web";
 
@@ -22,10 +17,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 			{ rel: "stylesheet", href: styleCss },
 			{ rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
 		],
-		meta: [
-			{ charSet: "utf-8" },
-			{ name: "viewport", content: "width=device-width, initial-scale=1" },
-		],
+		meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }],
 	}),
 	shellComponent: RootShell,
 	notFoundComponent: NotFound,

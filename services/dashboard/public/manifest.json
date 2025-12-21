@@ -1,15 +1,15 @@
 {
-  "short_name": "Incidents",
-  "name": "Incidents Dashboard",
-  "icons": [
-    {
-      "src": "favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml"
-    }
-  ],
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#f97316",
-  "background_color": "#fafafa"
+	"short_name": "Incidents",
+	"name": "Incidents Dashboard",
+	"icons": [
+		{
+			"src": "favicon.svg",
+			"sizes": "any",
+			"type": "image/svg+xml"
+		}
+	],
+	"start_url": ".",
+	"display": "standalone",
+	"theme_color": "#f97316",
+	"background_color": "#fafafa"
 }

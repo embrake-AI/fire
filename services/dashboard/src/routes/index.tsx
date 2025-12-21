@@ -1,20 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/solid-router";
-import {
-	ChevronRight,
-	CircleCheck,
-	Flame,
-	ShieldAlert,
-	Wrench,
-} from "lucide-solid";
+import { ChevronRight, CircleCheck, Flame, ShieldAlert, Wrench } from "lucide-solid";
 import type { JSX } from "solid-js";
 import { createMemo, For, Show } from "solid-js";
 import { Badge } from "~/components/ui/badge";
 import { Card } from "~/components/ui/card";
-import {
-	Collapsible,
-	CollapsibleContent,
-	CollapsibleTrigger,
-} from "~/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { getSeverity, getStatus } from "~/lib/incident-config";
 import { getIncidents, type Incident } from "~/lib/incidents";
 
@@ -26,15 +16,9 @@ export const Route = createFileRoute("/")({
 function IncidentsList() {
 	const incidents = Route.useLoaderData();
 
-	const openIncidents = createMemo(() =>
-		incidents().filter((inc) => inc.status === "open"),
-	);
-	const mitigatingIncidents = createMemo(() =>
-		incidents().filter((inc) => inc.status === "mitigating"),
-	);
-	const resolvedIncidents = createMemo(() =>
-		incidents().filter((inc) => inc.status === "resolved"),
-	);
+	const openIncidents = createMemo(() => incidents().filter((inc) => inc.status === "open"));
+	const mitigatingIncidents = createMemo(() => incidents().filter((inc) => inc.status === "mitigating"));
+	const resolvedIncidents = createMemo(() => incidents().filter((inc) => inc.status === "resolved"));
 
 	const OpenIncidentsSection = (): JSX.Element => (
 		<IncidentSection
@@ -68,14 +52,9 @@ function IncidentsList() {
 		/>
 	);
 
-	const openAndMitigatingIncidents = () =>
-		openIncidents().length > 0 && mitigatingIncidents().length > 0;
-	const onlyMitigatingIncidents = () =>
-		mitigatingIncidents().length > 0 && openIncidents().length === 0;
-	const noIncidents = () =>
-		openIncidents().length === 0 &&
-		mitigatingIncidents().length === 0 &&
-		resolvedIncidents().length === 0;
+	const openAndMitigatingIncidents = () => openIncidents().length > 0 && mitigatingIncidents().length > 0;
+	const onlyMitigatingIncidents = () => mitigatingIncidents().length > 0 && openIncidents().length === 0;
+	const noIncidents = () => openIncidents().length === 0 && mitigatingIncidents().length === 0 && resolvedIncidents().length === 0;
 
 	return (
 		<div class="flex-1 bg-background p-6 md:p-8">
@@ -113,12 +92,8 @@ function NoIncidents() {
 					<CircleCheck class="w-10 h-10 text-emerald-600" />
 				</div>
 			</div>
-			<h2 class="text-2xl font-semibold text-foreground mb-2">
-				All Systems Operational
-			</h2>
-			<p class="text-muted-foreground text-center max-w-md">
-				No active incidents at this time. All services are running normally.
-			</p>
+			<h2 class="text-2xl font-semibold text-foreground mb-2">All Systems Operational</h2>
+			<p class="text-muted-foreground text-center max-w-md">No active incidents at this time. All services are running normally.</p>
 		</section>
 	);
 }
@@ -134,15 +109,7 @@ function IncidentSection(props: {
 }) {
 	const incidentsList = () => (
 		<div class="space-y-5">
-			<For each={props.incidents}>
-				{(incident) => (
-					<IncidentCard
-						incident={incident}
-						prominent={props.cardVariant === "prominent"}
-						muted={props.cardVariant === "muted"}
-					/>
-				)}
-			</For>
+			<For each={props.incidents}>{(incident) => <IncidentCard incident={incident} prominent={props.cardVariant === "prominent"} muted={props.cardVariant === "muted"} />}</For>
 		</div>
 	);
 
@@ -161,9 +128,7 @@ function IncidentSection(props: {
 						<div class={`p-1.5 rounded-md ${props.iconBg}`}>{props.icon}</div>
 						<div class="text-left">
 							<span class="font-medium text-foreground">{props.title}</span>
-							<span class="ml-2 text-sm text-muted-foreground">
-								({props.incidents.length})
-							</span>
+							<span class="ml-2 text-sm text-muted-foreground">({props.incidents.length})</span>
 						</div>
 					</div>
 					<ChevronRight class="w-5 h-5 text-muted-foreground transition-transform group-data-[expanded]:rotate-90" />
@@ -189,11 +154,7 @@ function IncidentSection(props: {
 	);
 }
 
-function IncidentCard(props: {
-	incident: Incident;
-	prominent?: boolean;
-	muted?: boolean;
-}) {
+function IncidentCard(props: { incident: Incident; prominent?: boolean; muted?: boolean }) {
 	const severity = () => getSeverity(props.incident.severity);
 	const status = () => getStatus(props.incident.status);
 
@@ -208,45 +169,20 @@ function IncidentCard(props: {
 	};
 
 	return (
-		<Link
-			to="/incidents/$incidentId"
-			params={{ incidentId: props.incident.id }}
-			class="block"
-		>
+		<Link to="/incidents/$incidentId" params={{ incidentId: props.incident.id }} class="block">
 			<Card class={`p-4 transition-all cursor-pointer ${cardClasses()}`}>
 				<div class="flex items-start gap-4">
-					<div
-						class={`mt-0.5 ${props.muted ? "text-muted-foreground" : severity().color}`}
-					>
-						{severity().icon("sm")}
-					</div>
+					<div class={`mt-0.5 ${props.muted ? "text-muted-foreground" : severity().color}`}>{severity().icon("sm")}</div>
 					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-3 mb-1 flex-wrap">
-							<h2
-								class={`text-lg font-medium truncate ${props.muted ? "text-muted-foreground" : "text-foreground"}`}
-							>
-								{props.incident.prompt}
-							</h2>
-							<Badge
-								variant="outline"
-								round
-								class={
-									props.muted
-										? "border-muted-foreground/40 text-muted-foreground"
-										: `${status().bg} ${status().color} border-transparent`
-								}
-							>
-								<span
-									class={`w-1.5 h-1.5 rounded-full mr-1.5 ${props.muted ? "bg-muted-foreground/40" : status().dot}`}
-								/>
+							<h2 class={`text-lg font-medium truncate ${props.muted ? "text-muted-foreground" : "text-foreground"}`}>{props.incident.prompt}</h2>
+							<Badge variant="outline" round class={props.muted ? "border-muted-foreground/40 text-muted-foreground" : `${status().bg} ${status().color} border-transparent`}>
+								<span class={`w-1.5 h-1.5 rounded-full mr-1.5 ${props.muted ? "bg-muted-foreground/40" : status().dot}`} />
 								{status().label}
 							</Badge>
 						</div>
-						<p
-							class={`text-sm ${props.muted ? "text-muted-foreground/70" : "text-muted-foreground"}`}
-						>
-							{props.incident.id} ·{" "}
-							{new Date(props.incident.createdAt).toLocaleString()}
+						<p class={`text-sm ${props.muted ? "text-muted-foreground/70" : "text-muted-foreground"}`}>
+							{props.incident.id} · {new Date(props.incident.createdAt).toLocaleString()}
 						</p>
 					</div>
 				</div>

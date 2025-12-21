@@ -16,15 +16,9 @@ export type Assignee = {
 export const getAssignees = createServerFn({
 	method: "GET",
 }).handler(async () => {
-	const assignees = await db
-		.select()
-		.from(assignee)
-		.orderBy(desc(assignee.createdAt));
+	const assignees = await db.select().from(assignee).orderBy(desc(assignee.createdAt));
 
-	const [slackUsers, slackUserGroups] = await Promise.all([
-		fetchSlackUsers(),
-		fetchSlackUserGroups(),
-	]);
+	const [slackUsers, slackUserGroups] = await Promise.all([fetchSlackUsers(), fetchSlackUserGroups()]);
 
 	return assignees.map((a) => {
 		if (a.type === "slack-user") {
@@ -66,9 +60,7 @@ export const getSlackUsers = createServerFn({
 	const assignees = await db.select().from(assignee);
 	const slackUsers = await fetchSlackUsers();
 	// Filter out users that are already assignees
-	const assignedSlackIds = new Set(
-		assignees.filter((a) => a.type === "slack-user").map((a) => a.identifier),
-	);
+	const assignedSlackIds = new Set(assignees.filter((a) => a.type === "slack-user").map((a) => a.identifier));
 	return slackUsers.filter((u) => !assignedSlackIds.has(u.id));
 });
 
@@ -78,18 +70,12 @@ export const getSlackUserGroups = createServerFn({
 	const assignees = await db.select().from(assignee);
 	const slackUserGroups = await fetchSlackUserGroups();
 	// Filter out groups that are already assignees
-	const assignedSlackIds = new Set(
-		assignees
-			.filter((a) => a.type === "slack-user-group")
-			.map((a) => a.identifier),
-	);
+	const assignedSlackIds = new Set(assignees.filter((a) => a.type === "slack-user-group").map((a) => a.identifier));
 	return slackUserGroups.filter((g) => !assignedSlackIds.has(g.id));
 });
 
 export const createAssignee = createServerFn({ method: "POST" })
-	.inputValidator(
-		(data: { id: string; type: "slack-user" | "slack-user-group" }) => data,
-	)
+	.inputValidator((data: { id: string; type: "slack-user" | "slack-user-group" }) => data)
 	.handler(async ({ data }) => {
 		const [newAssignee] = await db
 			.insert(assignee)
@@ -111,10 +97,7 @@ export const createAssignee = createServerFn({ method: "POST" })
 export const deleteAssignee = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string }) => data)
 	.handler(async ({ data }) => {
-		const result = await db
-			.delete(assignee)
-			.where(eq(assignee.id, data.id))
-			.returning();
+		const result = await db.delete(assignee).where(eq(assignee.id, data.id)).returning();
 
 		if (result.length === 0) {
 			throw new Error("Assignee not found");
@@ -126,11 +109,7 @@ export const deleteAssignee = createServerFn({ method: "POST" })
 export const updateAssignee = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; prompt: string }) => data)
 	.handler(async ({ data }) => {
-		const [updated] = await db
-			.update(assignee)
-			.set({ prompt: data.prompt })
-			.where(eq(assignee.id, data.id))
-			.returning();
+		const [updated] = await db.update(assignee).set({ prompt: data.prompt }).where(eq(assignee.id, data.id)).returning();
 
 		if (!updated) {
 			throw new Error("Assignee not found");

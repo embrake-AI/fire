@@ -61,15 +61,12 @@ export async function fetchSlackUsers(): Promise<SlackUser[]> {
 			params.set("cursor", cursor);
 		}
 
-		const response = await fetch(
-			`https://slack.com/api/users.list?${params.toString()}`,
-			{
-				headers: {
-					Authorization: `Bearer ${token}`,
-					"Content-Type": "application/json",
-				},
+		const response = await fetch(`https://slack.com/api/users.list?${params.toString()}`, {
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"Content-Type": "application/json",
 			},
-		);
+		});
 
 		const data: SlackUserResponse = await response.json();
 
@@ -86,10 +83,7 @@ export async function fetchSlackUsers(): Promise<SlackUser[]> {
 
 				users.push({
 					id: member.id,
-					name:
-						member.profile.real_name ||
-						member.profile.display_name ||
-						member.name,
+					name: member.profile.real_name || member.profile.display_name || member.name,
 					email: member.profile.email || "",
 					avatar: member.profile.image_72 || member.profile.image_48,
 				});

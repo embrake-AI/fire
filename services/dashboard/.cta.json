@@ -1,18 +1,12 @@
 {
-  "projectName": "dashboard",
-  "mode": "file-router",
-  "typescript": true,
-  "tailwind": true,
-  "packageManager": "bun",
-  "addOnOptions": {},
-  "git": true,
-  "version": 1,
-  "framework": "solid",
-  "chosenAddOns": [
-    "biome",
-    "nitro",
-    "start",
-    "tanstack-query",
-    "solid-ui"
-  ]
+	"projectName": "dashboard",
+	"mode": "file-router",
+	"typescript": true,
+	"tailwind": true,
+	"packageManager": "bun",
+	"addOnOptions": {},
+	"git": true,
+	"version": 1,
+	"framework": "solid",
+	"chosenAddOns": ["biome", "nitro", "start", "tanstack-query", "solid-ui"]
 }

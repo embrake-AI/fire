@@ -1,26 +1,7 @@
 import { createFileRoute, useRouter } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import {
-	ChevronLeft,
-	LoaderCircle,
-	Pencil,
-	Plus,
-	Trash2,
-	TriangleAlert,
-	User,
-	Users,
-	UsersRound,
-	X,
-} from "lucide-solid";
-import {
-	type Accessor,
-	createEffect,
-	createResource,
-	createSignal,
-	For,
-	type Resource,
-	Show,
-} from "solid-js";
+import { ChevronLeft, LoaderCircle, Pencil, Plus, Trash2, TriangleAlert, User, Users, UsersRound, X } from "lucide-solid";
+import { type Accessor, createEffect, createResource, createSignal, For, type Resource, Show } from "solid-js";
 import { AutoSaveTextarea } from "~/components/ui/auto-save-textarea";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
@@ -197,15 +178,8 @@ function AddAssigneePicker(props: AddAssigneePickerProps) {
 				<Show when={props.step() === "choose-type"}>
 					<div class="space-y-3">
 						<div class="flex items-center justify-between">
-							<h4 class="text-sm font-medium text-foreground">
-								Add an assignee
-							</h4>
-							<Button
-								variant="ghost"
-								size="icon"
-								class="h-8 w-8 cursor-pointer"
-								onClick={handleCancel}
-							>
+							<h4 class="text-sm font-medium text-foreground">Add an assignee</h4>
+							<Button variant="ghost" size="icon" class="h-8 w-8 cursor-pointer" onClick={handleCancel}>
 								<X class="w-4 h-4" />
 							</Button>
 						</div>
@@ -219,9 +193,7 @@ function AddAssigneePicker(props: AddAssigneePickerProps) {
 									<User class="w-5 h-5 text-blue-600" />
 								</div>
 								<span class="text-sm font-medium">Slack User</span>
-								<span class="text-xs text-muted-foreground">
-									Individual team member
-								</span>
+								<span class="text-xs text-muted-foreground">Individual team member</span>
 							</button>
 							<button
 								type="button"
@@ -232,9 +204,7 @@ function AddAssigneePicker(props: AddAssigneePickerProps) {
 									<UsersRound class="w-5 h-5 text-emerald-600" />
 								</div>
 								<span class="text-sm font-medium">User Group</span>
-								<span class="text-xs text-muted-foreground">
-									Team or rotation group
-								</span>
+								<span class="text-xs text-muted-foreground">Team or rotation group</span>
 							</button>
 						</div>
 					</div>
@@ -244,24 +214,12 @@ function AddAssigneePicker(props: AddAssigneePickerProps) {
 				<Show when={props.step() === "select-user"}>
 					<div class="space-y-3">
 						<div class="flex items-center gap-2">
-							<Button
-								variant="ghost"
-								size="icon"
-								class="h-8 w-8 cursor-pointer"
-								onClick={handleBack}
-							>
+							<Button variant="ghost" size="icon" class="h-8 w-8 cursor-pointer" onClick={handleBack}>
 								<ChevronLeft class="w-4 h-4" />
 							</Button>
-							<h4 class="text-sm font-medium text-foreground">
-								Select a Slack user
-							</h4>
+							<h4 class="text-sm font-medium text-foreground">Select a Slack user</h4>
 							<div class="flex-1" />
-							<Button
-								variant="ghost"
-								size="icon"
-								class="h-8 w-8 cursor-pointer"
-								onClick={handleCancel}
-							>
+							<Button variant="ghost" size="icon" class="h-8 w-8 cursor-pointer" onClick={handleCancel}>
 								<X class="w-4 h-4" />
 							</Button>
 						</div>
@@ -273,14 +231,7 @@ function AddAssigneePicker(props: AddAssigneePickerProps) {
 								</div>
 							}
 						>
-							<Show
-								when={(props.slackUsers() ?? []).length > 0}
-								fallback={
-									<div class="text-center py-6 text-sm text-muted-foreground">
-										All users have been added
-									</div>
-								}
-							>
+							<Show when={(props.slackUsers() ?? []).length > 0} fallback={<div class="text-center py-6 text-sm text-muted-foreground">All users have been added</div>}>
 								<div class="space-y-2 max-h-64 overflow-y-auto">
 									<For each={props.slackUsers()}>
 										{(user) => (
@@ -298,13 +249,9 @@ function AddAssigneePicker(props: AddAssigneePickerProps) {
 												</div>
 												<div class="flex-1 text-left">
 													<div class="text-sm font-medium">{user.name}</div>
-													<div class="text-xs text-muted-foreground">
-														{user.email}
-													</div>
+													<div class="text-xs text-muted-foreground">{user.email}</div>
 												</div>
-												<code class="text-xs font-mono text-muted-foreground">
-													{user.id}
-												</code>
+												<code class="text-xs font-mono text-muted-foreground">{user.id}</code>
 											</button>
 										)}
 									</For>
@@ -318,24 +265,12 @@ function AddAssigneePicker(props: AddAssigneePickerProps) {
 				<Show when={props.step() === "select-group"}>
 					<div class="space-y-3">
 						<div class="flex items-center gap-2">
-							<Button
-								variant="ghost"
-								size="icon"
-								class="h-8 w-8 cursor-pointer"
-								onClick={handleBack}
-							>
+							<Button variant="ghost" size="icon" class="h-8 w-8 cursor-pointer" onClick={handleBack}>
 								<ChevronLeft class="w-4 h-4" />
 							</Button>
-							<h4 class="text-sm font-medium text-foreground">
-								Select a user group
-							</h4>
+							<h4 class="text-sm font-medium text-foreground">Select a user group</h4>
 							<div class="flex-1" />
-							<Button
-								variant="ghost"
-								size="icon"
-								class="h-8 w-8 cursor-pointer"
-								onClick={handleCancel}
-							>
+							<Button variant="ghost" size="icon" class="h-8 w-8 cursor-pointer" onClick={handleCancel}>
 								<X class="w-4 h-4" />
 							</Button>
 						</div>
@@ -347,14 +282,7 @@ function AddAssigneePicker(props: AddAssigneePickerProps) {
 								</div>
 							}
 						>
-							<Show
-								when={(props.slackGroups() ?? []).length > 0}
-								fallback={
-									<div class="text-center py-6 text-sm text-muted-foreground">
-										All user groups have been added
-									</div>
-								}
-							>
+							<Show when={(props.slackGroups() ?? []).length > 0} fallback={<div class="text-center py-6 text-sm text-muted-foreground">All user groups have been added</div>}>
 								<div class="space-y-2 max-h-64 overflow-y-auto">
 									<For each={props.slackGroups()}>
 										{(group) => (
@@ -373,9 +301,7 @@ function AddAssigneePicker(props: AddAssigneePickerProps) {
 														@{group.handle} · {group.memberCount} members
 													</div>
 												</div>
-												<code class="text-xs font-mono text-muted-foreground">
-													{group.id}
-												</code>
+												<code class="text-xs font-mono text-muted-foreground">{group.id}</code>
 											</button>
 										)}
 									</For>
@@ -401,10 +327,7 @@ function AssigneesEmptyState() {
 				</div>
 			</div>
 			<h3 class="text-lg font-medium text-foreground mb-1">No assignees yet</h3>
-			<p class="text-sm text-muted-foreground text-center max-w-sm">
-				Add Slack users or user groups to define who can be assigned to
-				incidents.
-			</p>
+			<p class="text-sm text-muted-foreground text-center max-w-sm">Add Slack users or user groups to define who can be assigned to incidents.</p>
 		</div>
 	);
 }
@@ -420,8 +343,7 @@ function AssigneesFooter(props: AssigneesFooterProps) {
 		<Show when={props.count > 0}>
 			<div class="pt-4 border-t border-border">
 				<p class="text-sm text-muted-foreground">
-					<span class="font-medium text-foreground">{props.count}</span>{" "}
-					assignee{props.count !== 1 && "s"} configured
+					<span class="font-medium text-foreground">{props.count}</span> assignee{props.count !== 1 && "s"} configured
 				</p>
 			</div>
 		</Show>
@@ -476,20 +398,14 @@ function AssigneeCard(props: AssigneeCardProps) {
 		<div
 			class={cn(
 				"group border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors",
-				hasMissingPrompt() && !isEditing()
-					? "border-amber-300 bg-amber-50/50"
-					: "border-border",
+				hasMissingPrompt() && !isEditing() ? "border-amber-300 bg-amber-50/50" : "border-border",
 			)}
 		>
 			<div class="flex items-center gap-3 p-4">
 				<div
 					class={cn(
 						"flex items-center justify-center w-8 h-8 rounded-full font-medium text-sm shrink-0",
-						hasMissingPrompt() && !isEditing()
-							? "bg-amber-100 text-amber-600"
-							: isGroup()
-								? "bg-emerald-100 text-emerald-600"
-								: "bg-blue-100 text-blue-600",
+						hasMissingPrompt() && !isEditing() ? "bg-amber-100 text-amber-600" : isGroup() ? "bg-emerald-100 text-emerald-600" : "bg-blue-100 text-blue-600",
 					)}
 				>
 					<Show
@@ -519,18 +435,12 @@ function AssigneeCard(props: AssigneeCardProps) {
 									</span>
 								}
 							>
-								<span class="text-sm text-muted-foreground truncate">
-									— {getFirstLine(props.assignee.prompt)}
-								</span>
+								<span class="text-sm text-muted-foreground truncate">— {getFirstLine(props.assignee.prompt)}</span>
 							</Show>
 						</Show>
 
 						<Show when={!isEditing()}>
-							<button
-								type="button"
-								onClick={handleEditClick}
-								class="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-background cursor-pointer"
-							>
+							<button type="button" onClick={handleEditClick} class="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-background cursor-pointer">
 								<Pencil class="w-3.5 h-3.5 text-muted-foreground" />
 							</button>
 						</Show>

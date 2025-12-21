@@ -1,29 +1,28 @@
-import { defineConfig } from 'vite'
-import { devtools } from '@tanstack/devtools-vite'
-import viteTsConfigPaths from 'vite-tsconfig-paths'
-import tailwindcss from '@tailwindcss/vite'
+import tailwindcss from "@tailwindcss/vite";
+import { devtools } from "@tanstack/devtools-vite";
+import { tanstackStart } from "@tanstack/solid-start/plugin/vite";
+import { nitro } from "nitro/vite";
+import { defineConfig } from "vite";
+import solidPlugin from "vite-plugin-solid";
+import viteTsConfigPaths from "vite-tsconfig-paths";
 
-import { tanstackStart } from '@tanstack/solid-start/plugin/vite'
-import solidPlugin from 'vite-plugin-solid'
-import { nitro } from 'nitro/vite'
-
-const isProd = process.env.NODE_ENV === 'production'
+const isProd = process.env.NODE_ENV === "production";
 
 export default defineConfig({
-    plugins: [
-        !isProd && devtools(),
-        nitro({
-            vercel: {
-                functions: {
-                    runtime: 'bun1.x',
-                },
-            },
-        }),
-        viteTsConfigPaths({
-            projects: ['./tsconfig.json'],
-        }),
-        tailwindcss(),
-        tanstackStart(),
-        solidPlugin({ ssr: true }),
-    ],
-})
+	plugins: [
+		!isProd && devtools(),
+		nitro({
+			vercel: {
+				functions: {
+					runtime: "bun1.x",
+				},
+			},
+		}),
+		viteTsConfigPaths({
+			projects: ["./tsconfig.json"],
+		}),
+		tailwindcss(),
+		tanstackStart(),
+		solidPlugin({ ssr: true }),
+	],
+});

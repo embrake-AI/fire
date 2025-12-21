@@ -1,10 +1,4 @@
-import {
-	createFileRoute,
-	Link,
-	Outlet,
-	redirect,
-	useLocation,
-} from "@tanstack/solid-router";
+import { createFileRoute, Link, Outlet, redirect, useLocation } from "@tanstack/solid-router";
 import { Settings } from "lucide-solid";
 import { createMemo } from "solid-js";
 import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
