@@ -1,19 +1,5 @@
+import type { IS } from "@fire/common";
 import { createServerFn } from "@tanstack/solid-start";
-
-/**
- * TODO: @Miquel -> Add title/description to incident
- * and prob. move incident definition and types to a common package
- */
-export type Incident = {
-	id: string;
-	status: "open" | "mitigating" | "resolved";
-	severity: "low" | "medium" | "high";
-	createdAt: string;
-	updatedAt: string;
-	prompt: string;
-	assignee: string | null;
-	source: "slack" | "dashboard";
-};
 
 export const getIncidents = createServerFn({
 	method: "GET",
@@ -22,7 +8,7 @@ export const getIncidents = createServerFn({
 	if (!response.ok) {
 		throw new Error("Failed to fetch incidents");
 	}
-	const { incidents } = (await response.json()) as { incidents: Incident[] };
+	const { incidents } = (await response.json()) as { incidents: IS[] };
 	return incidents;
 });
 
@@ -33,6 +19,51 @@ export const getIncidentById = createServerFn({ method: "GET" })
 		if (!response.ok) {
 			throw new Error("Failed to fetch incident");
 		}
-		const { incident } = (await response.json()) as { incident: Incident };
+		const { incident } = (await response.json()) as { incident: IS };
+		return incident;
+	});
+
+export const updateAssignee = createServerFn({ method: "POST" })
+	.inputValidator((data: { id: string; assignee: string }) => data)
+	.handler(async ({ data }) => {
+		const response = await fetch(`${process.env.INCIDENTS_URL}/${data.id}/assignee`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ assignee: data.assignee }),
+		});
+		if (!response.ok) {
+			throw new Error("Failed to update assignee");
+		}
+		const { incident } = (await response.json()) as { incident: IS };
+		return incident;
+	});
+
+export const updatePriority = createServerFn({ method: "POST" })
+	.inputValidator((data: { id: string; priority: IS["severity"] }) => data)
+	.handler(async ({ data }) => {
+		const response = await fetch(`${process.env.INCIDENTS_URL}/${data.id}/priority`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ priority: data.priority }),
+		});
+		if (!response.ok) {
+			throw new Error("Failed to update priority");
+		}
+		const { incident } = (await response.json()) as { incident: IS };
+		return incident;
+	});
+
+export const startIncident = createServerFn({ method: "POST" })
+	.inputValidator((data: { prompt: string }) => data)
+	.handler(async ({ data }) => {
+		const response = await fetch(process.env.INCIDENTS_URL!, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ prompt: data.prompt }),
+		});
+		if (!response.ok) {
+			throw new Error("Failed to start incident");
+		}
+		const { incident } = (await response.json()) as { incident: IS };
 		return incident;
 	});

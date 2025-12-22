@@ -13,7 +13,6 @@
 		"clean": "rm -rf node_modules .wrangler"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "catalog:",
 		"@slack/types": "^2.19.0",
 		"@types/node": "^25.0.3",
 		"@types/pg": "catalog:",

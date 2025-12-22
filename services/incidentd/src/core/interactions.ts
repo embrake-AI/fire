@@ -29,13 +29,15 @@ export async function startIncident({
 }
 
 export async function listIncidents({ c }: { c: EnvContext }) {
-	const incidents = await c.env.incidents.prepare("SELECT id, identifier, status, assignee, severity, createdAt FROM incident").all<{
+	const incidents = await c.env.incidents.prepare("SELECT id, identifier, status, assignee, severity, createdAt, title, description FROM incident").all<{
 		id: number;
 		identifier: string;
 		status: string;
 		assignee: string;
 		severity: string;
 		createdAt: string;
+		title: string;
+		description: string;
 	}>();
 	return incidents.results;
 }
@@ -49,13 +51,15 @@ export async function getIncident({ c, id }: { c: EnvContext; id: string }) {
 export async function updatePriority({ c, id, priority }: { c: EnvContext; id: string; priority: IS["severity"] }) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	await incident.setPriority(priority);
+	const updatedIncident = await incident.setPriority(priority);
 	await c.env.incidents.prepare("UPDATE incident SET severity = ? WHERE id = ?").bind(priority, incidentId.toString()).run();
+	return updatedIncident;
 }
 
 export async function updateAssignee({ c, id, assignee }: { c: EnvContext; id: string; assignee: IS["assignee"] }) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	await incident.setAssignee(assignee);
+	const updatedIncident = await incident.setAssignee(assignee);
 	await c.env.incidents.prepare("UPDATE incident SET assignee = ? WHERE id = ?").bind(assignee, incidentId.toString()).run();
+	return updatedIncident;
 }

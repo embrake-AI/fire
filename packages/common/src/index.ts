@@ -10,7 +10,6 @@ type IS_SOURCE = (typeof IS_SOURCE)[number];
 export type IS = {
 	id: string;
 	createdAt: Date;
-	updatedAt: Date;
 	status: IS_STATUS;
 	prompt: string;
 	severity: IS_SEVERITY;

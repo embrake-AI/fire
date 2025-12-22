@@ -2,8 +2,8 @@ import { type QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanstack/solid-router";
 import { Suspense } from "solid-js";
 import { HydrationScript } from "solid-js/web";
-
 import Header from "~/components/Header";
+import { Button } from "~/components/ui/button";
 import { getContext } from "~/integrations/tanstack-query/provider";
 import styleCss from "~/styles.css?url";
 
@@ -30,9 +30,9 @@ function NotFound() {
 		<div class="flex-1 flex flex-col items-center justify-center gap-4 p-8">
 			<h1 class="text-4xl font-bold text-zinc-200">404</h1>
 			<p class="text-zinc-400">Page not found</p>
-			<a href="/" class="text-orange-400 hover:text-orange-300 underline">
+			<Button as="a" href="/" variant="link" class="text-orange-400 hover:text-orange-300">
 				Go back home
-			</a>
+			</Button>
 		</div>
 	);
 }

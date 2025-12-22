@@ -1,4 +1,7 @@
+import type { IS } from "@fire/common";
+import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
+import { useServerFn } from "@tanstack/solid-start";
 import { ChevronRight, CircleCheck, Flame, ShieldAlert, Wrench } from "lucide-solid";
 import type { JSX } from "solid-js";
 import { createMemo, For, Show } from "solid-js";
@@ -6,15 +9,25 @@ import { Badge } from "~/components/ui/badge";
 import { Card } from "~/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { getSeverity, getStatus } from "~/lib/incident-config";
-import { getIncidents, type Incident } from "~/lib/incidents";
+import { getIncidents } from "~/lib/incidents";
 
 export const Route = createFileRoute("/")({
 	component: IncidentsList,
-	loader: () => getIncidents(),
+	loader: ({ context }) =>
+		context.queryClient.ensureQueryData({
+			queryKey: ["incidents"],
+			queryFn: () => getIncidents(),
+		}),
 });
 
 function IncidentsList() {
-	const incidents = Route.useLoaderData();
+	const getIncidentsFn = useServerFn(getIncidents);
+	const incidentsQuery = useQuery(() => ({
+		queryKey: ["incidents"],
+		queryFn: getIncidentsFn,
+		refetchInterval: 15_000,
+	}));
+	const incidents = () => incidentsQuery.data ?? [];
 
 	const openIncidents = createMemo(() => incidents().filter((inc) => inc.status === "open"));
 	const mitigatingIncidents = createMemo(() => incidents().filter((inc) => inc.status === "mitigating"));
@@ -102,7 +115,7 @@ function IncidentSection(props: {
 	icon: JSX.Element;
 	iconBg: string;
 	title: string;
-	incidents: Incident[];
+	incidents: IS[];
 	cardVariant?: "prominent" | "default" | "muted";
 	wrapperClass?: string;
 	collapsible?: boolean;
@@ -154,7 +167,7 @@ function IncidentSection(props: {
 	);
 }
 
-function IncidentCard(props: { incident: Incident; prominent?: boolean; muted?: boolean }) {
+function IncidentCard(props: { incident: IS; prominent?: boolean; muted?: boolean }) {
 	const severity = () => getSeverity(props.incident.severity);
 	const status = () => getStatus(props.incident.status);
 

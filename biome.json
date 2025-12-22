@@ -33,16 +33,19 @@
 		"enabled": true,
 		"rules": {
 			"recommended": true,
-            "style": {
-                "noNonNullAssertion": "off"
-            },
+			"style": {
+				"noNonNullAssertion": "off"
+			},
 			"correctness": {
 				"useImportExtensions": "off"
+			},
+			"complexity": {
+				"noUselessConstructor": "off"
 			}
 		},
-        "domains": {
-            "project": "all"
-        }
+		"domains": {
+			"project": "all"
+		}
 	},
 	"javascript": {
 		"formatter": {

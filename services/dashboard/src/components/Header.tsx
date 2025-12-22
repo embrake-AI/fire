@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/solid-router";
 import { Flame, Settings } from "lucide-solid";
+import StartIncidentButton from "./StartIncidentButton";
 
 export default function Header() {
 	return (
@@ -8,9 +9,12 @@ export default function Header() {
 				<Flame class="w-6 h-6 text-orange-500" />
 				<span class="text-lg font-semibold tracking-tight">Incidents</span>
 			</Link>
-			<Link to="/config/assignees" class="p-2 rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors">
-				<Settings class="w-5 h-5" />
-			</Link>
+			<div class="flex items-center gap-3">
+				<StartIncidentButton />
+				<Link to="/config/entry-points" class="p-2 rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors">
+					<Settings class="w-5 h-5" />
+				</Link>
+			</div>
 		</header>
 	);
 }

@@ -12,20 +12,11 @@ async function calculateIncidentInfo(_prompt: string) {
 
 /**
  * An Incident is the source of truth for an incident. It is agnostic of the communication channel(s).
- * It provides the interface to track and update the incident.
- * It does NOT handle interactions with the incident.
+ * All operations guarantee transactional consistency: https://blog.cloudflare.com/durable-objects-easy-fast-correct-choose-three/
  */
 export class Incident extends DurableObject<Env> {
-	/**
-	 * The state of the incident. It is kept in memory until the incident is resolved.
-	 */
-	private state: IS | undefined = undefined;
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		this.ctx.blockConcurrencyWhile(async () => {
-			const values = await this.ctx.storage.get<IS>("incident");
-			this.state = values;
-		});
 	}
 
 	private async init({ id, prompt, createdBy, source }: Pick<IS, "id" | "prompt" | "createdBy" | "source">) {
@@ -33,7 +24,6 @@ export class Incident extends DurableObject<Env> {
 		const payload = {
 			id,
 			createdAt: new Date(),
-			updatedAt: new Date(),
 			status: "open",
 			severity,
 			createdBy,
@@ -44,7 +34,6 @@ export class Incident extends DurableObject<Env> {
 			source,
 		} as const;
 		await this.ctx.storage.put<IS>("incident", payload);
-		this.state = payload;
 		return payload;
 	}
 
@@ -61,20 +50,24 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	async setPriority(priority: IS["severity"]) {
-		ASSERT(this.state, "Incident not initialized");
-		this.state.severity = priority;
-		this.state.updatedAt = new Date();
-		await this.ctx.storage.put<IS>("incident", this.state);
+		const state = await this.ctx.storage.get<IS>("incident");
+		ASSERT(state, "Incident not initialized");
+		state.severity = priority;
+		await this.ctx.storage.put<IS>("incident", state);
+		return state;
 	}
 
 	async setAssignee(assignee: IS["assignee"]) {
-		ASSERT(this.state, "Incident not initialized");
-		this.state.assignee = assignee;
-		this.state.updatedAt = new Date();
-		await this.ctx.storage.put<IS>("incident", this.state);
+		const state = await this.ctx.storage.get<IS>("incident");
+		ASSERT(state, "Incident not initialized");
+		state.assignee = assignee;
+		await this.ctx.storage.put<IS>("incident", state);
+		return state;
 	}
 
 	async get() {
-		return this.state;
+		const state = await this.ctx.storage.get<IS>("incident");
+		// and more
+		return state;
 	}
 }

@@ -13,7 +13,7 @@ import { Route as ConfigRouteImport } from './routes/config'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as IncidentsIncidentIdRouteImport } from './routes/incidents.$incidentId'
 import { Route as ConfigEscalationRouteImport } from './routes/config.escalation'
-import { Route as ConfigAssigneesRouteImport } from './routes/config.assignees'
+import { Route as ConfigEntryPointsRouteImport } from './routes/config.entry-points'
 
 const ConfigRoute = ConfigRouteImport.update({
   id: '/config',
@@ -35,23 +35,23 @@ const ConfigEscalationRoute = ConfigEscalationRouteImport.update({
   path: '/escalation',
   getParentRoute: () => ConfigRoute,
 } as any)
-const ConfigAssigneesRoute = ConfigAssigneesRouteImport.update({
-  id: '/assignees',
-  path: '/assignees',
+const ConfigEntryPointsRoute = ConfigEntryPointsRouteImport.update({
+  id: '/entry-points',
+  path: '/entry-points',
   getParentRoute: () => ConfigRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/config': typeof ConfigRouteWithChildren
-  '/config/assignees': typeof ConfigAssigneesRoute
+  '/config/entry-points': typeof ConfigEntryPointsRoute
   '/config/escalation': typeof ConfigEscalationRoute
   '/incidents/$incidentId': typeof IncidentsIncidentIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/config': typeof ConfigRouteWithChildren
-  '/config/assignees': typeof ConfigAssigneesRoute
+  '/config/entry-points': typeof ConfigEntryPointsRoute
   '/config/escalation': typeof ConfigEscalationRoute
   '/incidents/$incidentId': typeof IncidentsIncidentIdRoute
 }
@@ -59,7 +59,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/config': typeof ConfigRouteWithChildren
-  '/config/assignees': typeof ConfigAssigneesRoute
+  '/config/entry-points': typeof ConfigEntryPointsRoute
   '/config/escalation': typeof ConfigEscalationRoute
   '/incidents/$incidentId': typeof IncidentsIncidentIdRoute
 }
@@ -68,21 +68,21 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/config'
-    | '/config/assignees'
+    | '/config/entry-points'
     | '/config/escalation'
     | '/incidents/$incidentId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/config'
-    | '/config/assignees'
+    | '/config/entry-points'
     | '/config/escalation'
     | '/incidents/$incidentId'
   id:
     | '__root__'
     | '/'
     | '/config'
-    | '/config/assignees'
+    | '/config/entry-points'
     | '/config/escalation'
     | '/incidents/$incidentId'
   fileRoutesById: FileRoutesById
@@ -123,23 +123,23 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof ConfigEscalationRouteImport
       parentRoute: typeof ConfigRoute
     }
-    '/config/assignees': {
-      id: '/config/assignees'
-      path: '/assignees'
-      fullPath: '/config/assignees'
-      preLoaderRoute: typeof ConfigAssigneesRouteImport
+    '/config/entry-points': {
+      id: '/config/entry-points'
+      path: '/entry-points'
+      fullPath: '/config/entry-points'
+      preLoaderRoute: typeof ConfigEntryPointsRouteImport
       parentRoute: typeof ConfigRoute
     }
   }
 }
 
 interface ConfigRouteChildren {
-  ConfigAssigneesRoute: typeof ConfigAssigneesRoute
+  ConfigEntryPointsRoute: typeof ConfigEntryPointsRoute
   ConfigEscalationRoute: typeof ConfigEscalationRoute
 }
 
 const ConfigRouteChildren: ConfigRouteChildren = {
-  ConfigAssigneesRoute: ConfigAssigneesRoute,
+  ConfigEntryPointsRoute: ConfigEntryPointsRoute,
   ConfigEscalationRoute: ConfigEscalationRoute,
 }
 

@@ -1,15 +1,16 @@
+import type { IS } from "@fire/common";
 import { CircleAlert, Info, TriangleAlert } from "lucide-solid";
 import type { JSX } from "solid-js";
-import type { Incident } from "./incidents";
 
-export type Severity = Incident["severity"];
-export type Status = Incident["status"];
+export type Severity = IS["severity"];
+export type Status = IS["status"];
 
 interface SeverityConfig {
 	icon: (size: "sm" | "md") => JSX.Element;
 	color: string;
 	bg: string;
 	border: string;
+	dot: string;
 	label: string;
 }
 
@@ -31,6 +32,7 @@ export const severityConfig: Record<Severity, SeverityConfig> = {
 		color: "text-red-600",
 		bg: "bg-red-50",
 		border: "border-red-200",
+		dot: "bg-red-500",
 		label: "High",
 	},
 	medium: {
@@ -38,6 +40,7 @@ export const severityConfig: Record<Severity, SeverityConfig> = {
 		color: "text-amber-600",
 		bg: "bg-amber-50",
 		border: "border-amber-200",
+		dot: "bg-amber-500",
 		label: "Medium",
 	},
 	low: {
@@ -45,6 +48,7 @@ export const severityConfig: Record<Severity, SeverityConfig> = {
 		color: "text-blue-600",
 		bg: "bg-blue-50",
 		border: "border-blue-200",
+		dot: "bg-blue-500",
 		label: "Low",
 	},
 };

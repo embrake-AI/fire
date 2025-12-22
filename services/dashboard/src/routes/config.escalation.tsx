@@ -4,7 +4,7 @@ import { Card } from "~/components/ui/card";
 
 export const Route = createFileRoute("/config/escalation")({
 	loader: async () => {
-		return { escalation: "test" };
+		/** TODO */
 	},
 	component: EscalationConfig,
 });

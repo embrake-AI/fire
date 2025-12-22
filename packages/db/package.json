@@ -32,10 +32,10 @@
 		"clean": "rm -rf dist node_modules"
 	},
 	"dependencies": {
+		"@types/bun": "^1.3.5",
 		"drizzle-orm": "catalog:"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "catalog:",
 		"drizzle-kit": "^0.31.8"
 	},
 	"version": "0.0.71"

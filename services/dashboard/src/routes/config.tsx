@@ -7,7 +7,7 @@ export const Route = createFileRoute("/config")({
 	component: ConfigLayout,
 	beforeLoad: ({ location }) => {
 		if (location.pathname === "/config") {
-			throw redirect({ to: "/config/assignees" });
+			throw redirect({ to: "/config/entry-points" });
 		}
 	},
 });
@@ -18,7 +18,7 @@ function ConfigLayout() {
 	const activeTab = createMemo(() => {
 		const path = location().pathname;
 		if (path.includes("escalation")) return "escalation";
-		return "assignees";
+		return "entry-points";
 	});
 
 	return (
@@ -33,8 +33,8 @@ function ConfigLayout() {
 
 				<Tabs value={activeTab()}>
 					<TabsList>
-						<TabsTrigger value="assignees" as={Link} to="/config/assignees">
-							Assignees
+						<TabsTrigger value="entry-points" as={Link} to="/config/entry-points">
+							Entry Points
 						</TabsTrigger>
 						<TabsTrigger value="escalation" as={Link} to="/config/escalation">
 							Escalation
