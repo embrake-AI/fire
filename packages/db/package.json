@@ -36,7 +36,8 @@
 		"drizzle-orm": "catalog:"
 	},
 	"devDependencies": {
-		"drizzle-kit": "^0.31.8"
+		"drizzle-kit": "^0.31.8",
+		"typescript": "catalog:"
 	},
 	"version": "0.0.71"
 }

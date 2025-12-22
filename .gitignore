@@ -6,9 +6,6 @@ dist/
 .output/
 *.tsbuildinfo
 
-# Bun
-bun.lock
-
 # Vite
 *.local
 
