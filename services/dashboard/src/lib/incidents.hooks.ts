@@ -1,28 +1,28 @@
 import type { IS } from "@fire/common";
 import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
-import { updateAssignee, updatePriority } from "./incidents";
+import { updateAssignee, updateSeverity } from "./incidents";
 
 /**
- * Hook for updating incident priority with optimistic updates.
- * Immediately updates the priority in cache, rolls back on error.
+ * Hook for updating incident severity with optimistic updates.
+ * Immediately updates the severity in cache, rolls back on error.
  */
-export function useUpdateIncidentPriority(incidentId: string, options?: { onSuccess?: () => void; onError?: () => void }) {
+export function useUpdateIncidentSeverity(incidentId: string, options?: { onSuccess?: () => void; onError?: () => void }) {
 	const queryClient = useQueryClient();
 
-	const updatePriorityFn = useServerFn(updatePriority);
+	const updateSeverityFn = useServerFn(updateSeverity);
 
 	return useMutation(() => ({
-		mutationFn: async (priority: IS["severity"]) => {
-			await updatePriorityFn({ data: { id: incidentId, priority } });
+		mutationFn: async (severity: IS["severity"]) => {
+			await updateSeverityFn({ data: { id: incidentId, severity } });
 		},
 
-		onMutate: async (priority) => {
+		onMutate: async (severity) => {
 			await queryClient.cancelQueries({ queryKey: ["incident", incidentId] });
 
 			const previousIncident = queryClient.getQueryData<IS>(["incident", incidentId]);
 
-			queryClient.setQueryData(["incident", incidentId], { ...previousIncident, severity: priority });
+			queryClient.setQueryData(["incident", incidentId], { ...previousIncident, severity });
 
 			return { previousIncident };
 		},

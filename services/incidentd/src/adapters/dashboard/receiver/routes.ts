@@ -1,6 +1,8 @@
 import { Hono } from "hono";
-import { getIncident, listIncidents, startIncident, updateAssignee, updatePriority } from "../../core/interactions";
-import { type DashboardContext, verifyDashboardRequestMiddleware } from "./middleware";
+import { type BasicContext, getIncident, listIncidents, startIncident, updateAssignee, updateSeverity } from "../../../handler/index";
+import { verifyDashboardRequestMiddleware } from "./middleware";
+
+type DashboardContext = BasicContext & { Variables: { auth: { clientId: string; userId: string } } };
 
 const dashboardRoutes = new Hono<DashboardContext>().use(verifyDashboardRequestMiddleware);
 
@@ -30,6 +32,7 @@ dashboardRoutes.post("/", async (c) => {
 		prompt,
 		createdBy: auth.userId,
 		source: "dashboard",
+		m: {},
 	});
 	return c.json({ incident });
 });
@@ -44,18 +47,18 @@ dashboardRoutes.post("/:id/assignee", async (c) => {
 	return c.json({ incident });
 });
 
-dashboardRoutes.post("/:id/priority", async (c) => {
+dashboardRoutes.post("/:id/severity", async (c) => {
 	const id = c.req.param("id");
 	if (!id) {
 		return c.json({ error: "ID is required" }, 400);
 	}
-	const { priority } = await c.req.json<{ priority: "low" | "medium" | "high" }>();
+	const { severity } = await c.req.json<{ severity: "low" | "medium" | "high" }>();
 
-	if (!["low", "medium", "high"].includes(priority)) {
-		return c.json({ error: "Invalid priority" }, 400);
+	if (!["low", "medium", "high"].includes(severity)) {
+		return c.json({ error: "Invalid severity" }, 400);
 	}
 
-	const incident = await updatePriority({ c, id, priority });
+	const incident = await updateSeverity({ c, id, severity });
 	return c.json({ incident });
 });
 

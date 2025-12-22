@@ -48,21 +48,21 @@ export const updateAssignee = createServerFn({ method: "POST" })
 		return incident;
 	});
 
-export const updatePriority = createServerFn({ method: "POST" })
-	.inputValidator((data: { id: string; priority: IS["severity"] }) => data)
+export const updateSeverity = createServerFn({ method: "POST" })
+	.inputValidator((data: { id: string; severity: IS["severity"] }) => data)
 	.middleware([authMiddleware])
 	.handler(async ({ data, context }) => {
 		const response = await signedFetch(
-			`${process.env.INCIDENTS_URL}/${data.id}/priority`,
+			`${process.env.INCIDENTS_URL}/${data.id}/severity`,
 			{ clientId: context.clientId, userId: context.userId },
 			{
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ priority: data.priority }),
+				body: JSON.stringify({ severity: data.severity }),
 			},
 		);
 		if (!response.ok) {
-			throw new Error("Failed to update priority");
+			throw new Error("Failed to update severity");
 		}
 		const { incident } = (await response.json()) as { incident: IS };
 		return incident;

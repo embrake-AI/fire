@@ -1,15 +1,5 @@
 import type { Context, Next } from "hono";
-
-type AuthContext = {
-	clientId: string;
-	userId: string;
-};
-export type DashboardContext = {
-	Bindings: Env;
-	Variables: {
-		auth: AuthContext;
-	};
-};
+import type { AuthContext } from "../../../handler";
 
 /**
  * Middleware to verify HMAC-signed requests from the dashboard.
@@ -19,7 +9,7 @@ export type DashboardContext = {
  * - X-Auth-Message: JSON stringified {clientId, userId}
  * - X-Auth-Sig: base64url(HMAC_SHA256(secret, ts:message))
  */
-export async function verifyDashboardRequestMiddleware(c: Context<DashboardContext>, next: Next) {
+export async function verifyDashboardRequestMiddleware(c: Context<AuthContext>, next: Next) {
 	const ts = c.req.header("X-Auth-Ts");
 	const message = c.req.header("X-Auth-Message");
 	const sig = c.req.header("X-Auth-Sig");
@@ -44,7 +34,7 @@ export async function verifyDashboardRequestMiddleware(c: Context<DashboardConte
 	}
 
 	// Parse and validate message
-	let authContext: AuthContext;
+	let authContext: { clientId: string; userId: string };
 	try {
 		const parsed = JSON.parse(message);
 		if (!parsed.clientId || !parsed.userId) {

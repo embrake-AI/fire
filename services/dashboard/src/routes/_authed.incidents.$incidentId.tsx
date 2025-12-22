@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/u
 import { getSlackUserGroups, getSlackUsers } from "~/lib/entry-points";
 import { getSeverity, getStatus } from "~/lib/incident-config";
 import { getIncidentById } from "~/lib/incidents";
-import { useUpdateIncidentAssignee, useUpdateIncidentPriority } from "~/lib/incidents.hooks";
+import { useUpdateIncidentAssignee, useUpdateIncidentSeverity } from "~/lib/incidents.hooks";
 
 export const Route = createFileRoute("/_authed/incidents/$incidentId")({
 	component: IncidentDetail,
@@ -42,7 +42,7 @@ export const Route = createFileRoute("/_authed/incidents/$incidentId")({
 });
 
 function IncidentHeader(props: { incident: IS }) {
-	const updatePriorityMutation = useUpdateIncidentPriority(props.incident.id);
+	const updateSeverityMutation = useUpdateIncidentSeverity(props.incident.id);
 	const updateAssigneeMutation = useUpdateIncidentAssignee(props.incident.id);
 
 	const status = () => getStatus(props.incident.status);
@@ -86,10 +86,10 @@ function IncidentHeader(props: { incident: IS }) {
 
 				{/* Inline metadata controls */}
 				<div class="flex flex-wrap items-center gap-3">
-					{/* Priority Selector */}
+					{/* Severity Selector */}
 					<Select
 						value={props.incident.severity}
-						onChange={(val) => val && updatePriorityMutation.mutate(val as IS["severity"])}
+						onChange={(val) => val && updateSeverityMutation.mutate(val as IS["severity"])}
 						options={["low", "medium", "high"]}
 						itemComponent={(props) => {
 							const config = getSeverity(props.item.rawValue as IS["severity"]);

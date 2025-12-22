@@ -1,13 +1,11 @@
 import { Hono } from "hono";
-import { dashboardRoutes } from "./adapter/dashboard/routes";
-import { slackRoutes } from "./adapter/slack/routes";
+import { dashboardRoutes } from "./adapters/dashboard/receiver/routes";
+import { slackRoutes } from "./adapters/slack/receiver/routes";
 
 export { Incident } from "./core/incident";
 
 const app = new Hono<{ Bindings: Env }>();
 
-// TODO: Add middleware auth here.
-// we should be able to get
 app.route("/slack", slackRoutes);
 app.route("/dashboard", dashboardRoutes);
 
