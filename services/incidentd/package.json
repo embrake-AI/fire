@@ -15,13 +15,12 @@
 	"devDependencies": {
 		"@slack/types": "^2.19.0",
 		"@types/node": "^25.0.3",
-		"@types/pg": "catalog:",
 		"wrangler": "^4.56.0"
 	},
 	"dependencies": {
 		"hono": "^4.11.1",
 		"drizzle-orm": "catalog:",
-		"pg": "catalog:",
+		"postgres": "^3.4.5",
 		"@fire/db": "workspace:*",
 		"@fire/common": "workspace:*"
 	}

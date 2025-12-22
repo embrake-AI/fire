@@ -1,16 +1,20 @@
 import * as schema from "@fire/db/schema";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Client } from "pg";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 
-// import ca from "~/certs/tigerdata-chain.pem?raw" with { type: "text" }; TODO: think how to do this
-
-let drizzleClient: ReturnType<typeof drizzle<typeof schema, Client>> | null = null;
-
-export async function getDB() {
-	if (drizzleClient) return drizzleClient;
-	const connection = new Client({
-		connectionString: process.env.DATABASE_URL,
+/**
+ * Creates a database connection using Hyperdrive.
+ *
+ * Note: We create a new client per request because Hyperdrive handles
+ * connection pooling on the edge. The postgres-js client is lightweight
+ * and designed for this pattern.
+ *
+ * @see https://developers.cloudflare.com/hyperdrive/examples/connect-to-postgres/postgres-drivers-and-libraries/drizzle-orm/
+ */
+export function getDB(hyperdrive: Hyperdrive) {
+	const client = postgres(hyperdrive.connectionString, {
+		// Limit connections per Worker request due to Workers' limits on concurrent external connections
+		max: 5,
 	});
-	drizzleClient = drizzle(connection, { schema });
-	return drizzleClient;
+	return drizzle(client, { schema });
 }

@@ -31,12 +31,13 @@ type SlackEventPayload =
  * - It varies across installation types and payload variants
  */
 async function getSlackIntegration(opts: {
+	hyperdrive: Hyperdrive;
 	teamId: string;
 	enterpriseId?: string | null;
 	isEnterpriseInstall?: boolean;
 }): Promise<{ clientId: string; data: SlackIntegrationData } | null> {
-	const { teamId, enterpriseId, isEnterpriseInstall = false } = opts;
-	const db = await getDB();
+	const { hyperdrive, teamId, enterpriseId, isEnterpriseInstall = false } = opts;
+	const db = getDB(hyperdrive);
 
 	const [result] = await db
 		.select({ clientId: integration.clientId, data: integration.data })
@@ -125,6 +126,7 @@ slackRoutes.post("/events", async (c) => {
 					const isEnterpriseInstall = body.is_enterprise_install ?? false;
 
 					const slackIntegration = await getSlackIntegration({
+						hyperdrive: c.env.db,
 						teamId,
 						enterpriseId,
 						isEnterpriseInstall,

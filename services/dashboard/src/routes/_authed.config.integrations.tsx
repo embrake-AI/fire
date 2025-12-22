@@ -41,7 +41,7 @@ function IntegrationsConfig() {
 	createEffect(
 		on(
 			() => params().installed,
-			async (installed) => {
+			(installed) => {
 				if (installed) {
 					integrationsQuery.refetch();
 					showToast({
@@ -52,6 +52,7 @@ function IntegrationsConfig() {
 					navigate({ to: ".", search: {}, replace: true });
 				}
 			},
+			{ defer: false },
 		),
 	);
 
