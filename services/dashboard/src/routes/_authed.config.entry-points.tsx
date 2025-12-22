@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/solid-query";
-import { createFileRoute } from "@tanstack/solid-router";
-import { LoaderCircle, Pencil, Plus, Trash2, TriangleAlert, Users, UsersRound, X } from "lucide-solid";
+import { createFileRoute, Link } from "@tanstack/solid-router";
+import { useServerFn } from "@tanstack/solid-start";
+import { Link2, LoaderCircle, Pencil, Plus, Trash2, TriangleAlert, Users, UsersRound, X } from "lucide-solid";
 import { type Accessor, createEffect, createSignal, Index, Show } from "solid-js";
 import { type SlackEntity, SlackEntityPicker } from "~/components/SlackEntityPicker";
 import { AutoSaveTextarea } from "~/components/ui/auto-save-textarea";
@@ -8,14 +9,16 @@ import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { type EntryPoint, getEntryPoints } from "~/lib/entry-points";
 import { toCreateGroupInput, toCreateInput, useCreateEntryPoint, useDeleteEntryPoint, useUpdateEntryPointPrompt } from "~/lib/entry-points.hooks";
-import { cn } from "~/lib/utils";
+import { getIntegrations } from "~/lib/integrations";
+import { cn } from "~/lib/utils/client";
 
-export const Route = createFileRoute("/config/entry-points")({
+export const Route = createFileRoute("/_authed/config/entry-points")({
 	component: EntryPointsConfig,
 	loader: ({ context }) =>
-		context.queryClient.ensureQueryData({
+		context.queryClient.prefetchQuery({
 			queryKey: ["entry-points"],
 			queryFn: getEntryPoints,
+			staleTime: 60_000,
 		}),
 });
 
@@ -70,25 +73,27 @@ function EntryPointsConfig() {
 			<div class="space-y-6">
 				<AddEntryPointPicker isOpen={isPickerOpen} setIsOpen={setIsPickerOpen} isAdding={() => createMutation.isPending} onSelect={handleSelectEntity} />
 
-				<Show when={entryPoints().length > 0} fallback={<EntryPointsEmptyState />}>
-					<div class="space-y-3">
-						<Index each={entryPoints()}>
-							{(entryPoint, index) => (
-								<EntryPointCard
-									entryPoint={entryPoint()}
-									name={entryPoint().name}
-									index={index}
-									onDelete={handleDelete}
-									onUpdatePrompt={handleUpdatePrompt}
-									isDeleting={deleteMutation.isPending && deleteMutation.variables === entryPoint().id}
-									isNewlyCreated={newlyCreatedId() === entryPoint().id}
-									onEditComplete={() => {
-										setNewlyCreatedId(null);
-									}}
-								/>
-							)}
-						</Index>
-					</div>
+				<Show when={!isPickerOpen()}>
+					<Show when={entryPoints().length > 0} fallback={<EntryPointsEmptyState />}>
+						<div class="space-y-3">
+							<Index each={entryPoints()}>
+								{(entryPoint, index) => (
+									<EntryPointCard
+										entryPoint={entryPoint()}
+										name={entryPoint().name}
+										index={index}
+										onDelete={handleDelete}
+										onUpdatePrompt={handleUpdatePrompt}
+										isDeleting={deleteMutation.isPending && deleteMutation.variables === entryPoint().id}
+										isNewlyCreated={newlyCreatedId() === entryPoint().id}
+										onEditComplete={() => {
+											setNewlyCreatedId(null);
+										}}
+									/>
+								)}
+							</Index>
+						</div>
+					</Show>
 				</Show>
 
 				<EntryPointsFooter count={entryPoints().filter((ep) => !!ep.prompt).length} />
@@ -108,6 +113,12 @@ interface AddEntryPointPickerProps {
 
 function AddEntryPointPicker(props: AddEntryPointPickerProps) {
 	const handleCancel = () => props.setIsOpen(false);
+	const getIntegrationFn = useServerFn(getIntegrations);
+	const integrationQuery = useQuery(() => ({
+		queryKey: ["integration"],
+		queryFn: getIntegrationFn,
+		staleTime: 60_000,
+	}));
 
 	return (
 		<Show
@@ -126,7 +137,24 @@ function AddEntryPointPicker(props: AddEntryPointPickerProps) {
 						<X class="w-4 h-4" />
 					</Button>
 				</div>
-				<SlackEntityPicker onSelect={props.onSelect} disabled={props.isAdding()} placeholder="Search users or groups..." emptyMessage="All users and groups have been added." />
+				<Show when={integrationQuery.data?.some((i) => i.platform === "slack" && i.installedAt)}>
+					<SlackEntityPicker onSelect={props.onSelect} disabled={props.isAdding()} placeholder="Search users or groups..." emptyMessage="All users and groups have been added." />
+				</Show>
+				<Show when={!integrationQuery.data?.length}>
+					<div class="flex flex-col items-center justify-center py-8 px-6 text-center">
+						<div class="relative mb-4">
+							<div class="absolute inset-0 bg-amber-400/20 rounded-full blur-xl animate-pulse" />
+							<div class="relative p-3 rounded-full bg-gradient-to-br from-amber-100 to-amber-50 border border-amber-200/60">
+								<Link2 class="w-6 h-6 text-amber-600" />
+							</div>
+						</div>
+						<h4 class="text-sm font-medium text-foreground mb-1">No connected integrations</h4>
+						<p class="text-sm text-muted-foreground max-w-xs mb-4">Connect an integration to start adding entry points for incident routing.</p>
+						<Button as={Link} to="/config/integrations" variant="outline" size="sm" class="cursor-pointer">
+							Connect Integration
+						</Button>
+					</div>
+				</Show>
 			</div>
 		</Show>
 	);

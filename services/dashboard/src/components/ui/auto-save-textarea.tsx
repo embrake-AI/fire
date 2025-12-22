@@ -1,6 +1,6 @@
 import { Check, LoaderCircle } from "lucide-solid";
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
-import { cn } from "~/lib/utils";
+import { cn } from "~/lib/utils/client";
 
 export interface AutoSaveTextareaProps {
 	/** Initial value */

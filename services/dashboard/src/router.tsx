@@ -8,7 +8,12 @@ export const getRouter = () => {
 
 	const router = createRouter({
 		routeTree,
-		context: { ...rqContext },
+		context: {
+			...rqContext,
+			// Auth context will be populated by root route's beforeLoad
+			clientId: null,
+			userId: null,
+		},
 		defaultPreload: "intent",
 	});
 

@@ -9,147 +9,280 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ConfigRouteImport } from './routes/config'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as IncidentsIncidentIdRouteImport } from './routes/incidents.$incidentId'
-import { Route as ConfigEscalationRouteImport } from './routes/config.escalation'
-import { Route as ConfigEntryPointsRouteImport } from './routes/config.entry-points'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as AuthedRouteImport } from './routes/_authed'
+import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
+import { Route as AuthErrorRouteImport } from './routes/auth.error'
+import { Route as AuthedConfigRouteImport } from './routes/_authed.config'
+import { Route as SlackOauthCallbackRouteImport } from './routes/slack/oauth/callback'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as AuthedIncidentsIncidentIdRouteImport } from './routes/_authed.incidents.$incidentId'
+import { Route as AuthedConfigIntegrationsRouteImport } from './routes/_authed.config.integrations'
+import { Route as AuthedConfigEscalationRouteImport } from './routes/_authed.config.escalation'
+import { Route as AuthedConfigEntryPointsRouteImport } from './routes/_authed.config.entry-points'
 
-const ConfigRoute = ConfigRouteImport.update({
-  id: '/config',
-  path: '/config',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
+const AuthedRoute = AuthedRouteImport.update({
+  id: '/_authed',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthErrorRoute = AuthErrorRouteImport.update({
+  id: '/auth/error',
+  path: '/auth/error',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IncidentsIncidentIdRoute = IncidentsIncidentIdRouteImport.update({
-  id: '/incidents/$incidentId',
-  path: '/incidents/$incidentId',
+const AuthedConfigRoute = AuthedConfigRouteImport.update({
+  id: '/config',
+  path: '/config',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const SlackOauthCallbackRoute = SlackOauthCallbackRouteImport.update({
+  id: '/slack/oauth/callback',
+  path: '/slack/oauth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ConfigEscalationRoute = ConfigEscalationRouteImport.update({
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthedIncidentsIncidentIdRoute =
+  AuthedIncidentsIncidentIdRouteImport.update({
+    id: '/incidents/$incidentId',
+    path: '/incidents/$incidentId',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedConfigIntegrationsRoute =
+  AuthedConfigIntegrationsRouteImport.update({
+    id: '/integrations',
+    path: '/integrations',
+    getParentRoute: () => AuthedConfigRoute,
+  } as any)
+const AuthedConfigEscalationRoute = AuthedConfigEscalationRouteImport.update({
   id: '/escalation',
   path: '/escalation',
-  getParentRoute: () => ConfigRoute,
+  getParentRoute: () => AuthedConfigRoute,
 } as any)
-const ConfigEntryPointsRoute = ConfigEntryPointsRouteImport.update({
+const AuthedConfigEntryPointsRoute = AuthedConfigEntryPointsRouteImport.update({
   id: '/entry-points',
   path: '/entry-points',
-  getParentRoute: () => ConfigRoute,
+  getParentRoute: () => AuthedConfigRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/config': typeof ConfigRouteWithChildren
-  '/config/entry-points': typeof ConfigEntryPointsRoute
-  '/config/escalation': typeof ConfigEscalationRoute
-  '/incidents/$incidentId': typeof IncidentsIncidentIdRoute
+  '/login': typeof LoginRoute
+  '/config': typeof AuthedConfigRouteWithChildren
+  '/auth/error': typeof AuthErrorRoute
+  '/': typeof AuthedIndexRoute
+  '/config/entry-points': typeof AuthedConfigEntryPointsRoute
+  '/config/escalation': typeof AuthedConfigEscalationRoute
+  '/config/integrations': typeof AuthedConfigIntegrationsRoute
+  '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/slack/oauth/callback': typeof SlackOauthCallbackRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/config': typeof ConfigRouteWithChildren
-  '/config/entry-points': typeof ConfigEntryPointsRoute
-  '/config/escalation': typeof ConfigEscalationRoute
-  '/incidents/$incidentId': typeof IncidentsIncidentIdRoute
+  '/login': typeof LoginRoute
+  '/config': typeof AuthedConfigRouteWithChildren
+  '/auth/error': typeof AuthErrorRoute
+  '/': typeof AuthedIndexRoute
+  '/config/entry-points': typeof AuthedConfigEntryPointsRoute
+  '/config/escalation': typeof AuthedConfigEscalationRoute
+  '/config/integrations': typeof AuthedConfigIntegrationsRoute
+  '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/slack/oauth/callback': typeof SlackOauthCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/config': typeof ConfigRouteWithChildren
-  '/config/entry-points': typeof ConfigEntryPointsRoute
-  '/config/escalation': typeof ConfigEscalationRoute
-  '/incidents/$incidentId': typeof IncidentsIncidentIdRoute
+  '/_authed': typeof AuthedRouteWithChildren
+  '/login': typeof LoginRoute
+  '/_authed/config': typeof AuthedConfigRouteWithChildren
+  '/auth/error': typeof AuthErrorRoute
+  '/_authed/': typeof AuthedIndexRoute
+  '/_authed/config/entry-points': typeof AuthedConfigEntryPointsRoute
+  '/_authed/config/escalation': typeof AuthedConfigEscalationRoute
+  '/_authed/config/integrations': typeof AuthedConfigIntegrationsRoute
+  '/_authed/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/slack/oauth/callback': typeof SlackOauthCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/'
+    | '/login'
     | '/config'
+    | '/auth/error'
+    | '/'
     | '/config/entry-points'
     | '/config/escalation'
+    | '/config/integrations'
     | '/incidents/$incidentId'
+    | '/api/auth/$'
+    | '/slack/oauth/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
+    | '/login'
     | '/config'
+    | '/auth/error'
+    | '/'
     | '/config/entry-points'
     | '/config/escalation'
+    | '/config/integrations'
     | '/incidents/$incidentId'
+    | '/api/auth/$'
+    | '/slack/oauth/callback'
   id:
     | '__root__'
-    | '/'
-    | '/config'
-    | '/config/entry-points'
-    | '/config/escalation'
-    | '/incidents/$incidentId'
+    | '/_authed'
+    | '/login'
+    | '/_authed/config'
+    | '/auth/error'
+    | '/_authed/'
+    | '/_authed/config/entry-points'
+    | '/_authed/config/escalation'
+    | '/_authed/config/integrations'
+    | '/_authed/incidents/$incidentId'
+    | '/api/auth/$'
+    | '/slack/oauth/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  ConfigRoute: typeof ConfigRouteWithChildren
-  IncidentsIncidentIdRoute: typeof IncidentsIncidentIdRoute
+  AuthedRoute: typeof AuthedRouteWithChildren
+  LoginRoute: typeof LoginRoute
+  AuthErrorRoute: typeof AuthErrorRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  SlackOauthCallbackRoute: typeof SlackOauthCallbackRoute
 }
 
 declare module '@tanstack/solid-router' {
   interface FileRoutesByPath {
-    '/config': {
-      id: '/config'
-      path: '/config'
-      fullPath: '/config'
-      preLoaderRoute: typeof ConfigRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
+    '/_authed': {
+      id: '/_authed'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof AuthedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authed/': {
+      id: '/_authed/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof AuthedIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/auth/error': {
+      id: '/auth/error'
+      path: '/auth/error'
+      fullPath: '/auth/error'
+      preLoaderRoute: typeof AuthErrorRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/incidents/$incidentId': {
-      id: '/incidents/$incidentId'
+    '/_authed/config': {
+      id: '/_authed/config'
+      path: '/config'
+      fullPath: '/config'
+      preLoaderRoute: typeof AuthedConfigRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/slack/oauth/callback': {
+      id: '/slack/oauth/callback'
+      path: '/slack/oauth/callback'
+      fullPath: '/slack/oauth/callback'
+      preLoaderRoute: typeof SlackOauthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authed/incidents/$incidentId': {
+      id: '/_authed/incidents/$incidentId'
       path: '/incidents/$incidentId'
       fullPath: '/incidents/$incidentId'
-      preLoaderRoute: typeof IncidentsIncidentIdRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthedIncidentsIncidentIdRouteImport
+      parentRoute: typeof AuthedRoute
     }
-    '/config/escalation': {
-      id: '/config/escalation'
+    '/_authed/config/integrations': {
+      id: '/_authed/config/integrations'
+      path: '/integrations'
+      fullPath: '/config/integrations'
+      preLoaderRoute: typeof AuthedConfigIntegrationsRouteImport
+      parentRoute: typeof AuthedConfigRoute
+    }
+    '/_authed/config/escalation': {
+      id: '/_authed/config/escalation'
       path: '/escalation'
       fullPath: '/config/escalation'
-      preLoaderRoute: typeof ConfigEscalationRouteImport
-      parentRoute: typeof ConfigRoute
+      preLoaderRoute: typeof AuthedConfigEscalationRouteImport
+      parentRoute: typeof AuthedConfigRoute
     }
-    '/config/entry-points': {
-      id: '/config/entry-points'
+    '/_authed/config/entry-points': {
+      id: '/_authed/config/entry-points'
       path: '/entry-points'
       fullPath: '/config/entry-points'
-      preLoaderRoute: typeof ConfigEntryPointsRouteImport
-      parentRoute: typeof ConfigRoute
+      preLoaderRoute: typeof AuthedConfigEntryPointsRouteImport
+      parentRoute: typeof AuthedConfigRoute
     }
   }
 }
 
-interface ConfigRouteChildren {
-  ConfigEntryPointsRoute: typeof ConfigEntryPointsRoute
-  ConfigEscalationRoute: typeof ConfigEscalationRoute
+interface AuthedConfigRouteChildren {
+  AuthedConfigEntryPointsRoute: typeof AuthedConfigEntryPointsRoute
+  AuthedConfigEscalationRoute: typeof AuthedConfigEscalationRoute
+  AuthedConfigIntegrationsRoute: typeof AuthedConfigIntegrationsRoute
 }
 
-const ConfigRouteChildren: ConfigRouteChildren = {
-  ConfigEntryPointsRoute: ConfigEntryPointsRoute,
-  ConfigEscalationRoute: ConfigEscalationRoute,
+const AuthedConfigRouteChildren: AuthedConfigRouteChildren = {
+  AuthedConfigEntryPointsRoute: AuthedConfigEntryPointsRoute,
+  AuthedConfigEscalationRoute: AuthedConfigEscalationRoute,
+  AuthedConfigIntegrationsRoute: AuthedConfigIntegrationsRoute,
 }
 
-const ConfigRouteWithChildren =
-  ConfigRoute._addFileChildren(ConfigRouteChildren)
+const AuthedConfigRouteWithChildren = AuthedConfigRoute._addFileChildren(
+  AuthedConfigRouteChildren,
+)
+
+interface AuthedRouteChildren {
+  AuthedConfigRoute: typeof AuthedConfigRouteWithChildren
+  AuthedIndexRoute: typeof AuthedIndexRoute
+  AuthedIncidentsIncidentIdRoute: typeof AuthedIncidentsIncidentIdRoute
+}
+
+const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedConfigRoute: AuthedConfigRouteWithChildren,
+  AuthedIndexRoute: AuthedIndexRoute,
+  AuthedIncidentsIncidentIdRoute: AuthedIncidentsIncidentIdRoute,
+}
+
+const AuthedRouteWithChildren =
+  AuthedRoute._addFileChildren(AuthedRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  ConfigRoute: ConfigRouteWithChildren,
-  IncidentsIncidentIdRoute: IncidentsIncidentIdRoute,
+  AuthedRoute: AuthedRouteWithChildren,
+  LoginRoute: LoginRoute,
+  AuthErrorRoute: AuthErrorRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
+  SlackOauthCallbackRoute: SlackOauthCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

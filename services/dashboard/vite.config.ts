@@ -9,6 +9,9 @@ import viteTsConfigPaths from "vite-tsconfig-paths";
 const isProd = process.env.NODE_ENV === "production";
 
 export default defineConfig({
+	server: {
+		allowedHosts: ["glowing-externally-sloth.ngrok-free.app"],
+	},
 	plugins: [
 		!isProd && devtools(),
 		nitro({

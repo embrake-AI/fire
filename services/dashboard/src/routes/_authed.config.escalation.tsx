@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/solid-router";
 import { CircleArrowUp } from "lucide-solid";
 import { Card } from "~/components/ui/card";
 
-export const Route = createFileRoute("/config/escalation")({
+export const Route = createFileRoute("/_authed/config/escalation")({
 	loader: async () => {
 		/** TODO */
 	},

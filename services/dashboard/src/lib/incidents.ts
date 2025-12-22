@@ -1,21 +1,26 @@
 import type { IS } from "@fire/common";
 import { createServerFn } from "@tanstack/solid-start";
+import { authMiddleware } from "./auth-middleware";
+import { signedFetch } from "./utils/server";
 
 export const getIncidents = createServerFn({
 	method: "GET",
-}).handler(async () => {
-	const response = await fetch(process.env.INCIDENTS_URL!);
-	if (!response.ok) {
-		throw new Error("Failed to fetch incidents");
-	}
-	const { incidents } = (await response.json()) as { incidents: IS[] };
-	return incidents;
-});
+})
+	.middleware([authMiddleware])
+	.handler(async ({ context }) => {
+		const response = await signedFetch(process.env.INCIDENTS_URL!, { clientId: context.clientId, userId: context.userId });
+		if (!response.ok) {
+			throw new Error("Failed to fetch incidents");
+		}
+		const { incidents } = (await response.json()) as { incidents: IS[] };
+		return incidents;
+	});
 
 export const getIncidentById = createServerFn({ method: "GET" })
 	.inputValidator((data: { id: string }) => data)
-	.handler(async ({ data }) => {
-		const response = await fetch(`${process.env.INCIDENTS_URL}/${data.id}`);
+	.middleware([authMiddleware])
+	.handler(async ({ data, context }) => {
+		const response = await signedFetch(`${process.env.INCIDENTS_URL}/${data.id}`, { clientId: context.clientId, userId: context.userId });
 		if (!response.ok) {
 			throw new Error("Failed to fetch incident");
 		}
@@ -25,12 +30,17 @@ export const getIncidentById = createServerFn({ method: "GET" })
 
 export const updateAssignee = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; assignee: string }) => data)
-	.handler(async ({ data }) => {
-		const response = await fetch(`${process.env.INCIDENTS_URL}/${data.id}/assignee`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ assignee: data.assignee }),
-		});
+	.middleware([authMiddleware])
+	.handler(async ({ data, context }) => {
+		const response = await signedFetch(
+			`${process.env.INCIDENTS_URL}/${data.id}/assignee`,
+			{ clientId: context.clientId, userId: context.userId },
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ assignee: data.assignee }),
+			},
+		);
 		if (!response.ok) {
 			throw new Error("Failed to update assignee");
 		}
@@ -40,12 +50,17 @@ export const updateAssignee = createServerFn({ method: "POST" })
 
 export const updatePriority = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; priority: IS["severity"] }) => data)
-	.handler(async ({ data }) => {
-		const response = await fetch(`${process.env.INCIDENTS_URL}/${data.id}/priority`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ priority: data.priority }),
-		});
+	.middleware([authMiddleware])
+	.handler(async ({ data, context }) => {
+		const response = await signedFetch(
+			`${process.env.INCIDENTS_URL}/${data.id}/priority`,
+			{ clientId: context.clientId, userId: context.userId },
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ priority: data.priority }),
+			},
+		);
 		if (!response.ok) {
 			throw new Error("Failed to update priority");
 		}
@@ -55,12 +70,17 @@ export const updatePriority = createServerFn({ method: "POST" })
 
 export const startIncident = createServerFn({ method: "POST" })
 	.inputValidator((data: { prompt: string }) => data)
-	.handler(async ({ data }) => {
-		const response = await fetch(process.env.INCIDENTS_URL!, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ prompt: data.prompt }),
-		});
+	.middleware([authMiddleware])
+	.handler(async ({ data, context }) => {
+		const response = await signedFetch(
+			process.env.INCIDENTS_URL!,
+			{ clientId: context.clientId, userId: context.userId },
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ prompt: data.prompt, createdBy: context.userId }),
+			},
+		);
 		if (!response.ok) {
 			throw new Error("Failed to start incident");
 		}

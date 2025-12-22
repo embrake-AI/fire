@@ -1,10 +1,59 @@
 import { type IS, IS_SEVERITY } from "@fire/common";
+import { integration, type SlackIntegrationData } from "@fire/db/schema";
 import type { KnownBlock, SlackEvent } from "@slack/types";
-import { type Context, Hono, type Next } from "hono";
-import { startIncident, updateAssignee, updatePriority } from "../core/interactions";
-import { ASSERT_NEVER } from "../lib/utils";
+import { sql } from "drizzle-orm";
+import { type Context, Hono } from "hono";
+import { type AuthContext, startIncident, updateAssignee, updatePriority } from "../../core/interactions";
+import { getDB } from "../../lib/db";
+import { ASSERT_NEVER } from "../../lib/utils";
+import { verifySlackRequestMiddleware } from "./middleware";
 
-type SlackEventPayload = { type: "url_verification"; challenge: string } | { type: "event_callback"; event: SlackEvent };
+type SlackEventPayload =
+	| { type: "url_verification"; challenge: string }
+	| {
+			type: "event_callback";
+			team_id?: string;
+			enterprise_id?: string;
+			is_enterprise_install?: boolean;
+			event: SlackEvent;
+	  };
+
+/**
+ * Look up a Slack integration by workspace (team_id).
+ *
+ * Uses team_id as the primary tenant identifier since it's the most stable
+ * identifier for a Slack workspace. For Enterprise Grid org-level installs,
+ * also matches on enterprise_id.
+ *
+ * Note: We don't key on bot_id because:
+ * - It's not present on many event types (including human-origin app_mentions)
+ * - It identifies the bot, not the tenant/workspace
+ * - It varies across installation types and payload variants
+ */
+async function getSlackIntegration(opts: {
+	teamId: string;
+	enterpriseId?: string | null;
+	isEnterpriseInstall?: boolean;
+}): Promise<{ clientId: string; data: SlackIntegrationData } | null> {
+	const { teamId, enterpriseId, isEnterpriseInstall = false } = opts;
+	const db = await getDB();
+
+	const [result] = await db
+		.select({ clientId: integration.clientId, data: integration.data })
+		.from(integration)
+		.where(
+			sql`
+				${integration.data}->>'teamId' = ${teamId}
+				AND (
+					${!isEnterpriseInstall}
+					OR ${integration.data}->>'enterpriseId' = ${enterpriseId}
+				)
+			`,
+		)
+		.limit(1);
+
+	return result ?? null;
+}
 
 type SlackBlockActionPayload = {
 	type: "block_actions";
@@ -44,9 +93,11 @@ type SlackBlockActionPayload = {
 	>;
 };
 
-const slackRoutes = new Hono<{ Bindings: Env }>();
+type SlackContext = { Bindings: Env } & {};
 
-slackRoutes.post("/events", verifySlackRequestMiddleware, async (c) => {
+const slackRoutes = new Hono<SlackContext>().use(verifySlackRequestMiddleware);
+
+slackRoutes.post("/events", async (c) => {
 	const body = await c.req.json<SlackEventPayload>();
 	if (body.type === "event_callback") {
 		const event = body.event;
@@ -64,15 +115,38 @@ slackRoutes.post("/events", verifySlackRequestMiddleware, async (c) => {
 
 			c.executionCtx.waitUntil(
 				(async () => {
+					const teamId = body.team_id ?? event.team;
+					if (!teamId) {
+						console.error("No team_id found in event payload");
+						return;
+					}
+
+					const enterpriseId = body.enterprise_id ?? null;
+					const isEnterpriseInstall = body.is_enterprise_install ?? false;
+
+					const slackIntegration = await getSlackIntegration({
+						teamId,
+						enterpriseId,
+						isEnterpriseInstall,
+					});
+
+					if (!slackIntegration) {
+						console.error(`No Slack integration found for team ${teamId}`);
+						return;
+					}
+
+					const { clientId, data: integrationData } = slackIntegration;
+					c.set("auth", { clientId });
+
 					const { id, severity, assignee } = await startIncident({
-						c,
+						c: c as Context<AuthContext>,
 						identifier: thread,
 						prompt,
 						createdBy: user,
 						source: "slack",
 					});
 					await replyToSlack({
-						botToken: c.env.SLACK_BOT_TOKEN,
+						botToken: integrationData.botToken,
 						channel,
 						thread,
 						blocks: incidentBlocks(c.env.FRONTEND_URL, id, severity, assignee),
@@ -139,34 +213,6 @@ async function replyToSlack({ botToken, channel, thread, message, blocks }: { bo
 		}),
 	});
 	return response.json();
-}
-
-async function verifySlackRequestMiddleware(c: Context, next: Next) {
-	const rawBody = await c.req.raw.clone().text();
-	if (!(await verifySlackRequest(c, rawBody))) {
-		return c.json({ error: "Unauthorized" }, 401);
-	}
-	await next();
-}
-
-async function verifySlackRequest(c: Context<{ Bindings: Env }>, rawBody: string) {
-	const ts = c.req.header("X-Slack-Request-Timestamp");
-	const sig = c.req.header("X-Slack-Signature");
-	if (!ts || !sig) return false;
-
-	const now = Math.floor(Date.now() / 1000);
-	const tsNum = Number(ts);
-	if (!Number.isFinite(tsNum) || Math.abs(now - tsNum) > 60 * 5) return false;
-
-	const baseString = `v0:${ts}:${rawBody}`;
-
-	const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(c.env.SLACK_SIGNING_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-
-	const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(baseString));
-	const hex = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
-	const expected = `v0=${hex}`;
-
-	return expected === sig;
 }
 
 function incidentBlocks(frontendUrl: string, incidentId: string, severity: IS["severity"], assigneeUserId?: string): KnownBlock[] {

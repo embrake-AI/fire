@@ -1,7 +1,7 @@
 import type { Component, JSX } from "solid-js";
 import { splitProps } from "solid-js";
 
-import { cn } from "~/lib/utils";
+import { cn } from "~/lib/utils/client";
 
 export interface TextareaProps extends JSX.TextareaHTMLAttributes<HTMLTextAreaElement> {
 	class?: string;

@@ -32,6 +32,12 @@ code {
 	--accent-foreground: oklch(0.21 0.006 285.885);
 	--destructive: oklch(0.577 0.245 27.325);
 	--destructive-foreground: oklch(0.577 0.245 27.325);
+	--success: oklch(0.925 0.084 155.995);
+	--success-foreground: oklch(0.393 0.134 156.645);
+	--warning: oklch(0.962 0.059 95.617);
+	--warning-foreground: oklch(0.554 0.135 66.442);
+	--error: oklch(0.936 0.032 17.717);
+	--error-foreground: oklch(0.577 0.245 27.325);
 	--border: oklch(0.92 0.004 286.32);
 	--input: oklch(0.92 0.004 286.32);
 	--ring: oklch(0.871 0.006 286.286);
@@ -68,6 +74,12 @@ code {
 	--accent-foreground: oklch(0.985 0 0);
 	--destructive: oklch(0.396 0.141 25.723);
 	--destructive-foreground: oklch(0.637 0.237 25.331);
+	--success: oklch(0.262 0.065 152.934);
+	--success-foreground: oklch(0.765 0.177 163.223);
+	--warning: oklch(0.32 0.066 75.756);
+	--warning-foreground: oklch(0.82 0.13 92.25);
+	--error: oklch(0.258 0.092 26.042);
+	--error-foreground: oklch(0.637 0.237 25.331);
 	--border: oklch(0.274 0.006 286.033);
 	--input: oklch(0.274 0.006 286.033);
 	--ring: oklch(0.442 0.017 285.786);
@@ -103,6 +115,12 @@ code {
 	--color-accent-foreground: var(--accent-foreground);
 	--color-destructive: var(--destructive);
 	--color-destructive-foreground: var(--destructive-foreground);
+	--color-success: var(--success);
+	--color-success-foreground: var(--success-foreground);
+	--color-warning: var(--warning);
+	--color-warning-foreground: var(--warning-foreground);
+	--color-error: var(--error);
+	--color-error-foreground: var(--error-foreground);
 	--color-border: var(--border);
 	--color-input: var(--input);
 	--color-ring: var(--ring);
@@ -132,4 +150,76 @@ code {
 	body {
 		@apply bg-background text-foreground;
 	}
+}
+
+/* Minimal floating particles */
+@keyframes float-up {
+	0% {
+		transform: translateY(0) translateX(0);
+		opacity: 0;
+	}
+	10% {
+		opacity: 1;
+	}
+	90% {
+		opacity: 1;
+	}
+	100% {
+		transform: translateY(-100vh) translateX(20px);
+		opacity: 0;
+	}
+}
+
+.particle {
+	position: absolute;
+	width: 3px;
+	height: 3px;
+	background: #fb923c;
+	border-radius: 50%;
+	opacity: 0;
+	animation: float-up linear infinite;
+	pointer-events: none;
+}
+
+.particle:nth-child(1) {
+	left: 10%;
+	bottom: 0;
+	animation-duration: 12s;
+	animation-delay: 0s;
+}
+.particle:nth-child(2) {
+	left: 20%;
+	bottom: 0;
+	animation-duration: 14s;
+	animation-delay: 2s;
+}
+.particle:nth-child(3) {
+	left: 35%;
+	bottom: 0;
+	animation-duration: 11s;
+	animation-delay: 4s;
+}
+.particle:nth-child(4) {
+	left: 50%;
+	bottom: 0;
+	animation-duration: 13s;
+	animation-delay: 1s;
+}
+.particle:nth-child(5) {
+	left: 65%;
+	bottom: 0;
+	animation-duration: 15s;
+	animation-delay: 3s;
+}
+.particle:nth-child(6) {
+	left: 80%;
+	bottom: 0;
+	animation-duration: 12s;
+	animation-delay: 5s;
+}
+.particle:nth-child(7) {
+	left: 90%;
+	bottom: 0;
+	animation-duration: 14s;
+	animation-delay: 2.5s;
 }

@@ -3,7 +3,7 @@ import { Search } from "lucide-solid";
 import type { Component, ComponentProps } from "solid-js";
 import { splitProps } from "solid-js";
 
-import { cn } from "~/lib/utils";
+import { cn } from "~/lib/utils/client";
 
 const Command: Component<ComponentProps<typeof CommandPrimitive>> = (props) => {
 	const [local, others] = splitProps(props, ["class"]);

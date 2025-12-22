@@ -6,13 +6,10 @@ import { Client } from "pg";
 
 let drizzleClient: ReturnType<typeof drizzle<typeof schema, Client>> | null = null;
 
-export async function createConnection() {
+export async function getDB() {
 	if (drizzleClient) return drizzleClient;
 	const connection = new Client({
 		connectionString: process.env.DATABASE_URL,
-		ssl: {
-			rejectUnauthorized: true,
-		},
 	});
 	drizzleClient = drizzle(connection, { schema });
 	return drizzleClient;

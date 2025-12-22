@@ -1,5 +1,5 @@
 import type { IS } from "@fire/common";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft, User } from "lucide-solid";
@@ -12,14 +12,16 @@ import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
 import { getSlackUserGroups, getSlackUsers } from "~/lib/entry-points";
 import { getSeverity, getStatus } from "~/lib/incident-config";
-import { getIncidentById, updateAssignee, updatePriority } from "~/lib/incidents";
+import { getIncidentById } from "~/lib/incidents";
+import { useUpdateIncidentAssignee, useUpdateIncidentPriority } from "~/lib/incidents.hooks";
 
-export const Route = createFileRoute("/incidents/$incidentId")({
+export const Route = createFileRoute("/_authed/incidents/$incidentId")({
 	component: IncidentDetail,
 	loader: ({ params, context }) =>
-		context.queryClient.ensureQueryData({
+		context.queryClient.prefetchQuery({
 			queryKey: ["incident", params.incidentId],
 			queryFn: () => getIncidentById({ data: { id: params.incidentId } }),
+			staleTime: 5_000,
 		}),
 	errorComponent: () => (
 		<div class="flex-1 bg-background flex items-center justify-center">
@@ -40,25 +42,8 @@ export const Route = createFileRoute("/incidents/$incidentId")({
 });
 
 function IncidentHeader(props: { incident: IS }) {
-	const queryClient = useQueryClient();
-
-	const updatePriorityMutation = useMutation(() => ({
-		mutationFn: async (priority: IS["severity"]) => {
-			await updatePriority({ data: { id: props.incident.id, priority } });
-		},
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["incident", props.incident.id] });
-		},
-	}));
-
-	const updateAssigneeMutation = useMutation(() => ({
-		mutationFn: async (assignee: string) => {
-			await updateAssignee({ data: { id: props.incident.id, assignee } });
-		},
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["incident", props.incident.id] });
-		},
-	}));
+	const updatePriorityMutation = useUpdateIncidentPriority(props.incident.id);
+	const updateAssigneeMutation = useUpdateIncidentAssignee(props.incident.id);
 
 	const status = () => getStatus(props.incident.status);
 

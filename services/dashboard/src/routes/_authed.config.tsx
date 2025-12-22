@@ -3,7 +3,7 @@ import { Settings } from "lucide-solid";
 import { createMemo } from "solid-js";
 import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
 
-export const Route = createFileRoute("/config")({
+export const Route = createFileRoute("/_authed/config")({
 	component: ConfigLayout,
 	beforeLoad: ({ location }) => {
 		if (location.pathname === "/config") {
@@ -18,6 +18,7 @@ function ConfigLayout() {
 	const activeTab = createMemo(() => {
 		const path = location().pathname;
 		if (path.includes("escalation")) return "escalation";
+		if (path.includes("integrations")) return "integrations";
 		return "entry-points";
 	});
 
@@ -38,6 +39,9 @@ function ConfigLayout() {
 						</TabsTrigger>
 						<TabsTrigger value="escalation" as={Link} to="/config/escalation">
 							Escalation
+						</TabsTrigger>
+						<TabsTrigger value="integrations" as={Link} to="/config/integrations">
+							Integrations
 						</TabsTrigger>
 					</TabsList>
 				</Tabs>

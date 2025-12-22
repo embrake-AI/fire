@@ -2,16 +2,23 @@ import { type QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanstack/solid-router";
 import { Suspense } from "solid-js";
 import { HydrationScript } from "solid-js/web";
-import Header from "~/components/Header";
 import { Button } from "~/components/ui/button";
+import { Toaster } from "~/components/ui/toast";
 import { getContext } from "~/integrations/tanstack-query/provider";
+import { getAuthContext } from "~/lib/auth-context";
 import styleCss from "~/styles.css?url";
 
 interface RouterContext {
 	queryClient: QueryClient;
+	clientId: string | null;
+	userId: string | null;
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
+	beforeLoad: async () => {
+		const { clientId, userId } = await getAuthContext();
+		return { clientId, userId };
+	},
 	head: () => ({
 		links: [
 			{ rel: "stylesheet", href: styleCss },
@@ -46,13 +53,11 @@ function RootShell() {
 			</head>
 			<body class="min-h-screen flex flex-col">
 				<QueryClientProvider client={queryClient}>
-					<Header />
-					<main class="flex-1 flex flex-col">
-						<Suspense>
-							<Outlet />
-						</Suspense>
-					</main>
+					<Suspense>
+						<Outlet />
+					</Suspense>
 				</QueryClientProvider>
+				<Toaster />
 				<Scripts />
 			</body>
 		</html>

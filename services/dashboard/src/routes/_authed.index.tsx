@@ -11,12 +11,13 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/component
 import { getSeverity, getStatus } from "~/lib/incident-config";
 import { getIncidents } from "~/lib/incidents";
 
-export const Route = createFileRoute("/")({
+export const Route = createFileRoute("/_authed/")({
 	component: IncidentsList,
 	loader: ({ context }) =>
-		context.queryClient.ensureQueryData({
+		context.queryClient.prefetchQuery({
 			queryKey: ["incidents"],
 			queryFn: () => getIncidents(),
+			staleTime: 15_000,
 		}),
 });
 

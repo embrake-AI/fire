@@ -46,12 +46,7 @@ type SlackUserGroupResponse = {
 	error?: string;
 };
 
-export async function fetchSlackUsers(): Promise<SlackUser[]> {
-	const token = process.env.SLACK_BOT_TOKEN;
-	if (!token) {
-		throw new Error("SLACK_BOT_TOKEN environment variable is not set");
-	}
-
+export async function fetchSlackUsers(botToken: string): Promise<SlackUser[]> {
 	const users: SlackUser[] = [];
 	let cursor: string | undefined;
 
@@ -63,7 +58,7 @@ export async function fetchSlackUsers(): Promise<SlackUser[]> {
 
 		const response = await fetch(`https://slack.com/api/users.list?${params.toString()}`, {
 			headers: {
-				Authorization: `Bearer ${token}`,
+				Authorization: `Bearer ${botToken}`,
 				"Content-Type": "application/json",
 			},
 		});
@@ -96,15 +91,10 @@ export async function fetchSlackUsers(): Promise<SlackUser[]> {
 	return users;
 }
 
-export async function fetchSlackUserGroups(): Promise<SlackUserGroup[]> {
-	const token = process.env.SLACK_BOT_TOKEN;
-	if (!token) {
-		throw new Error("SLACK_BOT_TOKEN environment variable is not set");
-	}
-
+export async function fetchSlackUserGroups(botToken: string): Promise<SlackUserGroup[]> {
 	const response = await fetch("https://slack.com/api/usergroups.list", {
 		headers: {
-			Authorization: `Bearer ${token}`,
+			Authorization: `Bearer ${botToken}`,
 			"Content-Type": "application/json",
 		},
 	});

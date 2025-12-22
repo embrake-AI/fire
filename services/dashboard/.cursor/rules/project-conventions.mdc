@@ -41,10 +41,10 @@ bun run format
 
 ### Biome Rules in This Project
 
-- **Indent**: Tabs
-- **Quotes**: Double quotes for JS/TS
-- **Organize imports**: Auto-organized
-- **Recommended rules**: Enabled
+-   **Indent**: Tabs
+-   **Quotes**: Double quotes for JS/TS
+-   **Organize imports**: Auto-organized
+-   **Recommended rules**: Enabled
 
 ## Path Aliases
 
@@ -52,10 +52,10 @@ Use `~/` to import from `src/`:
 
 ```tsx
 // Instead of relative paths
-import { cn } from '../../lib/utils'
+import { cn } from '../../lib/utils/client'
 
 // Use alias
-import { cn } from '~/lib/utils'
+import { cn } from '~/lib/utils/client'
 ```
 
 Configured in `tsconfig.json`:
@@ -142,7 +142,7 @@ Colors are defined in `styles.css` using oklch:
 Use `cn()` for conditional class merging:
 
 ```tsx
-import { cn } from '~/lib/utils'
+import { cn } from '~/lib/utils/client'
 ;<div
     class={cn(
         'base-classes p-4 rounded',
@@ -335,7 +335,7 @@ export const getData = createServerFn().handler(async () => {
 
 ```tsx
 // src/components/ui/card.tsx
-import { cn } from '~/lib/utils'
+import { cn } from '~/lib/utils/client'
 import type { JSX } from 'solid-js'
 
 interface CardProps {

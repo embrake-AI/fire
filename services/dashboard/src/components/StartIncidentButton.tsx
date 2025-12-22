@@ -48,7 +48,7 @@ export default function StartIncidentButton() {
 				<Show when={someEntryPoint()}>
 					<DialogHeader>
 						<DialogTitle>Start Incident</DialogTitle>
-						<DialogDescription>This will immediately notify on-call responders and create a dedicated Slack channel.</DialogDescription>
+						<DialogDescription>This will trigger the most appropriate entry point and immediately notify its assignee according to the escalation path.</DialogDescription>
 					</DialogHeader>
 					<form onSubmit={handleSubmit} class="space-y-6 pt-4">
 						<div>
