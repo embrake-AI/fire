@@ -185,14 +185,17 @@ function incidentBlocks(frontendUrl: string, incidentId: string, severity: IS["s
 				text: headerText,
 			},
 		},
-		{
+	];
+
+	if (!isResolved) {
+		blocks.push({
 			type: "section",
 			fields: [
 				{ type: "mrkdwn", text: `*Severity:*\n${severity}` },
 				{ type: "mrkdwn", text: `*Assignee:*\n${assigneeUserId ? `<@${assigneeUserId}>` : "_Unassigned_"}` },
 			],
-		},
-	];
+		});
+	}
 
 	if (statusMessage && (isMitigating || isResolved)) {
 		const messageLabel = isResolved ? "Resolution" : "Mitigation";
