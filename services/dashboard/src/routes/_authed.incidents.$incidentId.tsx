@@ -261,9 +261,10 @@ function IncidentHeader(props: { incident: IS }) {
 function IncidentDetail() {
 	const params = Route.useParams();
 	const navigate = useNavigate();
+	const getIncidentByIdFn = useServerFn(getIncidentById);
 	const incidentQuery = useQuery(() => ({
 		queryKey: ["incident", params().incidentId],
-		queryFn: () => getIncidentById({ data: { id: params().incidentId } }),
+		queryFn: () => getIncidentByIdFn({ data: { id: params().incidentId } }),
 		refetchInterval: 5_000,
 	}));
 	const incident = () => incidentQuery.data;

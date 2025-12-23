@@ -50,14 +50,16 @@ export class Incident extends DurableObject<Env> {
 			source,
 			metadata,
 		} as const;
-		this.ctx.storage.sql.exec(`CREATE TABLE event_log (
+		this.ctx.storage.transactionSync(() => {
+			this.ctx.storage.sql.exec(`CREATE TABLE event_log (
 				id INTEGER PRIMARY KEY,
 				event_type TEXT NOT NULL,
 				event_data TEXT NOT NULL CHECK (json_valid(event_data)),
 				created_at TEXT DEFAULT CURRENT_TIMESTAMP
 			);`);
-		this.ctx.storage.kv.put(ELV_KEY, "1");
-		this.commit(payload, { event_type: "INCIDENT_CREATED", event_data: { assignee, createdBy, description, prompt, severity, source, status, title } });
+			this.ctx.storage.kv.put(ELV_KEY, "1");
+			this.commit(payload, { event_type: "INCIDENT_CREATED", event_data: { assignee, createdBy, description, prompt, severity, source, status, title } });
+		});
 		return payload;
 	}
 
@@ -84,7 +86,7 @@ export class Incident extends DurableObject<Env> {
 		if (exists) {
 			return exists;
 		}
-		return this.ctx.blockConcurrencyWhile(async () => this.init({ id, prompt, createdBy, source, metadata }));
+		return this.ctx.blockConcurrencyWhile(() => this.init({ id, prompt, createdBy, source, metadata }));
 	}
 
 	async setSeverity(severity: DOState["severity"]) {

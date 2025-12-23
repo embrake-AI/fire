@@ -22,9 +22,9 @@ export default function StartIncidentButton() {
 
 	const someEntryPoint = () => !!entryPointsQuery.data?.some((ep) => !!ep.prompt);
 
+	const startIncidentFn = useServerFn(startIncident);
 	const startIncidentMutation = useMutation(() => ({
 		mutationFn: async (data: { prompt: string }) => {
-			const startIncidentFn = useServerFn(startIncident);
 			await startIncidentFn({ data });
 		},
 		onSuccess: () => {
