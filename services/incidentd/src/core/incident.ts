@@ -15,6 +15,41 @@ export type DOState = IS & {
 	metadata: Metadata;
 };
 
+type EventLog = {
+	id: number;
+	created_at: string;
+	event_type: string;
+	event_data: string;
+};
+// TODO: Prob move to common
+type Event =
+	| {
+			event_type: "INCIDENT_CREATED";
+			event_data: Pick<DOState, "status" | "severity" | "createdBy" | "assignee" | "title" | "description" | "prompt" | "source">;
+	  }
+	| {
+			event_type: "STATUS_UPDATE";
+			event_data: {
+				status: DOState["status"];
+				message: string;
+			};
+	  }
+	| {
+			event_type: "ASSIGNEE_UPDATE";
+			event_data: {
+				assignee: DOState["assignee"];
+			};
+	  }
+	| {
+			event_type: "SEVERITY_UPDATE";
+			event_data: {
+				severity: DOState["severity"];
+			};
+	  };
+
+const S_KEY = "incident";
+const ELV_KEY = "event_log_version";
+
 /**
  * An Incident is the source of truth for an incident. It is agnostic of the communication channel(s).
  * All operations guarantee transactional consistency: https://blog.cloudflare.com/durable-objects-easy-fast-correct-choose-three/
@@ -26,10 +61,11 @@ export class Incident extends DurableObject<Env> {
 
 	private async init({ id, prompt, createdBy, source, metadata }: Pick<DOState, "id" | "prompt" | "createdBy" | "source" | "metadata">) {
 		const { assignee, severity, title, description } = await calculateIncidentInfo(prompt);
+		const status = "open";
 		const payload = {
 			id,
 			createdAt: new Date(),
-			status: "open",
+			status,
 			severity,
 			createdBy,
 			assignee,
@@ -39,8 +75,26 @@ export class Incident extends DurableObject<Env> {
 			source,
 			metadata,
 		} as const;
-		await this.ctx.storage.put<DOState>("incident", payload);
+		this.ctx.storage.sql.exec(`CREATE TABLE event_log (
+				id INTEGER PRIMARY KEY,
+				event_type TEXT NOT NULL,
+				event_data TEXT NOT NULL CHECK (json_valid(event_data)),
+				created_at TEXT DEFAULT CURRENT_TIMESTAMP
+			);`);
+		this.ctx.storage.kv.put(ELV_KEY, "1");
+		this.commit(payload, { event_type: "INCIDENT_CREATED", event_data: { assignee, createdBy, description, prompt, severity, source, status, title } });
 		return payload;
+	}
+
+	private commit(state: DOState | undefined, event: Event | undefined) {
+		this.ctx.storage.transactionSync(() => {
+			if (state) {
+				this.ctx.storage.kv.put<DOState>(S_KEY, state);
+			}
+			if (event) {
+				this.ctx.storage.sql.exec("INSERT INTO event_log (event_type, event_data) VALUES (?, ?)", event.event_type, JSON.stringify(event.event_data));
+			}
+		});
 	}
 
 	private async destroy() {
@@ -48,36 +102,40 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	/**
-	 * Entry point to start a new incident. It must be called before any other method.
+	 * Entry point to start a new incident. Must be called before any other method.
 	 */
 	async start({ id, prompt, createdBy, source, metadata }: Pick<DOState, "id" | "prompt" | "createdBy" | "source" | "metadata">) {
-		return this.init({
-			id,
-			prompt,
-			createdBy,
-			source,
-			metadata,
-		});
+		const exists = this.ctx.storage.kv.get<DOState>(S_KEY);
+		if (exists) {
+			return exists;
+		}
+		return this.ctx.blockConcurrencyWhile(async () => this.init({ id, prompt, createdBy, source, metadata }));
 	}
 
 	async setSeverity(severity: DOState["severity"]) {
-		const state = await this.ctx.storage.get<DOState>("incident");
+		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
 		ASSERT(state, "Incident not initialized");
+		if (state.severity === severity) {
+			return state;
+		}
 		state.severity = severity;
-		await this.ctx.storage.put<DOState>("incident", state);
+		this.commit(state, { event_type: "SEVERITY_UPDATE", event_data: { severity } });
 		return state;
 	}
 
 	async setAssignee(assignee: DOState["assignee"]) {
-		const state = await this.ctx.storage.get<DOState>("incident");
+		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
 		ASSERT(state, "Incident not initialized");
+		if (state.assignee === assignee) {
+			return state;
+		}
 		state.assignee = assignee;
-		await this.ctx.storage.put<DOState>("incident", state);
+		this.commit(state, { event_type: "ASSIGNEE_UPDATE", event_data: { assignee } });
 		return state;
 	}
 
-	async updateStatus(status: DOState["status"], _message: string) {
-		const state = await this.ctx.storage.get<DOState>("incident");
+	async updateStatus(status: DOState["status"], message: string) {
+		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
 		ASSERT(state, "Incident not initialized");
 
 		const currentStatus = state.status;
@@ -90,24 +148,26 @@ export class Incident extends DurableObject<Env> {
 			state.status = status;
 		}
 		if (state.status === "resolved") {
+			// TODO: Make sure to persist it somewhere before destroying the DO
+			this.commit(undefined, { event_type: "STATUS_UPDATE", event_data: { status: "resolved", message } });
 			await this.destroy();
 		} else {
-			await this.ctx.storage.put<DOState>("incident", state);
+			this.commit(state, { event_type: "STATUS_UPDATE", event_data: { status, message } });
 		}
 		return state;
 	}
 
 	async get() {
-		const state = await this.ctx.storage.get<DOState>("incident");
-		// TODO: event timeline and more
-		return state;
+		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log ORDER BY id ASC").toArray();
+		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
+		return { state, events };
 	}
 
 	async addMetadata(metadata: Record<string, string>) {
-		const state = await this.ctx.storage.get<DOState>("incident");
+		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
 		ASSERT(state, "Incident not initialized");
 		state.metadata = { ...state.metadata, ...metadata };
-		await this.ctx.storage.put<DOState>("incident", state);
+		this.commit(state, undefined);
 		return state;
 	}
 }
