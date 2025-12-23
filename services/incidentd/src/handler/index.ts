@@ -80,7 +80,6 @@ export async function updateStatus<E extends BasicContext>({ c, id, status, mess
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
 	const updatedIncident = await incident.updateStatus(status, message);
-	console.log("updatedIncident", updatedIncident);
 	// TODO: move this to the dispatcher
 	await dispatchIncidentStatusUpdatedEvent(c, status, message, updatedIncident);
 	return updatedIncident;
