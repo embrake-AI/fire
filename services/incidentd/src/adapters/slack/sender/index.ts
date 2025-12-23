@@ -16,6 +16,7 @@ export async function incidentStarted<E extends BasicContext>(c: Context<E>, { i
 		return;
 	}
 	const blocks = incidentBlocks(c.env.FRONTEND_URL, id, severity, status, assignee);
+	const shouldBroadcast = severity === "high";
 	const [response] = await Promise.allSettled([
 		fetch(`https://slack.com/api/chat.postMessage`, {
 			method: "POST",
@@ -27,7 +28,7 @@ export async function incidentStarted<E extends BasicContext>(c: Context<E>, { i
 				text: "Incident created 🔴",
 				channel,
 				thread_ts: thread,
-				reply_broadcast: true, // Show in both thread AND main channel
+				...(shouldBroadcast && { reply_broadcast: true }),
 				blocks,
 			}),
 		}),
@@ -61,7 +62,8 @@ export async function incidentSeverityUpdated<E extends BasicContext>(c: Context
 		// Not created through Slack, so no message to send
 		return;
 	}
-	await updateIncidentMessage({ frontendUrl: c.env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity: newSeverity, status, assignee });
+	const shouldBroadcast = newSeverity === "high";
+	await updateIncidentMessage({ frontendUrl: c.env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity: newSeverity, status, assignee, broadcast: shouldBroadcast });
 }
 
 export async function incidentAssigneeUpdated<E extends BasicContext>(c: Context<E>, newAssignee: string, { id, severity, status, metadata }: DOState) {
@@ -107,6 +109,7 @@ async function updateIncidentMessage({
 	status,
 	assignee,
 	statusMessage,
+	broadcast,
 }: {
 	frontendUrl: string;
 	botToken: string;
@@ -117,6 +120,7 @@ async function updateIncidentMessage({
 	status: IS["status"];
 	assignee: string;
 	statusMessage?: string;
+	broadcast?: boolean;
 }) {
 	const blocks = incidentBlocks(frontendUrl, id, severity, status, assignee, statusMessage);
 	const textFallback = status === "resolved" ? "Incident resolved ✅" : status === "mitigating" ? "Incident mitigating 🟡" : "Incident updated 🔴";
@@ -131,6 +135,7 @@ async function updateIncidentMessage({
 			ts: postedMessageTs,
 			text: textFallback,
 			blocks,
+			...(broadcast && { reply_broadcast: true }),
 		}),
 	});
 }
