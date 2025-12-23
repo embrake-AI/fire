@@ -25,7 +25,7 @@ slackRoutes.post("/events", async (c) => {
 				return c.text("OK");
 			}
 
-			if (event.ts !== event.thread_ts) {
+			if (event.ts && event.thread_ts && event.ts !== event.thread_ts) {
 				// TODO: handle mentions as prompts
 				return c.text("OK");
 			}
