@@ -71,21 +71,13 @@ function IncidentsList() {
 					<NoIncidents />
 				</Show>
 
-				<Show when={onlyMitigatingIncidents()}>
-					<MitigatingIncidentsSection />
-				</Show>
+				<Show when={onlyMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
 
-				<Show when={openIncidents().length > 0}>
-					<OpenIncidentsSection />
-				</Show>
+				<Show when={openIncidents().length > 0}>{OpenIncidentsSection()}</Show>
 
-				<Show when={openAndMitigatingIncidents()}>
-					<MitigatingIncidentsSection />
-				</Show>
+				<Show when={openAndMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
 
-				<Show when={resolvedIncidents().length > 0}>
-					<ResolvedIncidentsSection />
-				</Show>
+				<Show when={resolvedIncidents().length > 0}>{ResolvedIncidentsSection()}</Show>
 			</div>
 		</div>
 	);

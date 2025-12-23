@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { type BasicContext, getIncident, listIncidents, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
-import { getSlackIntegration, getSlackIntegrationByClientId } from "../../slack/receiver/utils";
 import { verifyDashboardRequestMiddleware } from "./middleware";
 
 type DashboardContext = BasicContext & { Variables: { auth: { clientId: string; userId: string } } };

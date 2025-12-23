@@ -54,7 +54,7 @@ function RootShell() {
 			</head>
 			<body class="min-h-screen flex flex-col">
 				<QueryClientProvider client={queryClient}>
-					<Suspense>
+					<Suspense fallback={<div class="flex-1" />}>
 						<Outlet />
 					</Suspense>
 				</QueryClientProvider>
