@@ -19,7 +19,7 @@
 		"dev:incidentd": "turbo run dev --filter incidentd",
 		"dev": "turbo run dev",
 		"build": "turbo run build",
-		"build:dashboard": "turbo run build --filter dashboard... --no-cache",
+		"build:dashboard": "turbo run build --filter dashboard...",
 		"build:incidentd": "turbo run build --filter incidentd...",
 		"check": "turbo run type-check lint",
 		"type-check": "turbo run type-check",
