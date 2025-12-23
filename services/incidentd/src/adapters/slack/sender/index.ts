@@ -62,8 +62,8 @@ export async function incidentStarted<E extends BasicContext>(c: Context<E>, { i
 }
 
 export async function incidentSeverityUpdated<E extends BasicContext>(c: Context<E>, newSeverity: IS["severity"], { id, status, assignee, metadata }: DOState) {
-	const { botToken, channel, thread, postedMessageTs } = metadata;
-	if (!botToken || !channel || !thread || !postedMessageTs) {
+	const { botToken, channel, postedMessageTs } = metadata;
+	if (!botToken || !channel || !postedMessageTs) {
 		// Not created through Slack, so no message to send
 		return;
 	}
@@ -72,8 +72,8 @@ export async function incidentSeverityUpdated<E extends BasicContext>(c: Context
 }
 
 export async function incidentAssigneeUpdated<E extends BasicContext>(c: Context<E>, newAssignee: string, { id, severity, status, metadata }: DOState) {
-	const { botToken, channel, thread, postedMessageTs } = metadata;
-	if (!botToken || !channel || !thread || !postedMessageTs) {
+	const { botToken, channel, postedMessageTs } = metadata;
+	if (!botToken || !channel || !postedMessageTs) {
 		// Not created through Slack, so no message to send
 		return;
 	}
@@ -86,8 +86,8 @@ export async function incidentStatusUpdated<E extends BasicContext>(
 	message: string,
 	{ id, severity, assignee, metadata }: DOState,
 ) {
-	const { botToken, channel, thread, postedMessageTs } = metadata;
-	if (!botToken || !channel || !thread || !postedMessageTs) {
+	const { botToken, channel, postedMessageTs } = metadata;
+	if (!botToken || !channel || !postedMessageTs) {
 		// Not created through Slack, so no message to send
 		return;
 	}

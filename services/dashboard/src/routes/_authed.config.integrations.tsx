@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { isServer, useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { createSignal, onMount } from "solid-js";
@@ -15,17 +15,9 @@ export const Route = createFileRoute("/_authed/config/integrations")({
 			installed: search.installed,
 		};
 	},
-	loader: async ({ context }) => {
-		// We force fetch as it's hard to keep state with the redirect
-		return context.queryClient.fetchQuery({
-			queryKey: ["integrations"],
-			queryFn: getIntegrations,
-		});
-	},
 });
 
 function IntegrationsConfig() {
-	const loaderData = Route.useLoaderData();
 	const params = Route.useSearch();
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
@@ -34,14 +26,14 @@ function IntegrationsConfig() {
 	const integrationsQuery = useQuery(() => ({
 		queryKey: ["integrations"],
 		queryFn: getIntegrationsFn,
-		staleTime: 60_000,
-		initialData: loaderData(),
+		// We don't want to cache the integrations as we need to refresh the page when the integration is connected
+		staleTime: 0,
+		enabled: !isServer,
 	}));
 
 	onMount(() => {
 		const installed = params().installed as string;
 		if (installed) {
-			integrationsQuery.refetch();
 			showToast({
 				title: "Integration connected",
 				description: `${installed} has been successfully connected to your workspace.`,
