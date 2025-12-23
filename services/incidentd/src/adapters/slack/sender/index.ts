@@ -15,6 +15,10 @@ export async function incidentStarted<E extends BasicContext>(c: Context<E>, { i
 		// Not created through Slack, so no message to send
 		return;
 	}
+	if (metadata.postedMessageTs) {
+		// Already posted, so no need to send again
+		return;
+	}
 	const blocks = incidentBlocks(c.env.FRONTEND_URL, id, severity, status, assignee);
 	const shouldBroadcast = severity === "high";
 	const [response] = await Promise.allSettled([
