@@ -93,7 +93,7 @@ export async function incidentStatusUpdated<E extends BasicContext>(
 		severity,
 		status: newStatus,
 		assignee,
-		resolutionMessage: message,
+		statusMessage: message,
 	});
 }
 
@@ -106,7 +106,7 @@ async function updateIncidentMessage({
 	severity,
 	status,
 	assignee,
-	resolutionMessage,
+	statusMessage,
 }: {
 	frontendUrl: string;
 	botToken: string;
@@ -116,9 +116,9 @@ async function updateIncidentMessage({
 	severity: IS["severity"];
 	status: IS["status"];
 	assignee: string;
-	resolutionMessage?: string;
+	statusMessage?: string;
 }) {
-	const blocks = incidentBlocks(frontendUrl, id, severity, status, assignee, resolutionMessage);
+	const blocks = incidentBlocks(frontendUrl, id, severity, status, assignee, statusMessage);
 	const textFallback = status === "resolved" ? "Incident resolved ✅" : status === "mitigating" ? "Incident mitigating 🟡" : "Incident updated 🔴";
 	await fetch(`https://slack.com/api/chat.update`, {
 		method: "POST",
@@ -166,23 +166,23 @@ function formatStatus(status: IS["status"]): string {
 	}
 }
 
-function incidentBlocks(
-	frontendUrl: string,
-	incidentId: string,
-	severity: IS["severity"],
-	status: IS["status"],
-	assigneeUserId?: string,
-	resolutionMessage?: string,
-): KnownBlock[] {
+function incidentBlocks(frontendUrl: string, incidentId: string, severity: IS["severity"], status: IS["status"], assigneeUserId?: string, statusMessage?: string): KnownBlock[] {
 	const isResolved = status === "resolved";
+	const isMitigating = status === "mitigating";
 	const validTransitions = getValidStatusTransitions(status);
+
+	const headerText = isResolved
+		? `✅ <${frontendUrl}/incidents/${incidentId}|Incident resolved>`
+		: isMitigating
+			? `🟡 <${frontendUrl}/incidents/${incidentId}|Incident mitigating>`
+			: `🚨 <${frontendUrl}/incidents/${incidentId}|Incident created>`;
 
 	const blocks: KnownBlock[] = [
 		{
 			type: "section",
 			text: {
 				type: "mrkdwn",
-				text: isResolved ? `✅ <${frontendUrl}/incidents/${incidentId}|Incident resolved>` : `🚨 <${frontendUrl}/incidents/${incidentId}|Incident created>`,
+				text: headerText,
 			},
 		},
 		{
@@ -198,20 +198,19 @@ function incidentBlocks(
 		},
 	];
 
-	// Add resolution message if resolved
-	if (isResolved && resolutionMessage) {
+	if (statusMessage && (isMitigating || isResolved)) {
+		const messageLabel = isResolved ? "Resolution" : "Mitigation";
 		blocks.push({
 			type: "section",
 			text: {
 				type: "mrkdwn",
-				text: `*Resolution:*\n${resolutionMessage}`,
+				text: `*${messageLabel}:*\n${statusMessage}`,
 			},
 		});
 	}
 
 	blocks.push({ type: "divider" });
 
-	// Only show actions if not resolved (terminal state)
 	if (!isResolved) {
 		const actionElements: ActionsBlock["elements"] = [
 			{
@@ -235,7 +234,6 @@ function incidentBlocks(
 			},
 		];
 
-		// Add status dropdown if there are valid transitions
 		if (validTransitions.length > 0) {
 			actionElements.push({
 				type: "static_select",

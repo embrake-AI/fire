@@ -3,11 +3,11 @@ import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft, User } from "lucide-solid";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { type SlackEntity, SlackEntityPicker } from "~/components/SlackEntityPicker";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
@@ -17,6 +17,26 @@ import { getSeverity, getStatus } from "~/lib/incident-config";
 import { getIncidentById } from "~/lib/incidents";
 import { useUpdateIncidentAssignee, useUpdateIncidentSeverity, useUpdateIncidentStatus } from "~/lib/incidents.hooks";
 
+// Move to analytics.$incidentId.tsx
+// function IncidentNotFound() {
+// 	return (
+// 		<div class="flex-1 bg-background flex items-center justify-center">
+// 			<Card class="max-w-md text-center p-8">
+// 				<CardHeader>
+// 					<CardTitle>Incident Not Found</CardTitle>
+// 					<CardDescription>The incident you're looking for doesn't exist.</CardDescription>
+// 				</CardHeader>
+// 				<CardContent>
+// 					<Link to="/" class="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
+// 						<ArrowLeft class="w-4 h-4" />
+// 						Back to incidents
+// 					</Link>
+// 				</CardContent>
+// 			</Card>
+// 		</div>
+// 	);
+// }
+
 export const Route = createFileRoute("/_authed/incidents/$incidentId")({
 	component: IncidentDetail,
 	loader: ({ params, context }) =>
@@ -25,22 +45,6 @@ export const Route = createFileRoute("/_authed/incidents/$incidentId")({
 			queryFn: () => getIncidentById({ data: { id: params.incidentId } }),
 			staleTime: 5_000,
 		}),
-	errorComponent: () => (
-		<div class="flex-1 bg-background flex items-center justify-center">
-			<Card class="max-w-md text-center p-8">
-				<CardHeader>
-					<CardTitle>Incident Not Found</CardTitle>
-					<CardDescription>The incident you're looking for doesn't exist.</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<Link to="/" class="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
-						<ArrowLeft class="w-4 h-4" />
-						Back to incidents
-					</Link>
-				</CardContent>
-			</Card>
-		</div>
-	),
 });
 
 function IncidentHeader(props: { incident: IS }) {
@@ -256,12 +260,21 @@ function IncidentHeader(props: { incident: IS }) {
 
 function IncidentDetail() {
 	const params = Route.useParams();
+	const navigate = useNavigate();
 	const incidentQuery = useQuery(() => ({
 		queryKey: ["incident", params().incidentId],
 		queryFn: () => getIncidentById({ data: { id: params().incidentId } }),
 		refetchInterval: 5_000,
 	}));
 	const incident = () => incidentQuery.data;
+
+	createEffect(() => {
+		if (incidentQuery.isError || (incidentQuery.isFetched && !incidentQuery.data)) {
+			console.log("Would navigate to /analysis/:incidentId", params().incidentId);
+			// TODO: navigate({ to: "/analysis/:incidentId", params: { incidentId: params().incidentId } });
+			navigate({ to: "/" });
+		}
+	});
 
 	return (
 		<div class="flex-1 bg-background p-6 md:p-8">
