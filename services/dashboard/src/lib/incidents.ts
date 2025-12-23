@@ -1,6 +1,9 @@
 import type { IS, IS_Event } from "@fire/common";
+import { integration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
+import { eq } from "drizzle-orm";
 import { authMiddleware } from "./auth-middleware";
+import { db } from "./db";
 import type { SlackChannel } from "./slack";
 import { signedFetch } from "./utils/server";
 
@@ -90,21 +93,22 @@ export const updateStatus = createServerFn({ method: "POST" })
 	});
 
 export const startIncident = createServerFn({ method: "POST" })
-	.inputValidator((data: { prompt: string; slackChannelId?: SlackChannel["id"] }) => data)
+	.inputValidator((data: { prompt: string; channel?: SlackChannel["id"] }) => data)
 	.middleware([authMiddleware])
 	.handler(async ({ data, context }) => {
+		let metadata: Record<string, string> | undefined;
+		if (data.channel) {
+			const [slackIntegration] = await db.select({ data: integration.data }).from(integration).where(eq(integration.clientId, context.clientId)).limit(1);
+			const botToken = slackIntegration?.data?.botToken;
+			metadata = {
+				channel: data.channel,
+				botToken,
+			};
+		}
 		const response = await signedFetch(
 			process.env.INCIDENTS_URL!,
 			{ clientId: context.clientId, userId: context.userId },
-			{
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					prompt: data.prompt,
-					createdBy: context.userId,
-					slackChannelId: data.slackChannelId,
-				}),
-			},
+			{ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: data.prompt, metadata }) },
 		);
 		if (!response.ok) {
 			throw new Error("Failed to start incident");

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { createEffect, createSignal, on } from "solid-js";
+import { createSignal, onMount } from "solid-js";
 import { IntegrationCard } from "~/components/IntegrationCard";
 import { SlackIcon } from "~/components/icons/SlackIcon";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -38,23 +38,18 @@ function IntegrationsConfig() {
 		initialData: loaderData(),
 	}));
 
-	createEffect(
-		on(
-			() => params().installed,
-			(installed) => {
-				if (installed) {
-					integrationsQuery.refetch();
-					showToast({
-						title: "Integration connected",
-						description: "Slack has been successfully connected to your workspace.",
-						variant: "success",
-					});
-					navigate({ to: ".", search: {}, replace: true });
-				}
-			},
-			{ defer: false },
-		),
-	);
+	onMount(() => {
+		const installed = params().installed as string;
+		if (installed) {
+			integrationsQuery.refetch();
+			showToast({
+				title: "Integration connected",
+				description: `${installed} has been successfully connected to your workspace.`,
+				variant: "success",
+			});
+			navigate({ to: ".", search: {}, replace: true });
+		}
+	});
 
 	const getInstallUrlFn = useServerFn(getInstallUrl);
 	const [isConnecting, setIsConnecting] = createSignal(false);

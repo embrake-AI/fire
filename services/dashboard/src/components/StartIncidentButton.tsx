@@ -53,7 +53,7 @@ export default function StartIncidentButton() {
 
 	const startIncidentFn = useServerFn(startIncident);
 	const startIncidentMutation = useMutation(() => ({
-		mutationFn: async (data: { prompt: string; slackChannelId?: string }) => startIncidentFn({ data }),
+		mutationFn: async (data: { prompt: string; channel?: SlackChannel["id"] }) => startIncidentFn({ data }),
 		onSuccess: (incident) => {
 			queryClient.invalidateQueries({ queryKey: ["incidents"] });
 			setOpen(false);
@@ -68,7 +68,7 @@ export default function StartIncidentButton() {
 		e.preventDefault();
 		startIncidentMutation.mutate({
 			prompt: prompt(),
-			slackChannelId: postToSlack() ? selectedChannel()?.id : undefined,
+			channel: postToSlack() ? selectedChannel()?.id : undefined,
 		});
 	};
 

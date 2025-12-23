@@ -11,8 +11,9 @@ import type { BasicContext } from "../../../handler";
 
 export async function incidentStarted<E extends BasicContext>(c: Context<E>, { id, severity, status, assignee, metadata }: DOState) {
 	const { botToken, channel, thread } = metadata;
-	if (!botToken || !channel || !thread) {
+	if (!botToken || !channel) {
 		// Not created through Slack, so no message to send
+		// Thread is optional, if we have a channe and no thread, we'll post in the channel directly
 		return;
 	}
 	if (metadata.postedMessageTs) {

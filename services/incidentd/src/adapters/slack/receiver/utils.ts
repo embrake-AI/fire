@@ -1,7 +1,7 @@
 import type { IS } from "@fire/common";
 import { integration, type SlackIntegrationData } from "@fire/db/schema";
 import type { KnownBlock, SlackEvent } from "@slack/types";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Context } from "hono";
 import type { BasicContext } from "../../../handler/index";
 import { getDB } from "../../../lib/db";
@@ -248,5 +248,12 @@ export async function getSlackIntegration(opts: {
 		)
 		.limit(1);
 
+	return result ?? null;
+}
+
+export async function getSlackIntegrationByClientId(opts: { hyperdrive: Hyperdrive; clientId: string }): Promise<{ clientId: string; data: SlackIntegrationData } | null> {
+	const { hyperdrive, clientId } = opts;
+	const db = getDB(hyperdrive);
+	const [result] = await db.select({ clientId: integration.clientId, data: integration.data }).from(integration).where(eq(integration.clientId, clientId)).limit(1);
 	return result ?? null;
 }

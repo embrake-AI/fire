@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { type BasicContext, getIncident, listIncidents, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
+import { getSlackIntegration, getSlackIntegrationByClientId } from "../../slack/receiver/utils";
 import { verifyDashboardRequestMiddleware } from "./middleware";
 
 type DashboardContext = BasicContext & { Variables: { auth: { clientId: string; userId: string } } };
@@ -22,16 +23,18 @@ dashboardRoutes.get("/:id", async (c) => {
 dashboardRoutes.post("/", async (c) => {
 	const auth = c.get("auth");
 	const id = crypto.randomUUID();
-	const { prompt } = await c.req.json<{
+	const { prompt, metadata } = await c.req.json<{
 		prompt: string;
+		metadata?: Record<string, string>;
 	}>();
+
 	const incident = await startIncident({
 		c,
 		identifier: id,
 		prompt,
 		createdBy: auth.userId,
 		source: "dashboard",
-		m: {},
+		m: metadata ?? {},
 	});
 	return c.json({ incident });
 });
