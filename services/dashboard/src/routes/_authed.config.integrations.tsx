@@ -28,7 +28,6 @@ function IntegrationsConfig() {
 		queryFn: getIntegrationsFn,
 		// We don't want to cache the integrations as we need to refresh the page when the integration is connected
 		staleTime: 0,
-		enabled: !isServer,
 	}));
 
 	onMount(() => {

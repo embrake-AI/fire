@@ -23,6 +23,7 @@ export default function StartIncidentButton() {
 	const [prompt, setPrompt] = createSignal("");
 	const [postToSlack, setPostToSlack] = createSignal(false);
 	const [selectedChannel, setSelectedChannel] = createSignal<SlackChannel | null>(null);
+	const [selectedChannelOpen, setSelectedChannelOpen] = createSignal(false);
 
 	createEffect(() => {
 		if (!open()) {
@@ -116,7 +117,7 @@ export default function StartIncidentButton() {
 									</div>
 								</Switch>
 								<Show when={postToSlack()}>
-									<Popover>
+									<Popover open={selectedChannelOpen()} onOpenChange={setSelectedChannelOpen}>
 										<PopoverTrigger as={Button} variant="outline" size="sm" class="w-full justify-between" type="button">
 											<Show when={selectedChannel()} fallback={<span class="text-muted-foreground">Choose a channel...</span>}>
 												{(channel) => (
@@ -140,6 +141,7 @@ export default function StartIncidentButton() {
 																	value={channel.name}
 																	onSelect={() => {
 																		setSelectedChannel(channel);
+																		setSelectedChannelOpen(false);
 																	}}
 																>
 																	<div class="flex items-center gap-2 w-full">
