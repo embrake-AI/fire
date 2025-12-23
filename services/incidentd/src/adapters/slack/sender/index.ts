@@ -171,12 +171,18 @@ function incidentBlocks(frontendUrl: string, incidentId: string, severity: IS["s
 	const isMitigating = status === "mitigating";
 	const validTransitions = getValidStatusTransitions(status);
 
+	const headerText = isResolved
+		? `✅ <${frontendUrl}/analysis/${incidentId}|Incident resolved>`
+		: isMitigating
+			? `🟡 <${frontendUrl}/incidents/${incidentId}|Incident mitigating>`
+			: `🚨 <${frontendUrl}/incidents/${incidentId}|Incident created>`;
+
 	const blocks: KnownBlock[] = [
 		{
 			type: "section",
 			text: {
 				type: "mrkdwn",
-				text: isResolved ? `✅ <${frontendUrl}/incidents/${incidentId}|Incident resolved>` : `🚨 <${frontendUrl}/incidents/${incidentId}|Incident created>`,
+				text: headerText,
 			},
 		},
 		{
