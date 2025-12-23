@@ -25,7 +25,10 @@ slackRoutes.post("/events", async (c) => {
 				return c.text("OK");
 			}
 
-			if (event.ts && event.thread_ts && event.ts !== event.thread_ts) {
+			//If edited, contains: "edited": { "user": "user_id", "ts": "ts" },
+			if (event.thread_ts) {
+				// either thread_ts === ts => the message was edited
+				// or thread_ts !== ts => the message was a new message in the thread
 				// TODO: handle mentions as prompts
 				return c.text("OK");
 			}
@@ -61,18 +64,20 @@ slackRoutes.post("/events", async (c) => {
 
 			const botToken = integrationData.botToken;
 
-			fetch(`https://slack.com/api/reactions.add`, {
-				method: "POST",
-				headers: {
-					Authorization: `Bearer ${botToken}`,
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					name: "fire",
-					channel,
-					timestamp: thread,
-				}),
-			}).catch(() => {});
+			c.executionCtx.waitUntil(
+				fetch(`https://slack.com/api/reactions.add`, {
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${botToken}`,
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						name: "fire",
+						channel,
+						timestamp: thread,
+					}),
+				}).catch(() => {}),
+			);
 
 			await startIncident({
 				c: c as Context<AuthContext>,
