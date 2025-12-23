@@ -171,29 +171,19 @@ function incidentBlocks(frontendUrl: string, incidentId: string, severity: IS["s
 	const isMitigating = status === "mitigating";
 	const validTransitions = getValidStatusTransitions(status);
 
-	const headerText = isResolved
-		? `✅ <${frontendUrl}/incidents/${incidentId}|Incident resolved>`
-		: isMitigating
-			? `🟡 <${frontendUrl}/incidents/${incidentId}|Incident mitigating>`
-			: `🚨 <${frontendUrl}/incidents/${incidentId}|Incident created>`;
-
 	const blocks: KnownBlock[] = [
 		{
 			type: "section",
 			text: {
 				type: "mrkdwn",
-				text: headerText,
+				text: isResolved ? `✅ <${frontendUrl}/incidents/${incidentId}|Incident resolved>` : `🚨 <${frontendUrl}/incidents/${incidentId}|Incident created>`,
 			},
 		},
 		{
 			type: "section",
 			fields: [
-				{ type: "mrkdwn", text: `*Status:*\n${formatStatus(status)}` },
 				{ type: "mrkdwn", text: `*Severity:*\n${severity}` },
-				{
-					type: "mrkdwn",
-					text: `*Assignee:*\n${assigneeUserId ? `<@${assigneeUserId}>` : "_Unassigned_"}`,
-				},
+				{ type: "mrkdwn", text: `*Assignee:*\n${assigneeUserId ? `<@${assigneeUserId}>` : "_Unassigned_"}` },
 			],
 		},
 	];
