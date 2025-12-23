@@ -3,6 +3,7 @@ import { createRouter } from "@tanstack/solid-router";
 import { setupRouterSsrQueryIntegration } from "@tanstack/solid-router-ssr-query";
 import { routeTree } from "./routeTree.gen";
 
+const retry = isServer ? 0 : 1;
 const queryClientOptions: QueryClientConfig = {
 	defaultOptions: {
 		queries: {
@@ -12,10 +13,10 @@ const queryClientOptions: QueryClientConfig = {
 			refetchOnWindowFocus: false,
 			refetchOnMount: false,
 
-			retry: 1,
+			retry,
 		},
 		mutations: {
-			retry: 1,
+			retry,
 		},
 	},
 };

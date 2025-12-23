@@ -135,8 +135,9 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	async get() {
-		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log ORDER BY id ASC").toArray();
 		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
+		ASSERT(state, "Incident not initialized");
+		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log ORDER BY id ASC").toArray();
 		return { state, events };
 	}
 
