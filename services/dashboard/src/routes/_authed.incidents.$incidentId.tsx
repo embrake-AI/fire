@@ -39,12 +39,6 @@ import { useUpdateIncidentAssignee, useUpdateIncidentSeverity, useUpdateIncident
 
 export const Route = createFileRoute("/_authed/incidents/$incidentId")({
 	component: IncidentDetail,
-	loader: ({ params, context }) =>
-		context.queryClient.ensureQueryData({
-			queryKey: ["incident", params.incidentId],
-			queryFn: () => getIncidentById({ data: { id: params.incidentId } }),
-			staleTime: 5_000,
-		}),
 });
 
 function IncidentHeader(props: { incident: IS }) {

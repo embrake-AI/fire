@@ -21,7 +21,7 @@ export async function incidentStarted<E extends BasicContext>(c: Context<E>, { i
 		return;
 	}
 	const blocks = incidentBlocks(c.env.FRONTEND_URL, id, severity, status, assignee);
-	const shouldBroadcast = severity === "high";
+	const shouldBroadcast = severity === "high" && !!thread;
 	const [response] = await Promise.allSettled([
 		fetch(`https://slack.com/api/chat.postMessage`, {
 			method: "POST",
@@ -62,12 +62,12 @@ export async function incidentStarted<E extends BasicContext>(c: Context<E>, { i
 }
 
 export async function incidentSeverityUpdated<E extends BasicContext>(c: Context<E>, newSeverity: IS["severity"], { id, status, assignee, metadata }: DOState) {
-	const { botToken, channel, postedMessageTs } = metadata;
+	const { botToken, channel, thread, postedMessageTs } = metadata;
 	if (!botToken || !channel || !postedMessageTs) {
 		// Not created through Slack, so no message to send
 		return;
 	}
-	const shouldBroadcast = newSeverity === "high";
+	const shouldBroadcast = newSeverity === "high" && !!thread;
 	await updateIncidentMessage({ frontendUrl: c.env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity: newSeverity, status, assignee, broadcast: shouldBroadcast });
 }
 
