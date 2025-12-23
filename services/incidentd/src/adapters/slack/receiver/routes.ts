@@ -34,7 +34,7 @@ slackRoutes.post("/events", async (c) => {
 			}
 
 			const text = event.text as string;
-			const user = event.user;
+			const user = event.user!; // It's not a bot message, so user is required
 			const thread = event.thread_ts ?? event.ts;
 			const teamId = body.team_id ?? event.team;
 			const enterpriseId = body.enterprise_id ?? null;

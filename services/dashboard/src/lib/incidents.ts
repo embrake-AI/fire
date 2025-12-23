@@ -1,6 +1,7 @@
 import type { IS, IS_Event } from "@fire/common";
 import { createServerFn } from "@tanstack/solid-start";
 import { authMiddleware } from "./auth-middleware";
+import type { SlackChannel } from "./slack";
 import { signedFetch } from "./utils/server";
 
 export const getIncidents = createServerFn({
@@ -89,7 +90,7 @@ export const updateStatus = createServerFn({ method: "POST" })
 	});
 
 export const startIncident = createServerFn({ method: "POST" })
-	.inputValidator((data: { prompt: string }) => data)
+	.inputValidator((data: { prompt: string; slackChannelId?: SlackChannel["id"] }) => data)
 	.middleware([authMiddleware])
 	.handler(async ({ data, context }) => {
 		const response = await signedFetch(
@@ -98,7 +99,11 @@ export const startIncident = createServerFn({ method: "POST" })
 			{
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ prompt: data.prompt, createdBy: context.userId }),
+				body: JSON.stringify({
+					prompt: data.prompt,
+					createdBy: context.userId,
+					slackChannelId: data.slackChannelId,
+				}),
 			},
 		);
 		if (!response.ok) {

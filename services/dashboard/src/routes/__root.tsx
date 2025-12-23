@@ -1,5 +1,5 @@
 import { type QueryClient, QueryClientProvider } from "@tanstack/solid-query";
-import { createRootRouteWithContext, HeadContent, Outlet, Scripts, useRouter } from "@tanstack/solid-router";
+import { createRootRouteWithContext, ErrorComponent, HeadContent, Outlet, Scripts, useRouter } from "@tanstack/solid-router";
 import { Suspense } from "solid-js";
 import { HydrationScript } from "solid-js/web";
 import { Button } from "~/components/ui/button";
@@ -27,6 +27,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 	}),
 	shellComponent: RootShell,
 	notFoundComponent: NotFound,
+	errorComponent: ErrorComponent,
 });
 
 function NotFound() {

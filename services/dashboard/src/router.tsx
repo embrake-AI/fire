@@ -1,28 +1,59 @@
 import { QueryClient } from "@tanstack/solid-query";
 import { createRouter } from "@tanstack/solid-router";
 import { setupRouterSsrQueryIntegration } from "@tanstack/solid-router-ssr-query";
-// import { getContext } from "~/integrations/tanstack-query/provider";
 import { routeTree } from "./routeTree.gen";
 
-export const getRouter = () => {
-	// const rqContext = getContext();
-	const queryClient = new QueryClient();
-
+function createAppRouter(queryClient: QueryClient) {
 	const router = createRouter({
 		routeTree,
-		context: {
-			queryClient,
-			// Auth context will be populated by root route's beforeLoad
-			clientId: null,
-			userId: null,
-		},
+		context: { queryClient, clientId: null, userId: null },
 		defaultPreload: "intent",
 	});
 
-	setupRouterSsrQueryIntegration({
-		router,
-		queryClient,
-	});
-
+	setupRouterSsrQueryIntegration({ router, queryClient });
 	return router;
+}
+
+type AppRouter = ReturnType<typeof createAppRouter>;
+
+let clientRouter: AppRouter | undefined;
+
+function getClientQueryClient() {
+	// Persist across HMR by stashing on globalThis
+	const g = globalThis as unknown as { __QUERY_CLIENT__: QueryClient | undefined };
+	if (!g.__QUERY_CLIENT__) {
+		const queryClient = new QueryClient();
+		g.__QUERY_CLIENT__ = queryClient;
+	}
+	return g.__QUERY_CLIENT__;
+}
+
+export const getRouter = () => {
+	if (typeof window !== "undefined") {
+		// client: reuse router + query client
+		if (!clientRouter) {
+			clientRouter = createAppRouter(getClientQueryClient());
+		}
+		return clientRouter;
+	} else {
+		// server: per request
+		const queryClient = new QueryClient();
+
+		const router = createRouter({
+			routeTree,
+			context: {
+				queryClient,
+				clientId: null,
+				userId: null,
+			},
+			defaultPreload: "intent",
+		});
+
+		setupRouterSsrQueryIntegration({
+			router,
+			queryClient,
+		});
+
+		return router;
+	}
 };

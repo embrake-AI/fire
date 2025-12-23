@@ -5,10 +5,9 @@ import { useServerFn } from "@tanstack/solid-start";
 import { ChevronRight, CircleCheck, Flame, ShieldAlert, Wrench } from "lucide-solid";
 import type { JSX } from "solid-js";
 import { createMemo, For, Show } from "solid-js";
-import { Badge } from "~/components/ui/badge";
 import { Card } from "~/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
-import { getSeverity, getStatus } from "~/lib/incident-config";
+import { getSeverity } from "~/lib/incident-config";
 import { getIncidents } from "~/lib/incidents";
 
 export const Route = createFileRoute("/_authed/")({
@@ -30,40 +29,35 @@ function IncidentsList() {
 	}));
 	const incidents = () => incidentsQuery.data ?? [];
 
-	const openIncidents = createMemo(() => incidents().filter((inc) => inc.status === "open"));
-	const mitigatingIncidents = createMemo(() => incidents().filter((inc) => inc.status === "mitigating"));
-	const resolvedIncidents = createMemo(() => incidents().filter((inc) => inc.status === "resolved"));
+	const severityOrder = { high: 0, medium: 1, low: 2 } as const;
+	const sortBySeverity = (a: IS, b: IS) => severityOrder[a.severity] - severityOrder[b.severity];
+
+	const openIncidents = createMemo(() =>
+		incidents()
+			.filter((inc) => inc.status === "open")
+			.sort(sortBySeverity),
+	);
+	const mitigatingIncidents = createMemo(() =>
+		incidents()
+			.filter((inc) => inc.status === "mitigating")
+			.sort(sortBySeverity),
+	);
+	const resolvedIncidents = createMemo(() =>
+		incidents()
+			.filter((inc) => inc.status === "resolved")
+			.sort(sortBySeverity),
+	);
 
 	const OpenIncidentsSection = (): JSX.Element => (
-		<IncidentSection
-			icon={<Flame class="w-5 h-5 text-red-600" />}
-			iconBg="bg-red-100"
-			title="Active Incidents"
-			incidents={openIncidents()}
-			cardVariant="prominent"
-			wrapperClass="p-5 space-y-5 bg-red-50/50 border-red-200/60"
-		/>
+		<IncidentSection icon={<Flame class="w-5 h-5 text-red-500" />} iconBg="bg-red-100" title="Active Incidents" incidents={openIncidents()} />
 	);
 
 	const MitigatingIncidentsSection = (): JSX.Element => (
-		<IncidentSection
-			icon={<Wrench class="w-5 h-5 text-amber-600" />}
-			iconBg="bg-amber-100"
-			title="Being Mitigated"
-			incidents={mitigatingIncidents()}
-			wrapperClass="p-5 space-y-5 bg-amber-50/50 border-amber-200/60"
-		/>
+		<IncidentSection icon={<Wrench class="w-5 h-5 text-amber-500" />} iconBg="bg-amber-100" title="Being Mitigated" incidents={mitigatingIncidents()} />
 	);
 
 	const ResolvedIncidentsSection = (): JSX.Element => (
-		<IncidentSection
-			icon={<ShieldAlert class="w-4 h-4 text-muted-foreground" />}
-			iconBg="bg-muted"
-			title="Resolved Incidents"
-			incidents={resolvedIncidents()}
-			cardVariant="muted"
-			collapsible
-		/>
+		<IncidentSection icon={<ShieldAlert class="w-4 h-4 text-muted-foreground" />} iconBg="bg-muted" title="Resolved Incidents" incidents={resolvedIncidents()} muted collapsible />
 	);
 
 	const openAndMitigatingIncidents = () => openIncidents().length > 0 && mitigatingIncidents().length > 0;
@@ -112,25 +106,11 @@ function NoIncidents() {
 	);
 }
 
-function IncidentSection(props: {
-	icon: JSX.Element;
-	iconBg: string;
-	title: string;
-	incidents: IS[];
-	cardVariant?: "prominent" | "default" | "muted";
-	wrapperClass?: string;
-	collapsible?: boolean;
-}) {
+function IncidentSection(props: { icon: JSX.Element; iconBg: string; title: string; incidents: IS[]; muted?: boolean; collapsible?: boolean }) {
 	const incidentsList = () => (
-		<div class="space-y-5">
-			<For each={props.incidents}>{(incident) => <IncidentCard incident={incident} prominent={props.cardVariant === "prominent"} muted={props.cardVariant === "muted"} />}</For>
+		<div class="space-y-3">
+			<For each={props.incidents}>{(incident) => <IncidentCard incident={incident} muted={props.muted} />}</For>
 		</div>
-	);
-
-	const content = () => (
-		<Show when={props.wrapperClass} fallback={incidentsList()}>
-			<Card class={props.wrapperClass}>{incidentsList()}</Card>
-		</Show>
 	);
 
 	if (props.collapsible) {
@@ -147,7 +127,7 @@ function IncidentSection(props: {
 					<ChevronRight class="w-5 h-5 text-muted-foreground transition-transform group-data-[expanded]:rotate-90" />
 				</CollapsibleTrigger>
 				<CollapsibleContent class="overflow-hidden data-[expanded]:animate-collapsible-down data-[closed]:animate-collapsible-up">
-					<div class="mt-3 pl-4 border-l-2 border-muted">{content()}</div>
+					<div class="mt-3 pl-4 border-l-2 border-muted">{incidentsList()}</div>
 				</CollapsibleContent>
 			</Collapsible>
 		);
@@ -157,45 +137,34 @@ function IncidentSection(props: {
 		<section>
 			<div class="flex items-center gap-3 mb-4">
 				<div class={`p-2 rounded-lg ${props.iconBg}`}>{props.icon}</div>
-				<div>
-					<h2 class="text-xl font-semibold text-foreground">{props.title}</h2>
-				</div>
+				<h2 class="text-xl font-semibold text-foreground">{props.title}</h2>
 			</div>
-			{content()}
+			{incidentsList()}
 		</section>
 	);
 }
 
-function IncidentCard(props: { incident: IS; prominent?: boolean; muted?: boolean }) {
+function IncidentCard(props: { incident: IS; muted?: boolean }) {
 	const severity = () => getSeverity(props.incident.severity);
-	const status = () => getStatus(props.incident.status);
-
-	const cardClasses = () => {
-		if (props.muted) {
-			return "bg-muted/30 border-border/50 hover:bg-muted/50";
-		}
-		if (props.prominent) {
-			return `${severity().bg} ${severity().border} hover:shadow-lg shadow-sm`;
-		}
-		return `bg-card hover:shadow-md ${severity().border}`;
-	};
 
 	return (
 		<Link to="/incidents/$incidentId" params={{ incidentId: props.incident.id }} class="block">
-			<Card class={`p-4 transition-all cursor-pointer ${cardClasses()}`}>
-				<div class="flex items-start gap-4">
-					<div class={`mt-0.5 ${props.muted ? "text-muted-foreground" : severity().color}`}>{severity().icon("sm")}</div>
-					<div class="flex-1 min-w-0">
-						<div class="flex items-center gap-3 mb-1 flex-wrap">
-							<h2 class={`text-lg font-medium truncate ${props.muted ? "text-muted-foreground" : "text-foreground"}`}>{props.incident.prompt}</h2>
-							<Badge variant="outline" round class={props.muted ? "border-muted-foreground/40 text-muted-foreground" : `${status().bg} ${status().color} border-transparent`}>
-								<span class={`w-1.5 h-1.5 rounded-full mr-1.5 ${props.muted ? "bg-muted-foreground/40" : status().dot}`} />
-								{status().label}
-							</Badge>
+			<Card class={`p-4 transition-all cursor-pointer ${props.muted ? "bg-muted/30 border-border/50 hover:bg-muted/50" : "bg-card hover:bg-muted/30"}`}>
+				<div class="flex items-start justify-between gap-4">
+					<div class="flex items-start gap-3 min-w-0 flex-1">
+						<div class={`shrink-0 mt-0.5 ${props.muted ? "text-muted-foreground/50" : severity().color}`}>{severity().icon("sm")}</div>
+						<div class="min-w-0 flex-1">
+							<h2 class={`font-medium truncate ${props.muted ? "text-muted-foreground" : "text-foreground"}`}>{props.incident.title || props.incident.prompt}</h2>
+							<Show when={props.incident.description}>
+								<p class={`text-sm mt-1 line-clamp-2 ${props.muted ? "text-muted-foreground/50" : "text-muted-foreground"}`}>{props.incident.description}</p>
+							</Show>
 						</div>
-						<p class={`text-sm ${props.muted ? "text-muted-foreground/70" : "text-muted-foreground"}`}>
-							{props.incident.id} · {new Date(props.incident.createdAt).toLocaleString()}
-						</p>
+					</div>
+					<div class="flex items-center gap-3 shrink-0">
+						<span class={`text-sm ${props.muted ? "text-muted-foreground/50" : "text-muted-foreground"}`}>
+							{new Date(props.incident.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+						</span>
+						<ChevronRight class={`w-4 h-4 ${props.muted ? "text-muted-foreground/30" : "text-muted-foreground/50"}`} />
 					</div>
 				</div>
 			</Card>

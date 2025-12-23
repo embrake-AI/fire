@@ -12,6 +12,12 @@ export type SlackUserGroup = {
 	memberCount: number;
 };
 
+export type SlackChannel = {
+	id: string;
+	name: string;
+	isPrivate: boolean;
+};
+
 type SlackUserResponse = {
 	ok: boolean;
 	members?: Array<{
@@ -109,4 +115,65 @@ export async function fetchSlackUserGroups(botToken: string): Promise<SlackUserG
 		handle: group.handle,
 		memberCount: group.user_count,
 	}));
+}
+
+type SlackUsersConversationsResponse = {
+	ok: boolean;
+	channels?: Array<{
+		id: string;
+		name: string;
+		is_channel: boolean;
+		is_private: boolean;
+	}>;
+	response_metadata?: {
+		next_cursor?: string;
+	};
+	error?: string;
+};
+
+/**
+ * Fetch Slack channels where the bot is a member using the users.conversations endpoint.
+ * @see https://docs.slack.dev/reference/methods/users.conversations/
+ */
+export async function fetchSlackBotChannels(botToken: string): Promise<SlackChannel[]> {
+	const channels: SlackChannel[] = [];
+	let cursor: string | undefined;
+
+	do {
+		const params = new URLSearchParams({
+			types: "public_channel,private_channel",
+			exclude_archived: "true",
+			limit: "200",
+		});
+		if (cursor) {
+			params.set("cursor", cursor);
+		}
+
+		const response = await fetch(`https://slack.com/api/users.conversations?${params.toString()}`, {
+			headers: {
+				Authorization: `Bearer ${botToken}`,
+				"Content-Type": "application/json",
+			},
+		});
+
+		const data: SlackUsersConversationsResponse = await response.json();
+
+		if (!data.ok) {
+			throw new Error(`Slack API error: ${data.error}`);
+		}
+
+		if (data.channels) {
+			for (const channel of data.channels) {
+				channels.push({
+					id: channel.id,
+					name: channel.name,
+					isPrivate: channel.is_private,
+				});
+			}
+		}
+
+		cursor = data.response_metadata?.next_cursor;
+	} while (cursor);
+
+	return channels;
 }
