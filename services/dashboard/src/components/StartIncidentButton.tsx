@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Link, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { Check, ChevronDown, Hash, Lock, Plus } from "lucide-solid";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { SlackIcon } from "~/components/icons/SlackIcon";
 import { Button } from "~/components/ui/button";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "~/components/ui/command";
@@ -23,7 +23,14 @@ export default function StartIncidentButton() {
 	const [prompt, setPrompt] = createSignal("");
 	const [postToSlack, setPostToSlack] = createSignal(false);
 	const [selectedChannel, setSelectedChannel] = createSignal<SlackChannel | null>(null);
-	const [channelPickerOpen, setChannelPickerOpen] = createSignal(false);
+
+	createEffect(() => {
+		if (!open()) {
+			setPostToSlack(false);
+			setSelectedChannel(null);
+			setPrompt("");
+		}
+	});
 
 	const entryPointsQuery = useQuery(() => ({
 		queryKey: ["entry-points"],
@@ -103,11 +110,13 @@ export default function StartIncidentButton() {
 									<SwitchControl>
 										<SwitchThumb />
 									</SwitchControl>
-									<SlackIcon class="h-5 w-5" />
-									<SwitchLabel>Also post on Slack</SwitchLabel>
+									<div class="flex items-center">
+										<SlackIcon class="h-8 w-8" />
+										<SwitchLabel>Post on Slack</SwitchLabel>
+									</div>
 								</Switch>
 								<Show when={postToSlack()}>
-									<Popover open={channelPickerOpen()} onOpenChange={setChannelPickerOpen}>
+									<Popover>
 										<PopoverTrigger as={Button} variant="outline" size="sm" class="w-full justify-between" type="button">
 											<Show when={selectedChannel()} fallback={<span class="text-muted-foreground">Choose a channel...</span>}>
 												{(channel) => (
@@ -131,7 +140,6 @@ export default function StartIncidentButton() {
 																	value={channel.name}
 																	onSelect={() => {
 																		setSelectedChannel(channel);
-																		setChannelPickerOpen(false);
 																	}}
 																>
 																	<div class="flex items-center gap-2 w-full">
