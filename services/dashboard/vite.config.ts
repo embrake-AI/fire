@@ -15,6 +15,7 @@ export default defineConfig({
 	plugins: [
 		!isProd && devtools(),
 		nitro({
+			preset: "vercel",
 			vercel: {
 				functions: {
 					runtime: "bun1.x",
