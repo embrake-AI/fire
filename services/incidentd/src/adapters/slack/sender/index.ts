@@ -137,9 +137,9 @@ async function updateIncidentMessage({
 			blocks,
 		}),
 	});
-	// Then broadcast separately (can't update content and broadcast in the same request)
+	// broadcast if needed (can't update content and broadcast in the same request)
 	if (broadcast) {
-		const res = await fetch(`https://slack.com/api/chat.update`, {
+		await fetch(`https://slack.com/api/chat.update`, {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${botToken}`,
@@ -150,10 +150,7 @@ async function updateIncidentMessage({
 				ts: postedMessageTs,
 				reply_broadcast: true,
 			}),
-		});
-		console.log("res.ok", res.ok);
-		const text = await res.text();
-		console.log("text", text);
+		}).catch(() => {});
 	}
 }
 
