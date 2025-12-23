@@ -1,5 +1,5 @@
 import type { IS } from "@fire/common";
-import { useQuery } from "@tanstack/solid-query";
+import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft, User } from "lucide-solid";
@@ -42,12 +42,14 @@ export const Route = createFileRoute("/_authed/incidents/$incidentId")({
 });
 
 function IncidentHeader(props: { incident: IS }) {
+	const queryClient = useQueryClient();
 	const navigate = useNavigate();
 	const updateSeverityMutation = useUpdateIncidentSeverity(props.incident.id);
 	const updateAssigneeMutation = useUpdateIncidentAssignee(props.incident.id);
 	const updateStatusMutation = useUpdateIncidentStatus(props.incident.id, {
 		onSuccess: (status) => {
 			if (status === "resolved") {
+				queryClient.invalidateQueries({ queryKey: ["incidents"] });
 				navigate({ to: "/" });
 			}
 		},
