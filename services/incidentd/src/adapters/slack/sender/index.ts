@@ -124,8 +124,22 @@ async function updateIncidentMessage({
 }) {
 	const blocks = incidentBlocks(frontendUrl, id, severity, status, assignee, statusMessage);
 	const textFallback = status === "resolved" ? "Incident resolved ✅" : status === "mitigating" ? "Incident mitigating 🟡" : "Incident updated 🔴";
-	try {
-		const response = await fetch(`https://slack.com/api/chat.update`, {
+	await fetch(`https://slack.com/api/chat.update`, {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${botToken}`,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			channel,
+			ts: postedMessageTs,
+			text: textFallback,
+			blocks,
+		}),
+	});
+	// Then broadcast separately (can't update content and broadcast in the same request)
+	if (broadcast) {
+		const res = await fetch(`https://slack.com/api/chat.update`, {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${botToken}`,
@@ -134,16 +148,12 @@ async function updateIncidentMessage({
 			body: JSON.stringify({
 				channel,
 				ts: postedMessageTs,
-				text: textFallback,
-				blocks,
-				...(broadcast && { reply_broadcast: true }),
+				reply_broadcast: true,
 			}),
 		});
-		console.log("response.ok", response.ok);
-		const text = await response.text();
+		console.log("res.ok", res.ok);
+		const text = await res.text();
 		console.log("text", text);
-	} catch (error) {
-		console.error("Failed to update incident message", error);
 	}
 }
 
