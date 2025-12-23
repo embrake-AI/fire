@@ -25,7 +25,7 @@ export async function dispatchIncidentStartedEvent<E extends BasicContext>(c: Co
 	const { clientId, identifier } = metadata;
 	await Promise.all([
 		c.env.incidents
-			.prepare("INSERT INTO incident (id, identifier, status, assignee, severity, title, description, client_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+			.prepare("INSERT INTO incident (id, identifier, status, assignee, severity, title, description, client_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")
 			.bind(id, identifier, "open", assignee, severity, title, description, clientId)
 			.run(),
 		...senders.map((sender) => sender.incidentStarted?.(c, incident)),
