@@ -1,7 +1,9 @@
-import type { IS } from "@fire/common";
+import type { IS, IS_Event } from "@fire/common";
 import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import { updateAssignee, updateSeverity, updateStatus } from "./incidents";
+
+type Incident = { state: IS; events: IS_Event[] };
 
 /**
  * Hook for updating incident severity with optimistic updates.
@@ -13,16 +15,13 @@ export function useUpdateIncidentSeverity(incidentId: string, options?: { onSucc
 	const updateSeverityFn = useServerFn(updateSeverity);
 
 	return useMutation(() => ({
-		mutationFn: async (severity: IS["severity"]) => {
-			await updateSeverityFn({ data: { id: incidentId, severity } });
-		},
+		mutationFn: async (severity: IS["severity"]) => updateSeverityFn({ data: { id: incidentId, severity } }),
 
 		onMutate: async (severity) => {
 			await queryClient.cancelQueries({ queryKey: ["incident", incidentId] });
 
-			const previousIncident = queryClient.getQueryData<IS>(["incident", incidentId]);
-
-			queryClient.setQueryData(["incident", incidentId], { ...previousIncident, severity });
+			const previousIncident = queryClient.getQueryData<Incident>(["incident", incidentId]);
+			queryClient.setQueryData(["incident", incidentId], { ...previousIncident, state: { ...previousIncident?.state, severity } });
 
 			return { previousIncident };
 		},
@@ -51,16 +50,13 @@ export function useUpdateIncidentAssignee(incidentId: string, options?: { onSucc
 	const updateAssigneeFn = useServerFn(updateAssignee);
 
 	return useMutation(() => ({
-		mutationFn: async (assignee: string) => {
-			await updateAssigneeFn({ data: { id: incidentId, assignee } });
-		},
+		mutationFn: async (assignee: string) => updateAssigneeFn({ data: { id: incidentId, assignee } }),
 
 		onMutate: async (assignee) => {
 			await queryClient.cancelQueries({ queryKey: ["incident", incidentId] });
 
-			const previousIncident = queryClient.getQueryData<IS>(["incident", incidentId]);
-
-			queryClient.setQueryData(["incident", incidentId], { ...previousIncident, assignee });
+			const previousIncident = queryClient.getQueryData<Incident>(["incident", incidentId]);
+			queryClient.setQueryData(["incident", incidentId], { ...previousIncident, state: { ...previousIncident?.state, assignee } });
 
 			return { previousIncident };
 		},
@@ -90,16 +86,13 @@ export function useUpdateIncidentStatus(incidentId: string, options?: { onSucces
 	const updateStatusFn = useServerFn(updateStatus);
 
 	return useMutation(() => ({
-		mutationFn: async ({ status, message }: { status: "mitigating" | "resolved"; message: string }) => {
-			return await updateStatusFn({ data: { id: incidentId, status, message } });
-		},
+		mutationFn: async ({ status, message }: { status: "mitigating" | "resolved"; message: string }) => updateStatusFn({ data: { id: incidentId, status, message } }),
 
 		onMutate: async ({ status }) => {
 			await queryClient.cancelQueries({ queryKey: ["incident", incidentId] });
 
-			const previousIncident = queryClient.getQueryData<IS>(["incident", incidentId]);
-
-			queryClient.setQueryData(["incident", incidentId], { ...previousIncident, status });
+			const previousIncident = queryClient.getQueryData<Incident>(["incident", incidentId]);
+			queryClient.setQueryData(["incident", incidentId], { ...previousIncident, state: { ...previousIncident?.state, status } });
 
 			return { previousIncident };
 		},
