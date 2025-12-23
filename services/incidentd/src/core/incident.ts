@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import type { IS } from "@fire/common";
+import type { IS, IS_Event } from "@fire/common";
 import type { Metadata } from "../handler";
 import { ASSERT } from "../lib/utils";
 
@@ -21,31 +21,6 @@ type EventLog = {
 	event_type: string;
 	event_data: string;
 };
-// TODO: Prob move to common
-type Event =
-	| {
-			event_type: "INCIDENT_CREATED";
-			event_data: Pick<DOState, "status" | "severity" | "createdBy" | "assignee" | "title" | "description" | "prompt" | "source">;
-	  }
-	| {
-			event_type: "STATUS_UPDATE";
-			event_data: {
-				status: DOState["status"];
-				message: string;
-			};
-	  }
-	| {
-			event_type: "ASSIGNEE_UPDATE";
-			event_data: {
-				assignee: DOState["assignee"];
-			};
-	  }
-	| {
-			event_type: "SEVERITY_UPDATE";
-			event_data: {
-				severity: DOState["severity"];
-			};
-	  };
 
 const S_KEY = "incident";
 const ELV_KEY = "event_log_version";
@@ -86,7 +61,7 @@ export class Incident extends DurableObject<Env> {
 		return payload;
 	}
 
-	private commit(state: DOState | undefined, event: Event | undefined) {
+	private commit(state: DOState | undefined, event: IS_Event | undefined) {
 		this.ctx.storage.transactionSync(() => {
 			if (state) {
 				this.ctx.storage.kv.put<DOState>(S_KEY, state);

@@ -25,7 +25,7 @@
 		"type-check": "turbo run type-check",
 		"lint": "turbo run lint",
 		"lint:fix": "turbo run lint -- --fix",
-		"clean": "turbo run clean && rm -rf node_modules bun.lock"
+		"clean": "turbo run clean && rm -rf node_modules"
 	},
 	"devDependencies": {
 		"turbo": "^2.7.1",

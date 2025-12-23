@@ -1,10 +1,9 @@
 import { type QueryClient, QueryClientProvider } from "@tanstack/solid-query";
-import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanstack/solid-router";
+import { createRootRouteWithContext, HeadContent, Outlet, Scripts, useRouter } from "@tanstack/solid-router";
 import { Suspense } from "solid-js";
 import { HydrationScript } from "solid-js/web";
 import { Button } from "~/components/ui/button";
 import { Toaster } from "~/components/ui/toast";
-import { getContext } from "~/integrations/tanstack-query/provider";
 import { getAuthContext } from "~/lib/auth-context";
 import styleCss from "~/styles.css?url";
 
@@ -30,8 +29,6 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 	notFoundComponent: NotFound,
 });
 
-const { queryClient } = getContext();
-
 function NotFound() {
 	return (
 		<div class="flex-1 flex flex-col items-center justify-center gap-4 p-8">
@@ -45,6 +42,9 @@ function NotFound() {
 }
 
 function RootShell() {
+	const router = useRouter();
+	const queryClient = router.options.context.queryClient;
+
 	return (
 		<html lang="en">
 			<head>

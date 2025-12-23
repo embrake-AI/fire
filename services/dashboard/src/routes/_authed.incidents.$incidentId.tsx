@@ -284,7 +284,7 @@ function IncidentDetail() {
 					Back to incidents
 				</Link>
 
-				<Show when={incident()}>{(inc) => <IncidentHeader incident={inc()} />}</Show>
+				<Show when={incident()}>{(inc) => <IncidentHeader incident={inc().state} /** TODO: events={inc().events}*/ />}</Show>
 			</div>
 		</div>
 	);

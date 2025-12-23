@@ -16,7 +16,7 @@ dashboardRoutes.get("/:id", async (c) => {
 		return c.json({ error: "ID is required" }, 400);
 	}
 
-	return c.json({ incident: await getIncident({ c, id }) });
+	return c.json(await getIncident({ c, id }));
 });
 
 dashboardRoutes.post("/", async (c) => {

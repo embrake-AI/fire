@@ -1,4 +1,4 @@
-import type { IS } from "@fire/common";
+import type { IS, IS_Event } from "@fire/common";
 import { createServerFn } from "@tanstack/solid-start";
 import { authMiddleware } from "./auth-middleware";
 import { signedFetch } from "./utils/server";
@@ -24,8 +24,8 @@ export const getIncidentById = createServerFn({ method: "GET" })
 		if (!response.ok) {
 			throw new Error("Failed to fetch incident");
 		}
-		const { incident } = (await response.json()) as { incident: IS };
-		return incident;
+		const incident = (await response.json()) as { state: IS; events: { event_type: string; event_data: string }[] };
+		return { state: incident.state, events: incident.events.map((event) => ({ event_type: event.event_type, event_data: JSON.parse(event.event_data) }) as IS_Event) };
 	});
 
 export const updateAssignee = createServerFn({ method: "POST" })

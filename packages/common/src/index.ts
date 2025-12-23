@@ -13,9 +13,34 @@ export type IS = {
 	status: IS_STATUS;
 	prompt: string;
 	severity: IS_SEVERITY;
-	createdBy?: string;
+	createdBy: string;
 	assignee: string;
 	source: IS_SOURCE;
 	title: string;
 	description: string;
 };
+
+export type IS_Event =
+	| {
+			event_type: "INCIDENT_CREATED";
+			event_data: Pick<IS, "status" | "severity" | "createdBy" | "assignee" | "title" | "description" | "prompt" | "source">;
+	  }
+	| {
+			event_type: "STATUS_UPDATE";
+			event_data: {
+				status: IS["status"];
+				message: string;
+			};
+	  }
+	| {
+			event_type: "ASSIGNEE_UPDATE";
+			event_data: {
+				assignee: IS["assignee"];
+			};
+	  }
+	| {
+			event_type: "SEVERITY_UPDATE";
+			event_data: {
+				severity: IS["severity"];
+			};
+	  };
