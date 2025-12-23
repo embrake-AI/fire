@@ -1,5 +1,5 @@
 import { type IS, IS_SEVERITY } from "@fire/common";
-import type { KnownBlock } from "@slack/types";
+import type { ActionsBlock, KnownBlock } from "@slack/types";
 import type { Context } from "hono";
 import type { DOState } from "../../../core/incident";
 import type { BasicContext } from "../../../handler";
@@ -9,13 +9,13 @@ import type { BasicContext } from "../../../handler";
  *   - https://docs.slack.dev/messaging/
  */
 
-export async function incidentStarted<E extends BasicContext>(c: Context<E>, { id, severity, assignee, metadata }: DOState) {
+export async function incidentStarted<E extends BasicContext>(c: Context<E>, { id, severity, status, assignee, metadata }: DOState) {
 	const { botToken, channel, thread } = metadata;
 	if (!botToken || !channel || !thread) {
-		console.error("Missing metadata", metadata);
+		// Not created through Slack, so no message to send
 		return;
 	}
-	const blocks = incidentBlocks(c.env.FRONTEND_URL, id, severity, assignee);
+	const blocks = incidentBlocks(c.env.FRONTEND_URL, id, severity, status, assignee);
 	const [response] = await Promise.allSettled([
 		fetch(`https://slack.com/api/chat.postMessage`, {
 			method: "POST",
@@ -24,9 +24,10 @@ export async function incidentStarted<E extends BasicContext>(c: Context<E>, { i
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify({
-				text: "Incident created :fire:",
+				text: "Incident created 🔴",
 				channel,
 				thread_ts: thread,
+				reply_broadcast: true, // Show in both thread AND main channel
 				blocks,
 			}),
 		}),
@@ -54,27 +55,46 @@ export async function incidentStarted<E extends BasicContext>(c: Context<E>, { i
 	}
 }
 
-const isValidSeverity = (severity: string): severity is IS["severity"] => IS_SEVERITY.some((s) => s === severity);
-export async function incidentSeverityUpdated<E extends BasicContext>(c: Context<E>, newSeverity: string, { id, assignee, metadata }: DOState) {
+export async function incidentSeverityUpdated<E extends BasicContext>(c: Context<E>, newSeverity: IS["severity"], { id, status, assignee, metadata }: DOState) {
 	const { botToken, channel, thread, postedMessageTs } = metadata;
 	if (!botToken || !channel || !thread || !postedMessageTs) {
-		console.error("Missing metadata", metadata);
+		// Not created through Slack, so no message to send
 		return;
 	}
-	if (!isValidSeverity(newSeverity)) {
-		console.error("Invalid severity", newSeverity);
-		return;
-	}
-	await updateIncidentMessage({ frontendUrl: c.env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity: newSeverity, assignee });
+	await updateIncidentMessage({ frontendUrl: c.env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity: newSeverity, status, assignee });
 }
 
-export async function incidentAssigneeUpdated<E extends BasicContext>(c: Context<E>, newAssignee: string, { id, severity, metadata }: DOState) {
+export async function incidentAssigneeUpdated<E extends BasicContext>(c: Context<E>, newAssignee: string, { id, severity, status, metadata }: DOState) {
 	const { botToken, channel, thread, postedMessageTs } = metadata;
 	if (!botToken || !channel || !thread || !postedMessageTs) {
-		console.error("Missing metadata", metadata);
+		// Not created through Slack, so no message to send
 		return;
 	}
-	await updateIncidentMessage({ frontendUrl: c.env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity, assignee: newAssignee });
+	await updateIncidentMessage({ frontendUrl: c.env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity, status, assignee: newAssignee });
+}
+
+export async function incidentStatusUpdated<E extends BasicContext>(
+	c: Context<E>,
+	newStatus: Exclude<IS["status"], "open">,
+	message: string,
+	{ id, severity, assignee, metadata }: DOState,
+) {
+	const { botToken, channel, thread, postedMessageTs } = metadata;
+	if (!botToken || !channel || !thread || !postedMessageTs) {
+		// Not created through Slack, so no message to send
+		return;
+	}
+	await updateIncidentMessage({
+		frontendUrl: c.env.FRONTEND_URL,
+		botToken,
+		channel,
+		postedMessageTs,
+		id,
+		severity,
+		status: newStatus,
+		assignee,
+		resolutionMessage: message,
+	});
 }
 
 async function updateIncidentMessage({
@@ -84,7 +104,9 @@ async function updateIncidentMessage({
 	postedMessageTs,
 	id,
 	severity,
+	status,
 	assignee,
+	resolutionMessage,
 }: {
 	frontendUrl: string;
 	botToken: string;
@@ -92,9 +114,12 @@ async function updateIncidentMessage({
 	postedMessageTs: string;
 	id: string;
 	severity: IS["severity"];
+	status: IS["status"];
 	assignee: string;
+	resolutionMessage?: string;
 }) {
-	const blocks = incidentBlocks(frontendUrl, id, severity, assignee);
+	const blocks = incidentBlocks(frontendUrl, id, severity, status, assignee, resolutionMessage);
+	const textFallback = status === "resolved" ? "Incident resolved ✅" : status === "mitigating" ? "Incident mitigating 🟡" : "Incident updated 🔴";
 	await fetch(`https://slack.com/api/chat.update`, {
 		method: "POST",
 		headers: {
@@ -104,24 +129,66 @@ async function updateIncidentMessage({
 		body: JSON.stringify({
 			channel,
 			ts: postedMessageTs,
-			text: "Incident updated :fire:",
+			text: textFallback,
 			blocks,
 		}),
 	});
 }
 
-function incidentBlocks(frontendUrl: string, incidentId: string, severity: IS["severity"], assigneeUserId?: string): KnownBlock[] {
-	return [
+/**
+ * Returns the valid status transitions for a given status.
+ * open -> mitigating, resolved
+ * mitigating -> resolved
+ * resolved -> (none, terminal state)
+ */
+function getValidStatusTransitions(currentStatus: IS["status"]): IS["status"][] {
+	switch (currentStatus) {
+		case "open":
+			return ["mitigating", "resolved"];
+		case "mitigating":
+			return ["resolved"];
+		case "resolved":
+			return [];
+	}
+}
+
+/**
+ * Format status for display with emoji indicator
+ */
+function formatStatus(status: IS["status"]): string {
+	switch (status) {
+		case "open":
+			return "🔴 Open";
+		case "mitigating":
+			return "🟡 Mitigating";
+		case "resolved":
+			return "🟢 Resolved";
+	}
+}
+
+function incidentBlocks(
+	frontendUrl: string,
+	incidentId: string,
+	severity: IS["severity"],
+	status: IS["status"],
+	assigneeUserId?: string,
+	resolutionMessage?: string,
+): KnownBlock[] {
+	const isResolved = status === "resolved";
+	const validTransitions = getValidStatusTransitions(status);
+
+	const blocks: KnownBlock[] = [
 		{
 			type: "section",
 			text: {
 				type: "mrkdwn",
-				text: `🚨 <${frontendUrl}/incidents/${incidentId}|Incident created>`,
+				text: isResolved ? `✅ <${frontendUrl}/incidents/${incidentId}|Incident resolved>` : `🚨 <${frontendUrl}/incidents/${incidentId}|Incident created>`,
 			},
 		},
 		{
 			type: "section",
 			fields: [
+				{ type: "mrkdwn", text: `*Status:*\n${formatStatus(status)}` },
 				{ type: "mrkdwn", text: `*Severity:*\n${severity}` },
 				{
 					type: "mrkdwn",
@@ -129,31 +196,64 @@ function incidentBlocks(frontendUrl: string, incidentId: string, severity: IS["s
 				},
 			],
 		},
-		{ type: "divider" },
-		{
+	];
+
+	// Add resolution message if resolved
+	if (isResolved && resolutionMessage) {
+		blocks.push({
+			type: "section",
+			text: {
+				type: "mrkdwn",
+				text: `*Resolution:*\n${resolutionMessage}`,
+			},
+		});
+	}
+
+	blocks.push({ type: "divider" });
+
+	// Only show actions if not resolved (terminal state)
+	if (!isResolved) {
+		const actionElements: ActionsBlock["elements"] = [
+			{
+				type: "static_select",
+				action_id: "set_severity",
+				placeholder: { type: "plain_text", text: "Change severity" },
+				initial_option: {
+					text: { type: "plain_text", text: severity },
+					value: severity,
+				},
+				options: IS_SEVERITY.map((p) => ({
+					text: { type: "plain_text", text: p },
+					value: p,
+				})),
+			},
+			{
+				type: "users_select",
+				action_id: "set_assignee",
+				placeholder: { type: "plain_text", text: "Assign to…" },
+				...(assigneeUserId ? { initial_user: assigneeUserId } : {}),
+			},
+		];
+
+		// Add status dropdown if there are valid transitions
+		if (validTransitions.length > 0) {
+			actionElements.push({
+				type: "static_select",
+				action_id: "set_status",
+				placeholder: { type: "plain_text", text: "Update status" },
+				options: validTransitions.map((s) => ({
+					text: { type: "plain_text", text: formatStatus(s) },
+					value: s,
+				})),
+			});
+		}
+
+		blocks.push({
 			type: "actions",
-			block_id: `incident:${incidentId}`, // <— key: embeds incidentId
-			elements: [
-				{
-					type: "static_select",
-					action_id: "set_severity",
-					placeholder: { type: "plain_text", text: "Change severity" },
-					initial_option: {
-						text: { type: "plain_text", text: severity },
-						value: severity,
-					},
-					options: IS_SEVERITY.map((p) => ({
-						text: { type: "plain_text", text: p },
-						value: p,
-					})),
-				},
-				{
-					type: "users_select",
-					action_id: "set_assignee",
-					placeholder: { type: "plain_text", text: "Assign to…" },
-					...(assigneeUserId ? { initial_user: assigneeUserId } : {}),
-				},
-			],
-		},
-	] as const;
+			block_id: `incident:${incidentId}`,
+			elements: actionElements,
+		});
+	}
+
+	return blocks;
 }

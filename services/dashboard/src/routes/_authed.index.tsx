@@ -133,7 +133,6 @@ function IncidentSection(props: {
 		</Show>
 	);
 
-	// Collapsible variant
 	if (props.collapsible) {
 		return (
 			<Collapsible>
@@ -154,7 +153,6 @@ function IncidentSection(props: {
 		);
 	}
 
-	// Standard variant
 	return (
 		<section>
 			<div class="flex items-center gap-3 mb-4">

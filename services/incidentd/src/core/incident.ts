@@ -43,6 +43,10 @@ export class Incident extends DurableObject<Env> {
 		return payload;
 	}
 
+	private async destroy() {
+		await Promise.all([this.ctx.storage.deleteAlarm(), this.ctx.storage.deleteAll()]);
+	}
+
 	/**
 	 * Entry point to start a new incident. It must be called before any other method.
 	 */
@@ -72,9 +76,30 @@ export class Incident extends DurableObject<Env> {
 		return state;
 	}
 
+	async updateStatus(status: DOState["status"], _message: string) {
+		const state = await this.ctx.storage.get<DOState>("incident");
+		ASSERT(state, "Incident not initialized");
+
+		const currentStatus = state.status;
+
+		const invalidTransition = currentStatus === "resolved" || (currentStatus === "mitigating" && status === "open");
+		const noChange = currentStatus === status;
+		if (invalidTransition || noChange) {
+			return state;
+		} else {
+			state.status = status;
+		}
+		if (state.status === "resolved") {
+			await this.destroy();
+		} else {
+			await this.ctx.storage.put<DOState>("incident", state);
+		}
+		return state;
+	}
+
 	async get() {
 		const state = await this.ctx.storage.get<DOState>("incident");
-		// and more
+		// TODO: event timeline and more
 		return state;
 	}
 

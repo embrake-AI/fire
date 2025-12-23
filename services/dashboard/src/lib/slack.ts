@@ -12,7 +12,6 @@ export type SlackUserGroup = {
 	memberCount: number;
 };
 
-// Slack API response types
 type SlackUserResponse = {
 	ok: boolean;
 	members?: Array<{
@@ -71,7 +70,6 @@ export async function fetchSlackUsers(botToken: string): Promise<SlackUser[]> {
 
 		if (data.members) {
 			for (const member of data.members) {
-				// Skip deleted users, bots, and app users
 				if (member.deleted || member.is_bot || member.is_app_user) {
 					continue;
 				}

@@ -18,14 +18,12 @@ export async function verifyDashboardRequestMiddleware(c: Context<AuthContext>, 
 		return c.json({ error: "Unauthorized: Missing authentication headers" }, 401);
 	}
 
-	// Verify timestamp is within 5 minutes
 	const now = Math.floor(Date.now() / 1000);
 	const tsNum = Number(ts);
 	if (!Number.isFinite(tsNum) || Math.abs(now - tsNum) > 60 * 5) {
 		return c.json({ error: "Unauthorized: Request expired" }, 401);
 	}
 
-	// Verify signature
 	const baseString = `${ts}:${message}`;
 	const isValid = await verifyHmacSignature(c.env.WORKER_SIGNING_SECRET, baseString, sig);
 
@@ -33,7 +31,6 @@ export async function verifyDashboardRequestMiddleware(c: Context<AuthContext>, 
 		return c.json({ error: "Unauthorized: Invalid signature" }, 401);
 	}
 
-	// Parse and validate message
 	let authContext: { clientId: string; userId: string };
 	try {
 		const parsed = JSON.parse(message);
@@ -48,7 +45,6 @@ export async function verifyDashboardRequestMiddleware(c: Context<AuthContext>, 
 		return c.json({ error: "Unauthorized: Malformed auth message" }, 401);
 	}
 
-	// Set auth context for downstream handlers
 	c.set("auth", authContext);
 
 	await next();
@@ -59,11 +55,9 @@ async function verifyHmacSignature(secret: string, message: string, signature: s
 
 	const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
 
-	// Convert to base64url
 	const base64 = btoa(String.fromCharCode(...new Uint8Array(mac)));
 	const expected = base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
-	// Timing-safe comparison
 	if (expected.length !== signature.length) {
 		return false;
 	}

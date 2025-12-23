@@ -61,7 +61,6 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 					});
 				}
 
-				// Extract required fields from Slack response
 				const teamId = tokenJson.team?.id;
 				const teamName = tokenJson.team?.name;
 				const appId = tokenJson.app_id;
@@ -73,7 +72,6 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 					return new Response("Slack response missing required fields", { status: 500 });
 				}
 
-				// Upsert integration (one per client + platform)
 				// TODO: Encrypt botToken at rest for production security
 				await db
 					.insert(integration)

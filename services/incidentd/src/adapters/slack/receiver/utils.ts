@@ -1,0 +1,252 @@
+import type { IS } from "@fire/common";
+import { integration, type SlackIntegrationData } from "@fire/db/schema";
+import type { KnownBlock, SlackEvent } from "@slack/types";
+import { sql } from "drizzle-orm";
+import type { Context } from "hono";
+import type { BasicContext } from "../../../handler/index";
+import { getDB } from "../../../lib/db";
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export type SlackEventPayload =
+	| { type: "url_verification"; challenge: string }
+	| {
+			type: "event_callback";
+			team_id?: string;
+			enterprise_id?: string;
+			is_enterprise_install?: boolean;
+			event: SlackEvent;
+	  };
+
+export type SlackBlockActionPayload = {
+	type: "block_actions";
+	trigger_id: string;
+	team: {
+		id: string;
+		domain?: string;
+		enterprise_id?: string;
+	};
+	user: {
+		id: string;
+		username?: string;
+	};
+	channel?: {
+		id: string;
+		name?: string;
+	};
+	message?: {
+		ts: string;
+		blocks?: KnownBlock[];
+	};
+	container?: {
+		type: "message" | "view";
+		message_ts?: string;
+		block_id?: string;
+	};
+	actions: Array<
+		| {
+				type: "static_select";
+				action_id: "set_severity";
+				block_id: string;
+				selected_option: {
+					text: { type: "plain_text"; text: string };
+					value: IS["severity"];
+				};
+		  }
+		| {
+				type: "users_select";
+				action_id: "set_assignee";
+				block_id: string;
+				selected_user: string;
+		  }
+		| {
+				type: "static_select";
+				action_id: "set_status";
+				block_id: string;
+				selected_option: {
+					text: { type: "plain_text"; text: string };
+					value: Exclude<IS["status"], "open">;
+				};
+		  }
+	>;
+};
+
+export type SlackViewSubmissionPayload = {
+	type: "view_submission";
+	team: {
+		id: string;
+		domain?: string;
+		enterprise_id?: string;
+	};
+	user: {
+		id: string;
+		username?: string;
+	};
+	view: {
+		id: string;
+		callback_id: string;
+		private_metadata: string;
+		state: {
+			values: {
+				status_message_block: {
+					status_message_input: {
+						type: "plain_text_input";
+						value: string | null;
+					};
+				};
+			};
+		};
+	};
+};
+
+export type SlackInteractionPayload = SlackBlockActionPayload | SlackViewSubmissionPayload;
+
+// ============================================================================
+// Handlers
+// ============================================================================
+
+type StatusUpdateAction = SlackBlockActionPayload["actions"][number] & {
+	type: "static_select";
+	block_id: string;
+};
+export async function handleStatusUpdate<E extends BasicContext>(
+	c: Context<E>,
+	action: StatusUpdateAction,
+	{ incidentId, teamId, enterpriseId, triggerId }: { incidentId: string; teamId: string; enterpriseId: string | null; triggerId: string },
+) {
+	const newStatus = action.selected_option.value as Exclude<IS["status"], "open">;
+
+	const slackIntegration = await getSlackIntegration({
+		hyperdrive: c.env.db,
+		teamId,
+		enterpriseId,
+		isEnterpriseInstall: !!enterpriseId,
+	});
+
+	if (!slackIntegration) {
+		console.error(`No Slack integration found for team ${teamId}`);
+		return c.text("OK");
+	}
+
+	const { botToken } = slackIntegration.data;
+
+	await openStatusUpdateModal({
+		botToken,
+		triggerId,
+		incidentId,
+		newStatus,
+	});
+}
+
+async function openStatusUpdateModal({
+	botToken,
+	triggerId,
+	incidentId,
+	newStatus,
+}: {
+	botToken: string;
+	triggerId: string;
+	incidentId: string;
+	newStatus: Exclude<IS["status"], "open">;
+}) {
+	const statusLabel = newStatus === "mitigating" ? "Mitigating" : "Resolved";
+	const modalView = {
+		type: "modal",
+		callback_id: "status_update_modal",
+		private_metadata: JSON.stringify({ incidentId, newStatus }),
+		title: {
+			type: "plain_text",
+			text: `Mark as ${statusLabel}`,
+		},
+		submit: {
+			type: "plain_text",
+			text: "Confirm",
+		},
+		close: {
+			type: "plain_text",
+			text: "Cancel",
+		},
+		blocks: [
+			{
+				type: "section",
+				text: {
+					type: "mrkdwn",
+					text: `You are about to mark this incident as *${statusLabel}*.`,
+				},
+			},
+			{
+				type: "input",
+				block_id: "status_message_block",
+				label: {
+					type: "plain_text",
+					text: newStatus === "resolved" ? "Resolution message" : "Status update message",
+				},
+				element: {
+					type: "plain_text_input",
+					action_id: "status_message_input",
+					multiline: true,
+					placeholder: {
+						type: "plain_text",
+						text: newStatus === "resolved" ? "Describe how the incident was resolved..." : "Describe the mitigation steps taken...",
+					},
+				},
+			},
+		],
+	};
+
+	await fetch("https://slack.com/api/views.open", {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${botToken}`,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			trigger_id: triggerId,
+			view: modalView,
+		}),
+	});
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
+/**
+ * Look up a Slack integration by workspace (team_id).
+ *
+ * Uses team_id as the primary tenant identifier since it's the most stable
+ * identifier for a Slack workspace. For Enterprise Grid org-level installs,
+ * also matches on enterprise_id.
+ *
+ * Note: We don't key on bot_id because:
+ * - It's not present on many event types (including human-origin app_mentions)
+ * - It identifies the bot, not the tenant/workspace
+ * - It varies across installation types and payload variants
+ */
+export async function getSlackIntegration(opts: {
+	hyperdrive: Hyperdrive;
+	teamId: string;
+	enterpriseId?: string | null;
+	isEnterpriseInstall?: boolean;
+}): Promise<{ clientId: string; data: SlackIntegrationData } | null> {
+	const { hyperdrive, teamId, enterpriseId, isEnterpriseInstall = false } = opts;
+	const db = getDB(hyperdrive);
+
+	const [result] = await db
+		.select({ clientId: integration.clientId, data: integration.data })
+		.from(integration)
+		.where(
+			sql`
+				${integration.data}->>'teamId' = ${teamId}
+				AND (
+					${!isEnterpriseInstall}
+					OR ${integration.data}->>'enterpriseId' = ${enterpriseId}
+				)
+			`,
+		)
+		.limit(1);
+
+	return result ?? null;
+}

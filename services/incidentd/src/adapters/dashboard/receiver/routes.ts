@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { type BasicContext, getIncident, listIncidents, startIncident, updateAssignee, updateSeverity } from "../../../handler/index";
+import { type BasicContext, getIncident, listIncidents, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
 import { verifyDashboardRequestMiddleware } from "./middleware";
 
 type DashboardContext = BasicContext & { Variables: { auth: { clientId: string; userId: string } } };
@@ -7,7 +7,6 @@ type DashboardContext = BasicContext & { Variables: { auth: { clientId: string; 
 const dashboardRoutes = new Hono<DashboardContext>().use(verifyDashboardRequestMiddleware);
 
 dashboardRoutes.get("/", async (c) => {
-	// auth context available via c.get("auth") for future client-scoped queries
 	return c.json({ incidents: await listIncidents({ c }) });
 });
 
@@ -59,6 +58,23 @@ dashboardRoutes.post("/:id/severity", async (c) => {
 	}
 
 	const incident = await updateSeverity({ c, id, severity });
+	return c.json({ incident });
+});
+
+dashboardRoutes.post("/:id/status", async (c) => {
+	const id = c.req.param("id");
+	if (!id) {
+		return c.json({ error: "ID is required" }, 400);
+	}
+	const { status, message } = await c.req.json<{ status: "mitigating" | "resolved"; message: string }>();
+	console.log("status", status);
+	console.log("message", message);
+
+	if (!["mitigating", "resolved"].includes(status)) {
+		return c.json({ error: "Invalid status" }, 400);
+	}
+
+	const incident = await updateStatus({ c, id, status, message });
 	return c.json({ incident });
 });
 

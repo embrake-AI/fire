@@ -1,19 +1,21 @@
 import type { IS } from "@fire/common";
 import { useQuery } from "@tanstack/solid-query";
-import { createFileRoute, Link } from "@tanstack/solid-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft, User } from "lucide-solid";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { type SlackEntity, SlackEntityPicker } from "~/components/SlackEntityPicker";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
+import { Textarea } from "~/components/ui/textarea";
 import { getSlackUserGroups, getSlackUsers } from "~/lib/entry-points";
 import { getSeverity, getStatus } from "~/lib/incident-config";
 import { getIncidentById } from "~/lib/incidents";
-import { useUpdateIncidentAssignee, useUpdateIncidentSeverity } from "~/lib/incidents.hooks";
+import { useUpdateIncidentAssignee, useUpdateIncidentSeverity, useUpdateIncidentStatus } from "~/lib/incidents.hooks";
 
 export const Route = createFileRoute("/_authed/incidents/$incidentId")({
 	component: IncidentDetail,
@@ -42,8 +44,16 @@ export const Route = createFileRoute("/_authed/incidents/$incidentId")({
 });
 
 function IncidentHeader(props: { incident: IS }) {
+	const navigate = useNavigate();
 	const updateSeverityMutation = useUpdateIncidentSeverity(props.incident.id);
 	const updateAssigneeMutation = useUpdateIncidentAssignee(props.incident.id);
+	const updateStatusMutation = useUpdateIncidentStatus(props.incident.id, {
+		onSuccess: (status) => {
+			if (status === "resolved") {
+				navigate({ to: "/" });
+			}
+		},
+	});
 
 	const status = () => getStatus(props.incident.status);
 
@@ -69,19 +79,107 @@ function IncidentHeader(props: { incident: IS }) {
 
 	const [open, setOpen] = createSignal(false);
 
+	const [statusDialogOpen, setStatusDialogOpen] = createSignal(false);
+	const [selectedStatus, setSelectedStatus] = createSignal<"mitigating" | "resolved" | null>(null);
+	const [statusMessage, setStatusMessage] = createSignal("");
+
+	const availableTransitions = createMemo(() => {
+		const current = props.incident.status;
+		if (current === "open") return ["mitigating", "resolved"] as const;
+		if (current === "mitigating") return ["resolved"] as const;
+		return [] as const;
+	});
+
+	const handleStatusClick = (newStatus: "mitigating" | "resolved") => {
+		setSelectedStatus(newStatus);
+		setStatusMessage("");
+		setStatusDialogOpen(true);
+	};
+
+	const handleStatusConfirm = () => {
+		const newStatus = selectedStatus();
+		if (!newStatus || !statusMessage().trim()) return;
+
+		updateStatusMutation.mutate({ status: newStatus, message: statusMessage() });
+		setStatusDialogOpen(false);
+		setSelectedStatus(null);
+		setStatusMessage("");
+	};
+
 	const severityConfig = () => getSeverity(props.incident.severity);
 
 	return (
 		<div class="space-y-6">
+			{/* Status Update Dialog */}
+			<Dialog open={statusDialogOpen()} onOpenChange={setStatusDialogOpen}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>
+							Update Status to <span class="capitalize">{selectedStatus()}</span>
+						</DialogTitle>
+						<DialogDescription>Please provide a message explaining this status change.</DialogDescription>
+					</DialogHeader>
+					<div class="py-4">
+						<Textarea placeholder="Describe what changed..." value={statusMessage()} onInput={(e) => setStatusMessage(e.currentTarget.value)} class="min-h-[100px]" />
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setStatusDialogOpen(false)}>
+							Cancel
+						</Button>
+						<Button onClick={handleStatusConfirm} disabled={!statusMessage().trim() || updateStatusMutation.isPending}>
+							{updateStatusMutation.isPending ? "Updating..." : "Confirm"}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
 			{/* Header */}
 			<div class="space-y-4">
-				{/* Title with status badge on the right */}
+				{/* Title with status selector on the right */}
 				<div class="flex items-start justify-between gap-4">
 					<h1 class="text-3xl font-bold tracking-tight">{props.incident.title}</h1>
-					<Badge round class={`${status().bg} ${status().color} border-transparent h-8 px-3 text-sm shrink-0`}>
-						<span class={`w-2 h-2 rounded-full mr-2 ${status().dot}`} />
-						{status().label}
-					</Badge>
+
+					{/* Status: show as selector if transitions available, otherwise static badge */}
+					<Show
+						when={availableTransitions().length > 0}
+						fallback={
+							<Badge round class={`${status().bg} ${status().color} border-transparent h-8 px-3 text-sm shrink-0`}>
+								<span class={`w-2 h-2 rounded-full mr-2 ${status().dot}`} />
+								{status().label}
+							</Badge>
+						}
+					>
+						<Popover>
+							<PopoverTrigger
+								as={Badge}
+								round
+								class={`${status().bg} ${status().color} border-transparent h-8 px-3 text-sm shrink-0 cursor-pointer hover:opacity-80 transition-opacity`}
+							>
+								<span class={`w-2 h-2 rounded-full mr-2 ${status().dot}`} />
+								{status().label}
+							</PopoverTrigger>
+							<PopoverContent class="w-48 p-2">
+								<div class="space-y-1">
+									<p class="text-xs text-muted-foreground px-2 py-1">Change status to:</p>
+									<For each={availableTransitions()}>
+										{(newStatus) => {
+											const config = getStatus(newStatus);
+											return (
+												<button
+													type="button"
+													class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors cursor-pointer text-left"
+													onClick={() => handleStatusClick(newStatus)}
+												>
+													<span class={`w-2 h-2 rounded-full ${config.dot}`} />
+													<span class="capitalize text-sm">{config.label}</span>
+												</button>
+											);
+										}}
+									</For>
+								</div>
+							</PopoverContent>
+						</Popover>
+					</Show>
 				</div>
 
 				{/* Inline metadata controls */}

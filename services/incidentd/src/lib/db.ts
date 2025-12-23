@@ -13,7 +13,6 @@ import postgres from "postgres";
  */
 export function getDB(hyperdrive: Hyperdrive) {
 	const client = postgres(hyperdrive.connectionString, {
-		// Limit connections per Worker request due to Workers' limits on concurrent external connections
 		max: 5,
 	});
 	return drizzle(client, { schema });

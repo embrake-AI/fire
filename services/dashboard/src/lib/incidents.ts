@@ -68,6 +68,26 @@ export const updateSeverity = createServerFn({ method: "POST" })
 		return incident;
 	});
 
+export const updateStatus = createServerFn({ method: "POST" })
+	.inputValidator((data: { id: string; status: "mitigating" | "resolved"; message: string }) => data)
+	.middleware([authMiddleware])
+	.handler(async ({ data, context }) => {
+		const response = await signedFetch(
+			`${process.env.INCIDENTS_URL}/${data.id}/status`,
+			{ clientId: context.clientId, userId: context.userId },
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ status: data.status, message: data.message }),
+			},
+		);
+		if (!response.ok) {
+			throw new Error("Failed to update status");
+		}
+		const { incident } = (await response.json()) as { incident: IS };
+		return incident;
+	});
+
 export const startIncident = createServerFn({ method: "POST" })
 	.inputValidator((data: { prompt: string }) => data)
 	.middleware([authMiddleware])
