@@ -5,15 +5,15 @@
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js",
-			"default": "./dist/index.js"
-		},
 		"./schema": {
 			"types": "./dist/schema/index.d.ts",
 			"import": "./dist/schema/index.js",
 			"default": "./dist/schema/index.js"
+		},
+		"./relations": {
+			"types": "./dist/relations.d.ts",
+			"import": "./dist/relations.js",
+			"default": "./dist/relations.js"
 		}
 	},
 	"files": [
@@ -36,7 +36,7 @@
 		"drizzle-orm": "catalog:"
 	},
 	"devDependencies": {
-		"drizzle-kit": "^0.31.8",
+		"drizzle-kit": "catalog:",
 		"typescript": "catalog:"
 	},
 	"version": "0.0.71"

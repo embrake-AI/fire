@@ -16,7 +16,9 @@ const queryClientOptions: QueryClientConfig = {
 			retry,
 		},
 		mutations: {
-			retry,
+			// I prefer adding an error message, and letting the user retry manually.
+			// Maybe I'll change my mind later
+			retry: 0,
 		},
 	},
 };

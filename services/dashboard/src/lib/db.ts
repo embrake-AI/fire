@@ -1,3 +1,4 @@
+import { relations } from "@fire/db/relations";
 import * as schema from "@fire/db/schema";
 import { attachDatabasePool } from "@vercel/functions";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -18,4 +19,8 @@ const pool = new Pool({
 });
 
 attachDatabasePool(pool);
-export const db = drizzle(pool, { schema });
+export const db = drizzle({
+	schema,
+	relations,
+	client: pool,
+});

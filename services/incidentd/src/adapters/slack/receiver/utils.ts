@@ -1,4 +1,4 @@
-import type { IS } from "@fire/common";
+import type { EntryPoint, IS } from "@fire/common";
 import { integration, type SlackIntegrationData } from "@fire/db/schema";
 import type { KnownBlock, SlackEvent } from "@slack/types";
 import { eq, sql } from "drizzle-orm";
@@ -123,6 +123,7 @@ export async function handleStatusUpdate<E extends BasicContext>(
 		teamId,
 		enterpriseId,
 		isEnterpriseInstall: !!enterpriseId,
+		withEntryPoints: false,
 	});
 
 	if (!slackIntegration) {
@@ -230,25 +231,57 @@ export async function getSlackIntegration(opts: {
 	teamId: string;
 	enterpriseId?: string | null;
 	isEnterpriseInstall?: boolean;
-}): Promise<{ clientId: string; data: SlackIntegrationData } | null> {
+	withEntryPoints?: boolean;
+}): Promise<{ clientId: string; data: SlackIntegrationData; entryPoints: EntryPoint[] } | null> {
 	const { hyperdrive, teamId, enterpriseId, isEnterpriseInstall = false } = opts;
 	const db = getDB(hyperdrive);
 
-	const [result] = await db
-		.select({ clientId: integration.clientId, data: integration.data })
-		.from(integration)
-		.where(
-			sql`
-				${integration.data}->>'teamId' = ${teamId}
-				AND (
-					${!isEnterpriseInstall}
-					OR ${integration.data}->>'enterpriseId' = ${enterpriseId}
-				)
-			`,
-		)
-		.limit(1);
+	const result = await db.query.client.findFirst({
+		columns: {
+			id: true,
+		},
+		where: {
+			RAW: sql`
+					${integration.data}->>'teamId' = ${teamId}
+					AND (
+						${!isEnterpriseInstall}
+						OR ${integration.data}->>'enterpriseId' = ${enterpriseId}
+					)
+				`,
+		},
+		with: {
+			integrations: {
+				columns: {
+					platform: true,
+					data: true,
+				},
+				where: {
+					platform: {
+						eq: "slack",
+					},
+				},
+			},
+			entryPoints: opts.withEntryPoints
+				? {
+						columns: {
+							assigneeId: true,
+							prompt: true,
+							type: true,
+						},
+					}
+				: {},
+		},
+	});
 
-	return result ?? null;
+	if (!result || !result.integrations[0]?.data) {
+		return null;
+	}
+
+	return {
+		clientId: result.id,
+		data: result.integrations[0]?.data,
+		entryPoints: result.entryPoints.map((ep) => ({ assignee: ep.assigneeId, prompt: ep.prompt })) ?? [],
+	};
 }
 
 export async function getSlackIntegrationByClientId(opts: { hyperdrive: Hyperdrive; clientId: string }): Promise<{ clientId: string; data: SlackIntegrationData } | null> {

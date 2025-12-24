@@ -44,3 +44,8 @@ export type IS_Event =
 				severity: IS["severity"];
 			};
 	  };
+
+export type EntryPoint = {
+	prompt: string;
+	assignee: string;
+};

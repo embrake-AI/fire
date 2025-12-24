@@ -52,10 +52,15 @@ slackRoutes.post("/events", async (c) => {
 				teamId,
 				enterpriseId,
 				isEnterpriseInstall,
+				withEntryPoints: true,
 			});
 
 			if (!slackIntegration) {
-				console.error(`No Slack integration found for team ${teamId}`);
+				console.error(`No Slack integration found for ${teamId}`);
+				return c.text("OK");
+			}
+			if (!slackIntegration.entryPoints.length) {
+				console.error(`No entry points found for client ${slackIntegration.clientId}`);
 				return c.text("OK");
 			}
 
@@ -90,6 +95,7 @@ slackRoutes.post("/events", async (c) => {
 					channel,
 					thread,
 				},
+				entryPoints: slackIntegration.entryPoints,
 			});
 		}
 

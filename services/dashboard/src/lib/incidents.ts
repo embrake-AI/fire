@@ -1,7 +1,5 @@
 import type { IS, IS_Event } from "@fire/common";
-import { integration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
-import { eq } from "drizzle-orm";
 import { authMiddleware } from "./auth-middleware";
 import { db } from "./db";
 import type { SlackChannel } from "./slack";
@@ -96,19 +94,57 @@ export const startIncident = createServerFn({ method: "POST" })
 	.inputValidator((data: { prompt: string; channel?: SlackChannel["id"] }) => data)
 	.middleware([authMiddleware])
 	.handler(async ({ data, context }) => {
-		let metadata: Record<string, string> | undefined;
-		if (data.channel) {
-			const [slackIntegration] = await db.select({ data: integration.data }).from(integration).where(eq(integration.clientId, context.clientId)).limit(1);
-			const botToken = slackIntegration?.data?.botToken;
-			metadata = {
-				channel: data.channel,
-				botToken,
-			};
+		const client = await db.query.client.findFirst({
+			where: {
+				id: context.clientId,
+			},
+			columns: {},
+			with: {
+				integrations: {
+					columns: {
+						data: true,
+						platform: true,
+					},
+				},
+				entryPoints: {
+					columns: {
+						assigneeId: true,
+						prompt: true,
+						type: true,
+					},
+				},
+			},
+		});
+		if (!client) {
+			throw new Error("Client not found");
 		}
+		const metadata = {
+			channel: data.channel,
+			clientId: context.clientId,
+			botToken: undefined as string | undefined,
+		};
+		// TODO: likely it's better to pass integrations to the incidentd service instead of the bot token
+		// Now that we only have slack, it's ok
+		if (data.channel) {
+			const slackIntegration = client.integrations.find((i) => i.platform === "slack");
+			const botToken = slackIntegration?.data?.botToken;
+			if (botToken) {
+				metadata.botToken = botToken;
+			}
+		}
+		const entryPoints = client.entryPoints.map((ep) => ({
+			assignee: ep.assigneeId,
+			prompt: ep.prompt,
+			// type: ep.type, // For now, not needed at the `incidentd` service
+		}));
 		const response = await signedFetch(
 			process.env.INCIDENTS_URL!,
 			{ clientId: context.clientId, userId: context.userId },
-			{ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: data.prompt, metadata }) },
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ prompt: data.prompt, metadata, entryPoints }),
+			},
 		);
 		if (!response.ok) {
 			throw new Error("Failed to start incident");

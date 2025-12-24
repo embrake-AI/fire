@@ -1,6 +1,6 @@
-import { entryPoint, integration } from "@fire/db";
+import { entryPoint, integration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { authMiddleware } from "./auth-middleware";
 import { db } from "./db";
 import { fetchSlackUserGroups, fetchSlackUsers } from "./slack";
@@ -92,11 +92,13 @@ export const getSlackUserGroups = createServerFn({
 	});
 
 export const createEntryPoint = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
 	.inputValidator((data: { id: string; type: "slack-user" | "slack-user-group" }) => data)
-	.handler(async ({ data }) => {
+	.handler(async ({ data, context }) => {
 		const [newEntryPoint] = await db
 			.insert(entryPoint)
 			.values({
+				clientId: context.clientId,
 				type: data.type,
 				prompt: "",
 				assigneeId: data.id,
@@ -112,9 +114,13 @@ export const createEntryPoint = createServerFn({ method: "POST" })
 	});
 
 export const deleteEntryPoint = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
 	.inputValidator((data: { id: string }) => data)
-	.handler(async ({ data }) => {
-		const result = await db.delete(entryPoint).where(eq(entryPoint.id, data.id)).returning();
+	.handler(async ({ data, context }) => {
+		const result = await db
+			.delete(entryPoint)
+			.where(and(eq(entryPoint.id, data.id), eq(entryPoint.clientId, context.clientId)))
+			.returning();
 
 		if (result.length === 0) {
 			throw new Error("Entry point not found");
@@ -125,8 +131,13 @@ export const deleteEntryPoint = createServerFn({ method: "POST" })
 
 export const updateEntryPointPrompt = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; prompt: string }) => data)
-	.handler(async ({ data }) => {
-		const [updated] = await db.update(entryPoint).set({ prompt: data.prompt }).where(eq(entryPoint.id, data.id)).returning();
+	.middleware([authMiddleware])
+	.handler(async ({ data, context }) => {
+		const [updated] = await db
+			.update(entryPoint)
+			.set({ prompt: data.prompt })
+			.where(and(eq(entryPoint.id, data.id), eq(entryPoint.clientId, context.clientId)))
+			.returning();
 
 		if (!updated) {
 			throw new Error("Entry point not found");

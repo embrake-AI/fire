@@ -1,15 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
-import type { IS, IS_Event } from "@fire/common";
+import type { EntryPoint, IS, IS_Event } from "@fire/common";
 import type { Metadata } from "../handler";
 import { ASSERT } from "../lib/utils";
-
-async function calculateIncidentInfo(_prompt: string) {
-	const assignee = "U05G1BLH2SU"; //await getAssigneeFromPrompt(prompt)
-	const severity: IS["severity"] = "low"; //await getSeverityFromPrompt(prompt)
-	const title = "random-title"; //await getTitleFromPrompt(prompt)
-	const description = "random-description, a bit longer or it doesnt look like a description"; //await getDescriptionFromPrompt(prompt)
-	return { assignee, severity, title, description };
-}
+import { calculateIncidentInfo } from "./idontknowhowtonamethisitswhereillplacecallstoai";
 
 export type DOState = IS & {
 	metadata: Metadata;
@@ -34,8 +27,8 @@ export class Incident extends DurableObject<Env> {
 		super(ctx, env);
 	}
 
-	private async init({ id, prompt, createdBy, source, metadata }: Pick<DOState, "id" | "prompt" | "createdBy" | "source" | "metadata">) {
-		const { assignee, severity, title, description } = await calculateIncidentInfo(prompt);
+	private async init({ id, prompt, createdBy, source, metadata }: Pick<DOState, "id" | "prompt" | "createdBy" | "source" | "metadata">, entryPoints: EntryPoint[]) {
+		const { assignee, severity, title, description } = await calculateIncidentInfo(prompt, entryPoints, this.env.OPENAI_API_KEY);
 		const status = "open";
 		const payload = {
 			id,
@@ -81,12 +74,12 @@ export class Incident extends DurableObject<Env> {
 	/**
 	 * Entry point to start a new incident. Must be called before any other method.
 	 */
-	async start({ id, prompt, createdBy, source, metadata }: Pick<DOState, "id" | "prompt" | "createdBy" | "source" | "metadata">) {
+	async start({ id, prompt, createdBy, source, metadata }: Pick<DOState, "id" | "prompt" | "createdBy" | "source" | "metadata">, entryPoints: EntryPoint[]) {
 		const exists = this.ctx.storage.kv.get<DOState>(S_KEY);
 		if (exists) {
 			return exists;
 		}
-		return this.ctx.blockConcurrencyWhile(() => this.init({ id, prompt, createdBy, source, metadata }));
+		return this.ctx.blockConcurrencyWhile(() => this.init({ id, prompt, createdBy, source, metadata }, entryPoints));
 	}
 
 	async setSeverity(severity: DOState["severity"]) {

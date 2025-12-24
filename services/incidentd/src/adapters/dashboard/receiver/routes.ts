@@ -1,3 +1,4 @@
+import type { EntryPoint } from "@fire/common";
 import { Hono } from "hono";
 import { type BasicContext, getIncident, listIncidents, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
 import { verifyDashboardRequestMiddleware } from "./middleware";
@@ -22,9 +23,10 @@ dashboardRoutes.get("/:id", async (c) => {
 dashboardRoutes.post("/", async (c) => {
 	const auth = c.get("auth");
 	const id = crypto.randomUUID();
-	const { prompt, metadata } = await c.req.json<{
+	const { prompt, metadata, entryPoints } = await c.req.json<{
 		prompt: string;
 		metadata?: Record<string, string>;
+		entryPoints: EntryPoint[];
 	}>();
 
 	const incident = await startIncident({
@@ -33,6 +35,7 @@ dashboardRoutes.post("/", async (c) => {
 		prompt,
 		createdBy: auth.userId,
 		source: "dashboard",
+		entryPoints,
 		m: metadata ?? {},
 	});
 	return c.json({ incident });

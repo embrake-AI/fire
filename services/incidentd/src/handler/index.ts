@@ -1,4 +1,4 @@
-import type { IS } from "@fire/common";
+import type { EntryPoint, IS } from "@fire/common";
 import type { Context } from "hono";
 import { dispatchIncidentAssigneeUpdatedEvent, dispatchIncidentSeverityUpdatedEvent, dispatchIncidentStartedEvent, dispatchIncidentStatusUpdatedEvent } from "../dispatcher";
 
@@ -9,26 +9,31 @@ export type Metadata = Record<string, string> & { clientId: string; identifier: 
 export async function startIncident<E extends AuthContext>({
 	c,
 	m,
-	identifier,
 	prompt,
 	createdBy,
 	source,
+	identifier,
+	entryPoints,
 }: {
 	c: Context<E>;
 	m: Omit<Metadata, "clientId">;
 	identifier: string;
+	entryPoints: EntryPoint[];
 } & Pick<IS, "prompt" | "createdBy" | "source">) {
-	const incidentId = c.env.INCIDENT.idFromName(identifier);
-	const incident = c.env.INCIDENT.get(incidentId);
 	const clientId = c.var.auth.clientId;
 	const metadata = { ...m, clientId, identifier };
-	const startedIncident = await incident.start({
-		id: incidentId.toString(),
-		prompt,
-		createdBy,
-		source,
-		metadata,
-	});
+	const incidentId = c.env.INCIDENT.newUniqueId();
+	const incident = c.env.INCIDENT.get(incidentId);
+	const startedIncident = await incident.start(
+		{
+			id: incidentId.toString(),
+			prompt,
+			createdBy,
+			source,
+			metadata,
+		},
+		entryPoints,
+	);
 	// TODO: move this to the dispatcher
 	await dispatchIncidentStartedEvent(c, startedIncident);
 	return startedIncident;

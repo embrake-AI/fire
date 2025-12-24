@@ -1,4 +1,4 @@
-import { client } from "@fire/db";
+import { client } from "@fire/db/schema";
 import { APIError, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { tanstackStartCookies } from "better-auth/tanstack-start";

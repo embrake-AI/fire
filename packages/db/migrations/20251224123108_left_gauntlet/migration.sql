@@ -1,0 +1,2 @@
+ALTER TABLE "entry_point" ADD COLUMN "client_id" text NOT NULL;--> statement-breakpoint
+ALTER TABLE "entry_point" ADD CONSTRAINT "entry_point_client_id_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."client"("id") ON DELETE cascade ON UPDATE no action;

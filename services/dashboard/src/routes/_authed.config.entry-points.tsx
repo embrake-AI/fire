@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { Link2, LoaderCircle, Pencil, Plus, Trash2, TriangleAlert, Users, UsersRound, X } from "lucide-solid";
-import { type Accessor, createEffect, createSignal, Index, Show } from "solid-js";
+import { type Accessor, createEffect, createSignal, Index, Show, Suspense } from "solid-js";
 import { type SlackEntity, SlackEntityPicker } from "~/components/SlackEntityPicker";
 import { AutoSaveTextarea } from "~/components/ui/auto-save-textarea";
 import { Button } from "~/components/ui/button";
@@ -137,9 +137,17 @@ function AddEntryPointPicker(props: AddEntryPointPickerProps) {
 						<X class="w-4 h-4" />
 					</Button>
 				</div>
-				<Show when={integrationQuery.data?.some((i) => i.platform === "slack" && i.installedAt)}>
-					<SlackEntityPicker onSelect={props.onSelect} disabled={props.isAdding()} placeholder="Search users or groups..." emptyMessage="All users and groups have been added." />
-				</Show>
+				<Suspense
+					fallback={
+						<div class="flex items-center justify-center py-8 px-6 text-center">
+							<LoaderCircle class="w-4 h-4 animate-spin" />
+						</div>
+					}
+				>
+					<Show when={integrationQuery.data?.some((i) => i.platform === "slack" && i.installedAt)}>
+						<SlackEntityPicker onSelect={props.onSelect} disabled={props.isAdding()} placeholder="Search users or groups..." emptyMessage="All users and groups have been added." />
+					</Show>
+				</Suspense>
 				<Show when={!integrationQuery.data?.length}>
 					<div class="flex flex-col items-center justify-center py-8 px-6 text-center">
 						<div class="relative mb-4">
