@@ -22,7 +22,7 @@ export async function startIncident<E extends AuthContext>({
 } & Pick<IS, "prompt" | "createdBy" | "source">) {
 	const clientId = c.var.auth.clientId;
 	const metadata = { ...m, clientId, identifier };
-	const incidentId = c.env.INCIDENT.idFromString(identifier);
+	const incidentId = c.env.INCIDENT.idFromName(identifier);
 	const incident = c.env.INCIDENT.get(incidentId);
 	const startedIncident = await incident.start(
 		{
