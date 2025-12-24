@@ -215,8 +215,8 @@ function incidentBlocks(frontendUrl: string, incidentId: string, severity: IS["s
 		blocks.push({
 			type: "section",
 			fields: [
-				{ type: "mrkdwn", text: `*Severity:*\n${severity}` },
-				{ type: "mrkdwn", text: `*Assignee:*\n${assigneeUserId ? `<@${assigneeUserId}>` : "_Unassigned_"}` },
+				{ type: "mrkdwn", text: `*Severity:* ${severity}` },
+				{ type: "mrkdwn", text: `*Assignee:* ${assigneeUserId ? `<@${assigneeUserId}>` : "_Unassigned_"}` },
 			],
 		});
 	}

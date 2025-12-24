@@ -241,12 +241,16 @@ export async function getSlackIntegration(opts: {
 			id: true,
 		},
 		where: {
-			RAW: sql`
-					${integration.data}->>'teamId' = ${teamId}
+			RAW: (table) => sql`
+				EXISTS (
+					SELECT 1 FROM integration WHERE client_id = ${table.id}
+					AND platform = 'slack'
+					AND data->>'teamId' = ${teamId}
 					AND (
 						${!isEnterpriseInstall}
-						OR ${integration.data}->>'enterpriseId' = ${enterpriseId}
+						OR data->>'enterpriseId' = ${enterpriseId}
 					)
+				)
 				`,
 		},
 		with: {
