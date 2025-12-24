@@ -9,7 +9,7 @@ import type { BasicContext } from "../../../handler";
  *   - https://docs.slack.dev/messaging/
  */
 
-export async function incidentStarted<E extends BasicContext>(c: Context<E>, { id, severity, status, assignee, metadata }: DOState) {
+export async function incidentStarted<E extends BasicContext>(c: Context<E>, { id, severity, status, assignee, metadata, title }: DOState) {
 	const { botToken, channel, thread } = metadata;
 	if (!botToken || !channel) {
 		// Not created through Slack, so no message to send
@@ -20,7 +20,7 @@ export async function incidentStarted<E extends BasicContext>(c: Context<E>, { i
 		// Already posted, so no need to send again
 		return;
 	}
-	const blocks = incidentBlocks(c.env.FRONTEND_URL, id, severity, status, assignee);
+	const blocks = incidentBlocks({ frontendUrl: c.env.FRONTEND_URL, incidentId: id, severity, status, assigneeUserId: assignee, title });
 	const shouldBroadcast = severity === "high" && !!thread;
 	const [response] = await Promise.allSettled([
 		fetch(`https://slack.com/api/chat.postMessage`, {
@@ -61,30 +61,41 @@ export async function incidentStarted<E extends BasicContext>(c: Context<E>, { i
 	}
 }
 
-export async function incidentSeverityUpdated<E extends BasicContext>(c: Context<E>, newSeverity: IS["severity"], { id, status, assignee, metadata }: DOState) {
+export async function incidentSeverityUpdated<E extends BasicContext>(c: Context<E>, newSeverity: IS["severity"], { id, status, assignee, metadata, title }: DOState) {
 	const { botToken, channel, thread, postedMessageTs } = metadata;
 	if (!botToken || !channel || !postedMessageTs) {
 		// Not created through Slack, so no message to send
 		return;
 	}
 	const shouldBroadcast = newSeverity === "high" && !!thread;
-	await updateIncidentMessage({ frontendUrl: c.env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity: newSeverity, status, assignee, broadcast: shouldBroadcast });
+	await updateIncidentMessage({
+		frontendUrl: c.env.FRONTEND_URL,
+		botToken,
+		channel,
+		postedMessageTs,
+		id,
+		severity: newSeverity,
+		status,
+		assignee,
+		broadcast: shouldBroadcast,
+		incidentName: title,
+	});
 }
 
-export async function incidentAssigneeUpdated<E extends BasicContext>(c: Context<E>, newAssignee: string, { id, severity, status, metadata }: DOState) {
+export async function incidentAssigneeUpdated<E extends BasicContext>(c: Context<E>, newAssignee: string, { id, severity, status, metadata, title }: DOState) {
 	const { botToken, channel, postedMessageTs } = metadata;
 	if (!botToken || !channel || !postedMessageTs) {
 		// Not created through Slack, so no message to send
 		return;
 	}
-	await updateIncidentMessage({ frontendUrl: c.env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity, status, assignee: newAssignee });
+	await updateIncidentMessage({ frontendUrl: c.env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity, status, assignee: newAssignee, incidentName: title });
 }
 
 export async function incidentStatusUpdated<E extends BasicContext>(
 	c: Context<E>,
 	newStatus: Exclude<IS["status"], "open">,
 	message: string,
-	{ id, severity, assignee, metadata }: DOState,
+	{ id, severity, assignee, metadata, title }: DOState,
 ) {
 	const { botToken, channel, postedMessageTs } = metadata;
 	if (!botToken || !channel || !postedMessageTs) {
@@ -101,6 +112,7 @@ export async function incidentStatusUpdated<E extends BasicContext>(
 		status: newStatus,
 		assignee,
 		statusMessage: message,
+		incidentName: title,
 	});
 }
 
@@ -115,6 +127,7 @@ async function updateIncidentMessage({
 	assignee,
 	statusMessage,
 	broadcast,
+	incidentName,
 }: {
 	frontendUrl: string;
 	botToken: string;
@@ -126,9 +139,10 @@ async function updateIncidentMessage({
 	assignee: string;
 	statusMessage?: string;
 	broadcast?: boolean;
+	incidentName: string;
 }) {
-	const blocks = incidentBlocks(frontendUrl, id, severity, status, assignee, statusMessage);
-	const textFallback = status === "resolved" ? "Incident resolved ✅" : status === "mitigating" ? "Incident mitigating 🟡" : "Incident updated 🔴";
+	const blocks = incidentBlocks({ frontendUrl, incidentId: id, severity, status, assigneeUserId: assignee, statusMessage, title: incidentName });
+	const textFallback = `${incidentName} - ${status === "resolved" ? "resolved ✅" : status === "mitigating" ? "mitigating 🟡" : "open 🔴"}`;
 	await fetch(`https://slack.com/api/chat.update`, {
 		method: "POST",
 		headers: {
@@ -190,16 +204,32 @@ function formatStatus(status: IS["status"]): string {
 	}
 }
 
-function incidentBlocks(frontendUrl: string, incidentId: string, severity: IS["severity"], status: IS["status"], assigneeUserId?: string, statusMessage?: string): KnownBlock[] {
+function incidentBlocks({
+	frontendUrl,
+	incidentId,
+	severity,
+	status,
+	assigneeUserId,
+	statusMessage,
+	title,
+}: {
+	frontendUrl: string;
+	incidentId: string;
+	severity: IS["severity"];
+	status: IS["status"];
+	assigneeUserId?: string;
+	statusMessage?: string;
+	title: string;
+}): KnownBlock[] {
 	const isResolved = status === "resolved";
 	const isMitigating = status === "mitigating";
 	const validTransitions = getValidStatusTransitions(status);
 
 	const headerText = isResolved
-		? `✅ <${frontendUrl}/analysis/${incidentId}|Incident resolved>`
+		? `✅ <${frontendUrl}/analysis/${incidentId}|${title}> - resolved`
 		: isMitigating
-			? `🟡 <${frontendUrl}/incidents/${incidentId}|Incident mitigating>`
-			: `🚨 <${frontendUrl}/incidents/${incidentId}|Incident created>`;
+			? `🟡 <${frontendUrl}/incidents/${incidentId}|${title}> - mitigating`
+			: `🚨 <${frontendUrl}/incidents/${incidentId}|${title}>`;
 
 	const blocks: KnownBlock[] = [
 		{

@@ -64,6 +64,7 @@ export class Incident extends DurableObject<Env> {
 			if (event) {
 				this.ctx.storage.sql.exec("INSERT INTO event_log (event_type, event_data) VALUES (?, ?)", event.event_type, JSON.stringify(event.event_data));
 			}
+			// TODO: schedule alarm. Make sure to make it atomic with the storage operations. (transactionSync is not needed, calling await setAlarm later should make it atomic with previously unawaited storage operations)
 		});
 	}
 
@@ -79,6 +80,7 @@ export class Incident extends DurableObject<Env> {
 		if (exists) {
 			return exists;
 		}
+		// TODO: Respond here, and schedule alarm to run init
 		return this.ctx.blockConcurrencyWhile(() => this.init({ id, prompt, createdBy, source, metadata }, entryPoints));
 	}
 
