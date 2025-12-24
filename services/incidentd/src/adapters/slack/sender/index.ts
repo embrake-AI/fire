@@ -226,10 +226,10 @@ function incidentBlocks({
 	const validTransitions = getValidStatusTransitions(status);
 
 	const headerText = isResolved
-		? `✅ <${frontendUrl}/analysis/${incidentId}|${title}> - resolved`
+		? `<${frontendUrl}/analysis/${incidentId}|${title}> - ✅ resolved`
 		: isMitigating
-			? `🟡 <${frontendUrl}/incidents/${incidentId}|${title}> - mitigating`
-			: `🚨 <${frontendUrl}/incidents/${incidentId}|${title}>`;
+			? `<${frontendUrl}/incidents/${incidentId}|${title}> - 🟡 mitigating`
+			: `<${frontendUrl}/incidents/${incidentId}|${title}> - 🚨`;
 
 	const blocks: KnownBlock[] = [
 		{
