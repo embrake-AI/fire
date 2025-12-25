@@ -4,6 +4,8 @@ globs: ['**/routes/**/*.tsx']
 alwaysApply: false
 ---
 
+DON'T USE ROUTE LOADERS. WANT TO MOVE TO SPA
+
 # File-Based Routing Conventions
 
 TanStack Router uses the filesystem to define routes. This guide covers all naming conventions.
@@ -59,12 +61,10 @@ import { createFileRoute } from '@tanstack/solid-router'
 
 export const Route = createFileRoute('/posts/$postId')({
     component: PostPage,
-    loader: ({ params }) => fetchPost(params.postId),
 })
 
 function PostPage() {
     const params = Route.useParams()
-    const post = Route.useLoaderData()
 
     return (
         <article>
@@ -291,18 +291,8 @@ export const Route = createFileRoute('/path')({
     // Component to render
     component: MyComponent,
 
-    // Data loading
-    loader: async ({ params, context, deps }) => fetchData(),
-    loaderDeps: ({ search }) => ({ page: search.page }),
-
     // Search params
     validateSearch: searchSchema,
-
-    // Pre-load hook (runs before loader, can redirect)
-    beforeLoad: async ({ params, context }) => {
-        if (!context.auth) throw redirect({ to: '/login' })
-        return { user: context.auth.user }
-    },
 
     // Caching
     staleTime: 10_000, // Fresh for 10 seconds

@@ -4,7 +4,8 @@ import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { ChevronRight, CircleCheck, Flame, ShieldAlert, Wrench } from "lucide-solid";
 import type { JSX } from "solid-js";
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, For, Show, Suspense } from "solid-js";
+import { Loading } from "~/components/Loading";
 import { Card } from "~/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { getSeverity } from "~/lib/incident-config";
@@ -12,15 +13,21 @@ import { getIncidents } from "~/lib/incidents";
 
 export const Route = createFileRoute("/_authed/")({
 	component: IncidentsList,
-	loader: ({ context }) =>
-		context.queryClient.prefetchQuery({
-			queryKey: ["incidents"],
-			queryFn: () => getIncidents(),
-			staleTime: 15_000,
-		}),
 });
 
 function IncidentsList() {
+	return (
+		<div class="flex-1 bg-background p-6 md:p-8">
+			<div class="max-w-4xl mx-auto space-y-8">
+				<Suspense fallback={<IncidentsLoading />}>
+					<IncidentsContent />
+				</Suspense>
+			</div>
+		</div>
+	);
+}
+
+function IncidentsContent() {
 	const getIncidentsFn = useServerFn(getIncidents);
 	const incidentsQuery = useQuery(() => ({
 		queryKey: ["incidents"],
@@ -65,20 +72,26 @@ function IncidentsList() {
 	const noIncidents = () => openIncidents().length === 0 && mitigatingIncidents().length === 0 && resolvedIncidents().length === 0;
 
 	return (
-		<div class="flex-1 bg-background p-6 md:p-8">
-			<div class="max-w-4xl mx-auto space-y-8">
-				<Show when={noIncidents()}>
-					<NoIncidents />
-				</Show>
+		<div class="animate-in fade-in duration-300 space-y-8">
+			<Show when={noIncidents()}>
+				<NoIncidents />
+			</Show>
 
-				<Show when={onlyMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
+			<Show when={onlyMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
 
-				<Show when={openIncidents().length > 0}>{OpenIncidentsSection()}</Show>
+			<Show when={openIncidents().length > 0}>{OpenIncidentsSection()}</Show>
 
-				<Show when={openAndMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
+			<Show when={openAndMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
 
-				<Show when={resolvedIncidents().length > 0}>{ResolvedIncidentsSection()}</Show>
-			</div>
+			<Show when={resolvedIncidents().length > 0}>{ResolvedIncidentsSection()}</Show>
+		</div>
+	);
+}
+
+function IncidentsLoading() {
+	return (
+		<div class="flex items-center justify-center py-32">
+			<Loading />
 		</div>
 	);
 }

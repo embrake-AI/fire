@@ -12,6 +12,7 @@ import { mustGetEnv, sign } from "~/lib/utils/server";
 export const getIntegrations = createServerFn({ method: "GET" })
 	.middleware([authMiddleware])
 	.handler(async ({ context }) => {
+		await new Promise((resolve) => setTimeout(resolve, 5_000));
 		const { clientId } = context;
 
 		const results = await db.select({ platform: integration.platform, installedAt: integration.installedAt }).from(integration).where(eq(integration.clientId, clientId));

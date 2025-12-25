@@ -1,23 +1,19 @@
 import { type QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import { createRootRouteWithContext, ErrorComponent, HeadContent, Outlet, Scripts, useRouter } from "@tanstack/solid-router";
-import { Suspense } from "solid-js";
+import { createEffect, on, onMount, Show } from "solid-js";
 import { HydrationScript } from "solid-js/web";
+import { Loading } from "~/components/Loading";
 import { Button } from "~/components/ui/button";
 import { Toaster } from "~/components/ui/toast";
-import { getAuthContext } from "~/lib/auth-context";
+import { initializeAuth, isAuthReady } from "~/lib/auth-store";
 import styleCss from "~/styles.css?url";
 
 interface RouterContext {
 	queryClient: QueryClient;
-	clientId: string | null;
-	userId: string | null;
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
-	beforeLoad: async () => {
-		const { clientId, userId } = await getAuthContext();
-		return { clientId, userId };
-	},
+	// Auth is now bootstrapped client-side in RootShell, not in beforeLoad
 	head: () => ({
 		links: [
 			{ rel: "stylesheet", href: styleCss },
@@ -28,6 +24,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 	shellComponent: RootShell,
 	notFoundComponent: NotFound,
 	errorComponent: ErrorComponent,
+	ssr: false,
 });
 
 function NotFound() {
@@ -46,6 +43,16 @@ function RootShell() {
 	const router = useRouter();
 	const queryClient = router.options.context.queryClient;
 
+	onMount(() => {
+		initializeAuth();
+	});
+
+	createEffect(
+		on(isAuthReady, (r) => {
+			if (r) router.invalidate();
+		}),
+	);
+
 	return (
 		<html lang="en">
 			<head>
@@ -54,9 +61,18 @@ function RootShell() {
 			</head>
 			<body class="min-h-screen flex flex-col">
 				<QueryClientProvider client={queryClient}>
-					<Suspense fallback={<div class="flex-1" />}>
-						<Outlet />
-					</Suspense>
+					<Show
+						when={isAuthReady()}
+						fallback={
+							<main class="flex-1 flex items-center justify-center bg-background">
+								<Loading />
+							</main>
+						}
+					>
+						<div class="animate-in fade-in duration-300 flex flex-col flex-1">
+							<Outlet />
+						</div>
+					</Show>
 				</QueryClientProvider>
 				<Toaster />
 				<Scripts />

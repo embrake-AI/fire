@@ -1,0 +1,85 @@
+---
+description: Data loading with Suspense in dashboard routes
+alwaysApply: false
+---
+
+# Static Shell + Suspense Pattern
+
+Use this pattern for pages that fetch data: render static UI immediately while data-dependent content suspends.
+
+## Structure
+
+```tsx
+// Route points directly to component (no Suspense wrapper)
+export const Route = createFileRoute('/_authed/my-page')({
+    component: MyPage,
+})
+
+// Static shell renders immediately
+function MyPage() {
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Page Title</CardTitle> {/* Static - renders immediately */}
+            </CardHeader>
+            <Suspense fallback={<ContentSkeleton />}>
+                <PageContent /> {/* Data-dependent - suspends */}
+            </Suspense>
+        </Card>
+    )
+}
+
+// Data fetching happens in the content component
+function PageContent() {
+    const query = useQuery(() => ({
+        queryKey: ['data'],
+        queryFn: fetchData,
+    }))
+
+    return <CardContent class="animate-in fade-in duration-300">{/* Render query.data */}</CardContent>
+}
+
+// Skeleton matches content structure (not the full page)
+function ContentSkeleton() {
+    return (
+        <CardContent>
+            <Skeleton class="h-10 w-36" />
+        </CardContent>
+    )
+}
+```
+
+## Key Principles
+
+1. **Static shell renders immediately**: Headers, navigation, card containers, page layout
+2. **Suspense wraps only data-dependent content**: The component that calls `useQuery`
+3. **Skeleton matches content structure**: Don't duplicate static elements in skeleton
+4. **Add `animate-in fade-in duration-300`** to content for smooth transition
+
+## When to Use Suspense vs Show
+
+| Use Case                             | Tool         |
+| ------------------------------------ | ------------ |
+| Data fetching with SSR streaming     | `<Suspense>` |
+| Conditional rendering based on state | `<Show>`     |
+| Toggle visibility based on signals   | `<Show>`     |
+
+## Skeleton Component
+
+Use the `Skeleton` component from `~/components/ui/skeleton`:
+
+```tsx
+import { Skeleton } from "~/components/ui/skeleton";
+
+// Variants
+<Skeleton class="h-10 w-36" />                    // rectangular (default)
+<Skeleton variant="text" class="h-4 w-24" />      // text line
+<Skeleton variant="circular" class="w-8 h-8" />   // avatar/icon
+```
+
+## Examples in Codebase
+
+-   `_authed.config.integrations.tsx` - Card with static header, suspense on content
+-   `_authed.config.entry-points.tsx` - Card shell with suspense on list
+-   `_authed.index.tsx` - Page container with suspense on incident sections
+-   `_authed.incidents.$incidentId.tsx` - Static back link, suspense on incident details

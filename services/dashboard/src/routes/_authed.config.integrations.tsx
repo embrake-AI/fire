@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { createSignal, onMount } from "solid-js";
-import { IntegrationCard } from "~/components/IntegrationCard";
+import { LoaderCircle } from "lucide-solid";
+import type { Accessor, JSX } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 import { SlackIcon } from "~/components/icons/SlackIcon";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { showToast } from "~/components/ui/toast";
 import { disconnectIntegration, getInstallUrl, getIntegrations } from "~/lib/integrations";
@@ -21,13 +24,12 @@ function IntegrationsConfig() {
 	const params = Route.useSearch();
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
-	const getIntegrationsFn = useServerFn(getIntegrations);
 
+	const getIntegrationsFn = useServerFn(getIntegrations);
 	const integrationsQuery = useQuery(() => ({
 		queryKey: ["integrations"],
 		queryFn: getIntegrationsFn,
-		// We don't want to cache the integrations as we need to refresh the page when the integration is connected
-		staleTime: 0,
+		suspense: true,
 	}));
 
 	onMount(() => {
@@ -100,5 +102,54 @@ function IntegrationsConfig() {
 				/>
 			</CardContent>
 		</Card>
+	);
+}
+
+type IntegrationCardProps = {
+	/** Integration name displayed to user */
+	name: string;
+	/** Icon component for the integration */
+	icon: JSX.Element;
+	/** Whether the integration is currently connected */
+	connected: Accessor<boolean>;
+	/** Whether the connect/disconnect action is loading */
+	loading?: boolean;
+	/** Callback when disconnect is clicked */
+	onDisconnect?: () => void;
+	/** Callback when connect is clicked */
+	onConnect?: () => void;
+};
+
+function IntegrationCard(props: IntegrationCardProps) {
+	return (
+		<div class="flex items-center justify-between py-2">
+			<div class="flex items-center">
+				<div class="flex items-center">
+					{props.icon}
+					<span class="font-medium text-foreground">{props.name}</span>
+				</div>
+				<Show when={props.connected()}>
+					<Badge class="ml-4 bg-emerald-100 text-emerald-700 border-emerald-200">Connected</Badge>
+				</Show>
+			</div>
+			<Show
+				when={props.connected()}
+				fallback={
+					<Button onClick={props.onConnect} disabled={props.loading} size="sm">
+						<Show when={props.loading}>
+							<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+						</Show>
+						Connect
+					</Button>
+				}
+			>
+				<Button onClick={props.onDisconnect} disabled={props.loading} variant="outline" size="sm">
+					<Show when={props.loading}>
+						<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+					</Show>
+					Disconnect
+				</Button>
+			</Show>
+		</div>
 	);
 }

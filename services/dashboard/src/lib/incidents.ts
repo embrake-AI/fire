@@ -22,7 +22,6 @@ export const getIncidentById = createServerFn({ method: "GET" })
 	.inputValidator((data: { id: string }) => data)
 	.middleware([authMiddleware])
 	.handler(async ({ data, context }) => {
-		await new Promise((resolve) => setTimeout(resolve, 3_000));
 		const response = await signedFetch(`${process.env.INCIDENTS_URL}/${data.id}`, { clientId: context.clientId, userId: context.userId });
 		if (!response.ok) {
 			throw new Error("Failed to fetch incident");

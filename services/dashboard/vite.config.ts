@@ -14,6 +14,16 @@ export default defineConfig({
 	},
 	plugins: [
 		!isProd && devtools(),
+		viteTsConfigPaths({
+			projects: ["./tsconfig.json"],
+		}),
+		tailwindcss(),
+		tanstackStart({
+			spa: {
+				enabled: true,
+			},
+		}),
+		solidPlugin({ ssr: true }),
 		nitro({
 			preset: "vercel",
 			vercel: {
@@ -22,11 +32,5 @@ export default defineConfig({
 				},
 			},
 		}),
-		viteTsConfigPaths({
-			projects: ["./tsconfig.json"],
-		}),
-		tailwindcss(),
-		tanstackStart(),
-		solidPlugin({ ssr: true }),
 	],
 });

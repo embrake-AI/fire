@@ -95,7 +95,6 @@ import { getIncidents } from '~/lib/incidents'
 
 export const Route = createFileRoute('/')({
     component: IncidentsList,
-    loader: () => getIncidents(),
 })
 ```
 
@@ -106,7 +105,6 @@ import { getIncidentById } from '~/lib/incidents'
 
 export const Route = createFileRoute('/incidents/$incidentId')({
     component: IncidentDetail,
-    loader: ({ params }) => getIncidentById({ data: { id: params.incidentId } }),
 })
 ```
 
@@ -331,12 +329,10 @@ const result = await updateIncident({ data: { id: '123', status: 'resolved' } })
 
 1. **Keep server functions in `/lib`** - Colocate related server functions
 
-2. **Use Zod for validation** - Runtime validation + TypeScript types
+2. **Handle errors gracefully** - Use redirect/notFound for expected cases
 
-3. **Handle errors gracefully** - Use redirect/notFound for expected cases
+3. **DO NOT Use loaders for initial data** - want to migrate to a SPA
 
-4. **Use in loaders for initial data** - Avoids waterfall fetching
+4. **Use useServerFn for component data** - Integrates with TanStack Query
 
-5. **Use useServerFn for component data** - Integrates with TanStack Query
-
-6. **Avoid side effects in GET functions** - Use POST for mutations
+5. **Avoid side effects in GET functions** - Use POST for mutations

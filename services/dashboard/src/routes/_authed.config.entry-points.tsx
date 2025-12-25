@@ -7,6 +7,7 @@ import { type SlackEntity, SlackEntityPicker } from "~/components/SlackEntityPic
 import { AutoSaveTextarea } from "~/components/ui/auto-save-textarea";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
+import { Skeleton } from "~/components/ui/skeleton";
 import { type EntryPoint, getEntryPoints } from "~/lib/entry-points";
 import { toCreateGroupInput, toCreateInput, useCreateEntryPoint, useDeleteEntryPoint, useUpdateEntryPointPrompt } from "~/lib/entry-points.hooks";
 import { getIntegrations } from "~/lib/integrations";
@@ -14,18 +15,23 @@ import { cn } from "~/lib/utils/client";
 
 export const Route = createFileRoute("/_authed/config/entry-points")({
 	component: EntryPointsConfig,
-	loader: ({ context }) =>
-		context.queryClient.prefetchQuery({
-			queryKey: ["entry-points"],
-			queryFn: getEntryPoints,
-			staleTime: 60_000,
-		}),
 });
 
 function EntryPointsConfig() {
+	return (
+		<Card class="p-6">
+			<Suspense fallback={<EntryPointsContentSkeleton />}>
+				<EntryPointsContent />
+			</Suspense>
+		</Card>
+	);
+}
+
+function EntryPointsContent() {
+	const getEntryPointsFn = useServerFn(getEntryPoints);
 	const entryPointsQuery = useQuery(() => ({
 		queryKey: ["entry-points"],
-		queryFn: getEntryPoints,
+		queryFn: getEntryPointsFn,
 		refetchInterval: 60_000,
 	}));
 	const entryPoints = () => entryPointsQuery.data ?? [];
@@ -69,36 +75,34 @@ function EntryPointsConfig() {
 	};
 
 	return (
-		<Card class="p-6">
-			<div class="space-y-6">
-				<AddEntryPointPicker isOpen={isPickerOpen} setIsOpen={setIsPickerOpen} isAdding={() => createMutation.isPending} onSelect={handleSelectEntity} />
+		<div class="space-y-6 animate-in fade-in duration-300">
+			<AddEntryPointPicker isOpen={isPickerOpen} setIsOpen={setIsPickerOpen} isAdding={() => createMutation.isPending} onSelect={handleSelectEntity} />
 
-				<Show when={!isPickerOpen()}>
-					<Show when={entryPoints().length > 0} fallback={<EntryPointsEmptyState />}>
-						<div class="space-y-3">
-							<Index each={entryPoints()}>
-								{(entryPoint, index) => (
-									<EntryPointCard
-										entryPoint={entryPoint()}
-										name={entryPoint().name}
-										index={index}
-										onDelete={handleDelete}
-										onUpdatePrompt={handleUpdatePrompt}
-										isDeleting={deleteMutation.isPending && deleteMutation.variables === entryPoint().id}
-										isNewlyCreated={newlyCreatedId() === entryPoint().id}
-										onEditComplete={() => {
-											setNewlyCreatedId(null);
-										}}
-									/>
-								)}
-							</Index>
-						</div>
-					</Show>
+			<Show when={!isPickerOpen()}>
+				<Show when={entryPoints().length > 0} fallback={<EntryPointsEmptyState />}>
+					<div class="space-y-3">
+						<Index each={entryPoints()}>
+							{(entryPoint, index) => (
+								<EntryPointCard
+									entryPoint={entryPoint()}
+									name={entryPoint().name}
+									index={index}
+									onDelete={handleDelete}
+									onUpdatePrompt={handleUpdatePrompt}
+									isDeleting={deleteMutation.isPending && deleteMutation.variables === entryPoint().id}
+									isNewlyCreated={newlyCreatedId() === entryPoint().id}
+									onEditComplete={() => {
+										setNewlyCreatedId(null);
+									}}
+								/>
+							)}
+						</Index>
+					</div>
 				</Show>
+			</Show>
 
-				<EntryPointsFooter count={entryPoints().filter((ep) => !!ep.prompt).length} />
-			</div>
-		</Card>
+			<EntryPointsFooter count={entryPoints().filter((ep) => !!ep.prompt).length} />
+		</div>
 	);
 }
 
@@ -113,12 +117,6 @@ interface AddEntryPointPickerProps {
 
 function AddEntryPointPicker(props: AddEntryPointPickerProps) {
 	const handleCancel = () => props.setIsOpen(false);
-	const getIntegrationFn = useServerFn(getIntegrations);
-	const integrationQuery = useQuery(() => ({
-		queryKey: ["integration"],
-		queryFn: getIntegrationFn,
-		staleTime: 60_000,
-	}));
 
 	return (
 		<Show
@@ -144,10 +142,25 @@ function AddEntryPointPicker(props: AddEntryPointPickerProps) {
 						</div>
 					}
 				>
-					<Show when={integrationQuery.data?.some((i) => i.platform === "slack" && i.installedAt)}>
-						<SlackEntityPicker onSelect={props.onSelect} disabled={props.isAdding()} placeholder="Search users or groups..." emptyMessage="All users and groups have been added." />
-					</Show>
+					<AddEntryPointPickerContent onSelect={props.onSelect} isAdding={props.isAdding} />
 				</Suspense>
+			</div>
+		</Show>
+	);
+}
+
+function AddEntryPointPickerContent(props: { onSelect: (entity: SlackEntity) => void; isAdding: Accessor<boolean> }) {
+	const getIntegrationFn = useServerFn(getIntegrations);
+	const integrationQuery = useQuery(() => ({
+		queryKey: ["integration"],
+		queryFn: getIntegrationFn,
+		staleTime: 60_000,
+	}));
+
+	return (
+		<Show
+			when={integrationQuery.data?.some((i) => i.platform === "slack" && i.installedAt)}
+			fallback={
 				<Show when={!integrationQuery.data?.length}>
 					<div class="flex flex-col items-center justify-center py-8 px-6 text-center">
 						<div class="relative mb-4">
@@ -163,8 +176,40 @@ function AddEntryPointPicker(props: AddEntryPointPickerProps) {
 						</Button>
 					</div>
 				</Show>
-			</div>
+			}
+		>
+			<SlackEntityPicker onSelect={props.onSelect} disabled={props.isAdding()} placeholder="Search users or groups..." emptyMessage="All users and groups have been added." />
 		</Show>
+	);
+}
+
+// --- Skeleton ---
+
+function EntryPointsContentSkeleton() {
+	return (
+		<div class="space-y-6 animate-in fade-in duration-200">
+			<Skeleton class="h-10 w-36" />
+			<div class="space-y-3">
+				<EntryPointCardSkeleton />
+				<EntryPointCardSkeleton />
+				<EntryPointCardSkeleton />
+			</div>
+			<Skeleton variant="text" class="h-4 w-24" />
+		</div>
+	);
+}
+
+function EntryPointCardSkeleton() {
+	return (
+		<div class="border border-border rounded-lg bg-muted/30 p-5">
+			<div class="flex items-center gap-3">
+				<Skeleton variant="circular" class="w-8 h-8" />
+				<div class="flex-1 flex items-center gap-2">
+					<Skeleton variant="text" class="h-4 w-24" />
+					<Skeleton variant="text" class="h-4 w-48" />
+				</div>
+			</div>
+		</div>
 	);
 }
 

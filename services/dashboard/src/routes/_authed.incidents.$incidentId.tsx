@@ -63,9 +63,14 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 	const updateSeverityMutation = useUpdateIncidentSeverity(incident().id);
 	const updateAssigneeMutation = useUpdateIncidentAssignee(incident().id);
 	const updateStatusMutation = useUpdateIncidentStatus(incident().id, {
-		onSuccess: (status) => {
+		onSuccess: async (status) => {
 			if (status === "resolved") {
-				queryClient.invalidateQueries({ queryKey: ["incidents"] });
+				const previousIncidents = queryClient.getQueryData<IS[]>(["incidents"]);
+				if (previousIncidents) {
+					const newIncidents = previousIncidents.filter((i) => i.id !== incident().id);
+					queryClient.setQueryData(["incidents"], newIncidents);
+				}
+				await queryClient.invalidateQueries({ queryKey: ["incidents"] });
 				navigate({ to: "/" });
 			}
 		},
@@ -112,11 +117,11 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 		setStatusDialogOpen(true);
 	};
 
-	const handleStatusConfirm = () => {
+	const handleStatusConfirm = async () => {
 		const newStatus = selectedStatus();
 		if (!newStatus || !statusMessage().trim()) return;
 
-		updateStatusMutation.mutate({ status: newStatus, message: statusMessage() });
+		await updateStatusMutation.mutateAsync({ status: newStatus, message: statusMessage() });
 		setStatusDialogOpen(false);
 		setSelectedStatus(null);
 		setStatusMessage("");

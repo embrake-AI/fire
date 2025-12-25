@@ -1,37 +1,26 @@
-import { isServer, QueryClient, type QueryClientConfig } from "@tanstack/solid-query";
+import { QueryClient, type QueryClientConfig } from "@tanstack/solid-query";
 import { createRouter } from "@tanstack/solid-router";
-import { setupRouterSsrQueryIntegration } from "@tanstack/solid-router-ssr-query";
+import { isServer } from "solid-js/web";
 import { routeTree } from "./routeTree.gen";
 
-const retry = isServer ? 0 : 1;
 const queryClientOptions: QueryClientConfig = {
 	defaultOptions: {
 		queries: {
-			// prevent SSR hang. (ssr sucks, why did I want to try it)
-			enabled: !isServer,
-
-			refetchOnWindowFocus: false,
-			refetchOnMount: false,
-
-			retry,
+			retry: isServer ? 0 : 1,
+			suspense: true,
 		},
 		mutations: {
-			// I prefer adding an error message, and letting the user retry manually.
-			// Maybe I'll change my mind later
 			retry: 0,
 		},
 	},
 };
 
 function createAppRouter(queryClient: QueryClient) {
-	const router = createRouter({
+	return createRouter({
 		routeTree,
-		context: { queryClient, clientId: null, userId: null },
+		context: { queryClient },
 		defaultPreload: "intent",
 	});
-
-	setupRouterSsrQueryIntegration({ router, queryClient });
-	return router;
 }
 
 type AppRouter = ReturnType<typeof createAppRouter>;
@@ -40,40 +29,23 @@ let clientRouter: AppRouter | undefined;
 
 function getClientQueryClient() {
 	// Persist across HMR by stashing on globalThis
-	const g = globalThis as unknown as { __QUERY_CLIENT__: QueryClient | undefined };
+	const g = globalThis as unknown as { __QUERY_CLIENT__?: QueryClient };
 	if (!g.__QUERY_CLIENT__) {
-		const queryClient = new QueryClient(queryClientOptions);
-		g.__QUERY_CLIENT__ = queryClient;
+		g.__QUERY_CLIENT__ = new QueryClient(queryClientOptions);
 	}
 	return g.__QUERY_CLIENT__;
 }
 
 export const getRouter = () => {
-	if (typeof window !== "undefined") {
+	if (!isServer) {
 		// client: reuse router + query client
 		if (!clientRouter) {
 			clientRouter = createAppRouter(getClientQueryClient());
 		}
 		return clientRouter;
-	} else {
-		// server: per request
-		const queryClient = new QueryClient(queryClientOptions);
-
-		const router = createRouter({
-			routeTree,
-			context: {
-				queryClient,
-				clientId: null,
-				userId: null,
-			},
-			defaultPreload: "intent",
-		});
-
-		setupRouterSsrQueryIntegration({
-			router,
-			queryClient,
-		});
-
-		return router;
 	}
+
+	// server side (only used to generate the shell in SPA mode)
+	// safe: queries disabled by enabled: !isServer
+	return createAppRouter(new QueryClient(queryClientOptions));
 };

@@ -49,7 +49,6 @@ const RESPONSE_SCHEMA = (assignees: string[]) =>
 	}) as const;
 
 export async function calculateIncidentInfo(prompt: string, entryPoints: EntryPoint[], openaiApiKey: string): Promise<IncidentInfo> {
-	await new Promise((resolve) => setTimeout(resolve, 3_000));
 	ASSERT(entryPoints.length > 0, "At least one entry point is required");
 
 	const entryPointsDescription = entryPoints.map((ep, i) => `${i + 1}. Assignee: ${ep.assignee}\n   Choose when: ${ep.prompt}`).join("\n");
