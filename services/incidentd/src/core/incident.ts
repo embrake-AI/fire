@@ -67,14 +67,22 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	async alarm() {
-		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
+		let state = this.ctx.storage.kv.get<DOState>(S_KEY);
 		if (!state) {
 			return;
 		}
 		if (!state._initialized) {
+			const uninitializedState = state;
 			await this.ctx.blockConcurrencyWhile(async () =>
-				this.init({ id: state.id, prompt: state.prompt, createdBy: state.createdBy, source: state.source, metadata: state.metadata }),
+				this.init({
+					id: uninitializedState.id,
+					prompt: uninitializedState.prompt,
+					createdBy: uninitializedState.createdBy,
+					source: uninitializedState.source,
+					metadata: uninitializedState.metadata,
+				}),
 			);
+			state = this.ctx.storage.kv.get<DOState>(S_KEY)!;
 		}
 		const events = this.ctx.storage.sql
 			.exec<{ id: number; event_type: IS_Event["event_type"]; event_data: string }>(
