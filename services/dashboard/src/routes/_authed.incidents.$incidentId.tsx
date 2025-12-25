@@ -3,50 +3,66 @@ import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft, User } from "lucide-solid";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import type { Accessor } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show, Suspense } from "solid-js";
 import { type SlackEntity, SlackEntityPicker } from "~/components/SlackEntityPicker";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
+import { Skeleton } from "~/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Textarea } from "~/components/ui/textarea";
 import { getSlackUserGroups, getSlackUsers } from "~/lib/entry-points";
 import { getSeverity, getStatus } from "~/lib/incident-config";
 import { getIncidentById } from "~/lib/incidents";
 import { useUpdateIncidentAssignee, useUpdateIncidentSeverity, useUpdateIncidentStatus } from "~/lib/incidents.hooks";
 
-// Move to analytics.$incidentId.tsx
-// function IncidentNotFound() {
-// 	return (
-// 		<div class="flex-1 bg-background flex items-center justify-center">
-// 			<Card class="max-w-md text-center p-8">
-// 				<CardHeader>
-// 					<CardTitle>Incident Not Found</CardTitle>
-// 					<CardDescription>The incident you're looking for doesn't exist.</CardDescription>
-// 				</CardHeader>
-// 				<CardContent>
-// 					<Link to="/" class="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
-// 						<ArrowLeft class="w-4 h-4" />
-// 						Back to incidents
-// 					</Link>
-// 				</CardContent>
-// 			</Card>
-// 		</div>
-// 	);
-// }
+function IncidentSkeleton() {
+	return (
+		<div class="space-y-6 animate-in fade-in duration-200">
+			<div class="space-y-4">
+				<div class="flex items-start justify-between gap-4">
+					<Skeleton class="h-9 w-80" />
+					<Skeleton variant="circular" class="h-8 w-24" />
+				</div>
+				<div class="flex items-center gap-3">
+					<Skeleton class="h-8 w-32" />
+					<span class="text-muted-foreground/20">·</span>
+					<Skeleton class="h-8 w-36" />
+				</div>
+			</div>
+
+			<Card>
+				<CardHeader class="pb-0">
+					<div class="flex gap-4 border-b border-transparent">
+						<Skeleton variant="text" class="h-5 w-24" />
+						<Skeleton variant="text" class="h-5 w-28" />
+					</div>
+				</CardHeader>
+				<CardContent class="space-y-2 pt-6">
+					<Skeleton variant="text" class="w-full" />
+					<Skeleton variant="text" class="w-4/5" />
+					<Skeleton variant="text" class="w-3/5" />
+				</CardContent>
+			</Card>
+		</div>
+	);
+}
 
 export const Route = createFileRoute("/_authed/incidents/$incidentId")({
 	component: IncidentDetail,
 });
 
-function IncidentHeader(props: { incident: IS }) {
+function IncidentHeader(props: { incident: Accessor<IS> }) {
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
-	const updateSeverityMutation = useUpdateIncidentSeverity(props.incident.id);
-	const updateAssigneeMutation = useUpdateIncidentAssignee(props.incident.id);
-	const updateStatusMutation = useUpdateIncidentStatus(props.incident.id, {
+	const incident = () => props.incident();
+	const updateSeverityMutation = useUpdateIncidentSeverity(incident().id);
+	const updateAssigneeMutation = useUpdateIncidentAssignee(incident().id);
+	const updateStatusMutation = useUpdateIncidentStatus(incident().id, {
 		onSuccess: (status) => {
 			if (status === "resolved") {
 				queryClient.invalidateQueries({ queryKey: ["incidents"] });
@@ -55,7 +71,7 @@ function IncidentHeader(props: { incident: IS }) {
 		},
 	});
 
-	const status = () => getStatus(props.incident.status);
+	const status = () => getStatus(incident().status);
 
 	const getSlackUsersFn = useServerFn(getSlackUsers);
 	const getSlackUserGroupsFn = useServerFn(getSlackUserGroups);
@@ -69,12 +85,12 @@ function IncidentHeader(props: { incident: IS }) {
 	}));
 
 	const assigneeName = createMemo(() => {
-		if (!props.incident.assignee) return null;
-		const user = slackUsersQuery.data?.find((u) => u.id === props.incident.assignee);
+		if (!incident().assignee) return null;
+		const user = slackUsersQuery.data?.find((u) => u.id === incident().assignee);
 		if (user) return user.name;
-		const group = slackGroupsQuery.data?.find((g) => g.id === props.incident.assignee);
+		const group = slackGroupsQuery.data?.find((g) => g.id === incident().assignee);
 		if (group) return group.name;
-		return props.incident.assignee;
+		return incident().assignee;
 	});
 
 	const [open, setOpen] = createSignal(false);
@@ -84,7 +100,7 @@ function IncidentHeader(props: { incident: IS }) {
 	const [statusMessage, setStatusMessage] = createSignal("");
 
 	const availableTransitions = createMemo(() => {
-		const current = props.incident.status;
+		const current = incident().status;
 		if (current === "open") return ["mitigating", "resolved"] as const;
 		if (current === "mitigating") return ["resolved"] as const;
 		return [] as const;
@@ -106,11 +122,10 @@ function IncidentHeader(props: { incident: IS }) {
 		setStatusMessage("");
 	};
 
-	const severityConfig = () => getSeverity(props.incident.severity);
+	const severityConfig = () => getSeverity(incident().severity);
 
 	return (
 		<div class="space-y-6">
-			{/* Status Update Dialog */}
 			<Dialog open={statusDialogOpen()} onOpenChange={setStatusDialogOpen}>
 				<DialogContent>
 					<DialogHeader>
@@ -133,13 +148,9 @@ function IncidentHeader(props: { incident: IS }) {
 				</DialogContent>
 			</Dialog>
 
-			{/* Header */}
 			<div class="space-y-4">
-				{/* Title with status selector on the right */}
 				<div class="flex items-start justify-between gap-4">
-					<h1 class="text-3xl font-bold tracking-tight">{props.incident.title}</h1>
-
-					{/* Status: show as selector if transitions available, otherwise static badge */}
+					<h1 class="text-3xl font-bold tracking-tight">{incident().title}</h1>
 					<Show
 						when={availableTransitions().length > 0}
 						fallback={
@@ -181,12 +192,9 @@ function IncidentHeader(props: { incident: IS }) {
 						</Popover>
 					</Show>
 				</div>
-
-				{/* Inline metadata controls */}
 				<div class="flex flex-wrap items-center gap-3">
-					{/* Severity Selector */}
 					<Select
-						value={props.incident.severity}
+						value={incident().severity}
 						onChange={(val) => val && updateSeverityMutation.mutate(val as IS["severity"])}
 						options={["low", "medium", "high"]}
 						itemComponent={(props) => {
@@ -203,14 +211,13 @@ function IncidentHeader(props: { incident: IS }) {
 					>
 						<SelectTrigger class="w-32 h-8 gap-2 bg-muted/50 border-transparent hover:bg-muted">
 							<div class={`w-2 h-2 rounded-full ${severityConfig().dot}`} />
-							<span class="capitalize text-sm">{props.incident.severity}</span>
+							<span class="capitalize text-sm">{incident().severity}</span>
 						</SelectTrigger>
 						<SelectContent />
 					</Select>
 
 					<span class="text-muted-foreground/40">·</span>
 
-					{/* Assignee Selector */}
 					<Popover open={open()} onOpenChange={setOpen}>
 						<PopoverTrigger as={Button} variant="ghost" size="sm" class="h-8 gap-2 bg-muted/50 hover:bg-muted font-normal">
 							<User class="h-4 w-4 text-muted-foreground" />
@@ -222,7 +229,7 @@ function IncidentHeader(props: { incident: IS }) {
 									updateAssigneeMutation.mutate(entity.data.id);
 									setOpen(false);
 								}}
-								selectedId={props.incident.assignee ?? undefined}
+								selectedId={incident().assignee ?? undefined}
 								placeholder="Change assignee..."
 								emptyMessage="No users or groups found."
 							/>
@@ -231,24 +238,27 @@ function IncidentHeader(props: { incident: IS }) {
 				</div>
 			</div>
 
-			{/* Description */}
 			<Card>
-				<CardHeader>
-					<CardTitle>Description</CardTitle>
-				</CardHeader>
-				<CardContent>
-					<p class="text-muted-foreground leading-relaxed whitespace-pre-wrap">{props.incident.description}</p>
-				</CardContent>
-			</Card>
-
-			{/* Original Prompt (Previous View) */}
-			<Card>
-				<CardHeader>
-					<CardTitle>Original Prompt</CardTitle>
-				</CardHeader>
-				<CardContent>
-					<p class="text-muted-foreground leading-relaxed font-mono text-sm bg-muted p-4 rounded-md">{props.incident.prompt}</p>
-				</CardContent>
+				<Tabs defaultValue="description">
+					<CardHeader class="pb-0">
+						<TabsList variant="underline">
+							<TabsTrigger variant="underline" value="description">
+								Description
+							</TabsTrigger>
+							<TabsTrigger variant="underline" value="prompt">
+								Original Prompt
+							</TabsTrigger>
+						</TabsList>
+					</CardHeader>
+					<CardContent class="pt-6">
+						<TabsContent value="description" class="mt-0">
+							<p class="text-muted-foreground leading-relaxed whitespace-pre-wrap">{incident().description}</p>
+						</TabsContent>
+						<TabsContent value="prompt" class="mt-0">
+							<p class="text-muted-foreground leading-relaxed font-mono text-sm bg-muted p-4 rounded-md">{incident().prompt}</p>
+						</TabsContent>
+					</CardContent>
+				</Tabs>
 			</Card>
 		</div>
 	);
@@ -266,7 +276,7 @@ function IncidentDetail() {
 	const incident = () => incidentQuery.data;
 
 	createEffect(() => {
-		if (incidentQuery.isError || (incidentQuery.isFetched && !incidentQuery.data)) {
+		if (incidentQuery.data?.error === "NOT_FOUND") {
 			console.log("Would navigate to /analysis/:incidentId", params().incidentId);
 			// TODO: navigate({ to: "/analysis/:incidentId", params: { incidentId: params().incidentId } });
 			navigate({ to: "/" });
@@ -281,7 +291,15 @@ function IncidentDetail() {
 					Back to incidents
 				</Link>
 
-				<Show when={incident()}>{(inc) => <IncidentHeader incident={inc().state} /** TODO: events={inc().events}*/ />}</Show>
+				<Suspense fallback={<IncidentSkeleton />}>
+					<Show when={incident()?.state}>
+						{(state) => (
+							<div class="animate-in fade-in duration-300">
+								<IncidentHeader incident={state} />
+							</div>
+						)}
+					</Show>
+				</Suspense>
 			</div>
 		</div>
 	);

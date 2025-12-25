@@ -1,15 +1,13 @@
 import { type IS, IS_SEVERITY } from "@fire/common";
 import type { ActionsBlock, KnownBlock } from "@slack/types";
-import type { Context } from "hono";
 import type { DOState } from "../../../core/incident";
-import type { BasicContext } from "../../../handler";
 
 /**
  * Useful guide to create Slack messages (has sub-routes for each type of message):
  *   - https://docs.slack.dev/messaging/
  */
 
-export async function incidentStarted<E extends BasicContext>(c: Context<E>, { id, severity, status, assignee, metadata, title }: DOState) {
+export async function incidentStarted(env: Env, { id, severity, status, assignee, metadata, title }: DOState) {
 	const { botToken, channel, thread } = metadata;
 	if (!botToken || !channel) {
 		// Not created through Slack, so no message to send
@@ -20,7 +18,7 @@ export async function incidentStarted<E extends BasicContext>(c: Context<E>, { i
 		// Already posted, so no need to send again
 		return;
 	}
-	const blocks = incidentBlocks({ frontendUrl: c.env.FRONTEND_URL, incidentId: id, severity, status, assigneeUserId: assignee, title });
+	const blocks = incidentBlocks({ frontendUrl: env.FRONTEND_URL, incidentId: id, severity, status, assigneeUserId: assignee, title });
 	const shouldBroadcast = severity === "high" && !!thread;
 	const [response] = await Promise.allSettled([
 		fetch(`https://slack.com/api/chat.postMessage`, {
@@ -56,12 +54,12 @@ export async function incidentStarted<E extends BasicContext>(c: Context<E>, { i
 			console.error("Failed to create incident", response);
 			return;
 		}
-		const incident = c.env.INCIDENT.get(c.env.INCIDENT.idFromString(id));
+		const incident = env.INCIDENT.get(env.INCIDENT.idFromString(id));
 		await incident.addMetadata({ postedMessageTs: ts });
 	}
 }
 
-export async function incidentSeverityUpdated<E extends BasicContext>(c: Context<E>, newSeverity: IS["severity"], { id, status, assignee, metadata, title }: DOState) {
+export async function incidentSeverityUpdated(env: Env, newSeverity: IS["severity"], { id, status, assignee, metadata, title }: DOState) {
 	const { botToken, channel, thread, postedMessageTs } = metadata;
 	if (!botToken || !channel || !postedMessageTs) {
 		// Not created through Slack, so no message to send
@@ -69,7 +67,7 @@ export async function incidentSeverityUpdated<E extends BasicContext>(c: Context
 	}
 	const shouldBroadcast = newSeverity === "high" && !!thread;
 	await updateIncidentMessage({
-		frontendUrl: c.env.FRONTEND_URL,
+		frontendUrl: env.FRONTEND_URL,
 		botToken,
 		channel,
 		postedMessageTs,
@@ -82,28 +80,23 @@ export async function incidentSeverityUpdated<E extends BasicContext>(c: Context
 	});
 }
 
-export async function incidentAssigneeUpdated<E extends BasicContext>(c: Context<E>, newAssignee: string, { id, severity, status, metadata, title }: DOState) {
+export async function incidentAssigneeUpdated(env: Env, newAssignee: string, { id, severity, status, metadata, title }: DOState) {
 	const { botToken, channel, postedMessageTs } = metadata;
 	if (!botToken || !channel || !postedMessageTs) {
 		// Not created through Slack, so no message to send
 		return;
 	}
-	await updateIncidentMessage({ frontendUrl: c.env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity, status, assignee: newAssignee, incidentName: title });
+	await updateIncidentMessage({ frontendUrl: env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity, status, assignee: newAssignee, incidentName: title });
 }
 
-export async function incidentStatusUpdated<E extends BasicContext>(
-	c: Context<E>,
-	newStatus: Exclude<IS["status"], "open">,
-	message: string,
-	{ id, severity, assignee, metadata, title }: DOState,
-) {
+export async function incidentStatusUpdated(env: Env, newStatus: Exclude<IS["status"], "open">, message: string, { id, severity, assignee, metadata, title }: DOState) {
 	const { botToken, channel, postedMessageTs } = metadata;
 	if (!botToken || !channel || !postedMessageTs) {
 		// Not created through Slack, so no message to send
 		return;
 	}
 	await updateIncidentMessage({
-		frontendUrl: c.env.FRONTEND_URL,
+		frontendUrl: env.FRONTEND_URL,
 		botToken,
 		channel,
 		postedMessageTs,

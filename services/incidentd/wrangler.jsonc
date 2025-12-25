@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "fire",
+	"name": "incidentd",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-12-19",
 	"migrations": [
@@ -36,6 +36,13 @@
 		{
 			"binding": "incidents",
 			"database_id": "9247b91c-2e42-4c61-af27-6ad3c77ada50"
+		}
+	],
+	"services": [
+		{
+			"binding": "incidentd",
+			"service": "incidentd",
+
 		}
 	],
 	"vars": { "FRONTEND_URL": "https://fire-dashboard-murex.vercel.app/" }

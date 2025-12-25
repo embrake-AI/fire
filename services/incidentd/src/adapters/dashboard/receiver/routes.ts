@@ -29,7 +29,7 @@ dashboardRoutes.post("/", async (c) => {
 		entryPoints: EntryPoint[];
 	}>();
 
-	const incident = await startIncident({
+	const incidentId = await startIncident({
 		c,
 		identifier: id,
 		prompt,
@@ -38,7 +38,7 @@ dashboardRoutes.post("/", async (c) => {
 		entryPoints,
 		m: metadata ?? {},
 	});
-	return c.json({ incident });
+	return c.json({ id: incidentId });
 });
 
 dashboardRoutes.post("/:id/assignee", async (c) => {

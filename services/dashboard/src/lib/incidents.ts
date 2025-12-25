@@ -22,11 +22,15 @@ export const getIncidentById = createServerFn({ method: "GET" })
 	.inputValidator((data: { id: string }) => data)
 	.middleware([authMiddleware])
 	.handler(async ({ data, context }) => {
+		await new Promise((resolve) => setTimeout(resolve, 3_000));
 		const response = await signedFetch(`${process.env.INCIDENTS_URL}/${data.id}`, { clientId: context.clientId, userId: context.userId });
 		if (!response.ok) {
 			throw new Error("Failed to fetch incident");
 		}
-		const incident = (await response.json()) as { state: IS; events: { event_type: string; event_data: string }[] };
+		const incident = (await response.json()) as { state: IS; events: { event_type: string; event_data: string }[] } | { error: "NOT_FOUND" };
+		if ("error" in incident) {
+			return { error: incident.error };
+		}
 		return { state: incident.state, events: incident.events.map((event) => ({ event_type: event.event_type, event_data: JSON.parse(event.event_data) }) as IS_Event) };
 	});
 
@@ -46,8 +50,6 @@ export const updateAssignee = createServerFn({ method: "POST" })
 		if (!response.ok) {
 			throw new Error("Failed to update assignee");
 		}
-		const { incident } = (await response.json()) as { incident: IS };
-		return incident;
 	});
 
 export const updateSeverity = createServerFn({ method: "POST" })
@@ -66,8 +68,6 @@ export const updateSeverity = createServerFn({ method: "POST" })
 		if (!response.ok) {
 			throw new Error("Failed to update severity");
 		}
-		const { incident } = (await response.json()) as { incident: IS };
-		return incident;
 	});
 
 export const updateStatus = createServerFn({ method: "POST" })
@@ -86,8 +86,6 @@ export const updateStatus = createServerFn({ method: "POST" })
 		if (!response.ok) {
 			throw new Error("Failed to update status");
 		}
-		const { incident } = (await response.json()) as { incident: IS };
-		return incident;
 	});
 
 export const startIncident = createServerFn({ method: "POST" })
@@ -149,6 +147,6 @@ export const startIncident = createServerFn({ method: "POST" })
 		if (!response.ok) {
 			throw new Error("Failed to start incident");
 		}
-		const { incident } = (await response.json()) as { incident: IS };
-		return incident;
+		const { id } = (await response.json()) as { id: string };
+		return { id };
 	});

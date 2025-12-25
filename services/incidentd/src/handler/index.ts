@@ -1,6 +1,5 @@
 import type { EntryPoint, IS } from "@fire/common";
 import type { Context } from "hono";
-import { dispatchIncidentAssigneeUpdatedEvent, dispatchIncidentSeverityUpdatedEvent, dispatchIncidentStartedEvent, dispatchIncidentStatusUpdatedEvent } from "../dispatcher";
 
 export type BasicContext = { Bindings: Env };
 export type AuthContext = BasicContext & { Variables: { auth: { clientId: string } } };
@@ -24,7 +23,7 @@ export async function startIncident<E extends AuthContext>({
 	const metadata = { ...m, clientId, identifier };
 	const incidentId = c.env.INCIDENT.idFromName(identifier);
 	const incident = c.env.INCIDENT.get(incidentId);
-	const startedIncident = await incident.start(
+	await incident.start(
 		{
 			id: incidentId.toString(),
 			prompt,
@@ -34,9 +33,7 @@ export async function startIncident<E extends AuthContext>({
 		},
 		entryPoints,
 	);
-	// TODO: move this to the dispatcher
-	await dispatchIncidentStartedEvent(c, startedIncident);
-	return startedIncident;
+	return incidentId.toString();
 }
 
 export async function listIncidents<E extends AuthContext>({ c }: { c: Context<E> }) {
@@ -66,26 +63,17 @@ export async function getIncident<E extends BasicContext>({ c, id }: { c: Contex
 export async function updateSeverity<E extends BasicContext>({ c, id, severity }: { c: Context<E>; id: string; severity: IS["severity"] }) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	const updatedIncident = await incident.setSeverity(severity);
-	// TODO: move this to the dispatcher
-	await dispatchIncidentSeverityUpdatedEvent(c, severity, updatedIncident);
-	return updatedIncident;
+	await incident.setSeverity(severity);
 }
 
 export async function updateAssignee<E extends BasicContext>({ c, id, assignee }: { c: Context<E>; id: string; assignee: IS["assignee"] }) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	const updatedIncident = await incident.setAssignee(assignee);
-	// TODO: move this to the dispatcher
-	await dispatchIncidentAssigneeUpdatedEvent(c, assignee, updatedIncident);
-	return updatedIncident;
+	await incident.setAssignee(assignee);
 }
 
 export async function updateStatus<E extends BasicContext>({ c, id, status, message }: { c: Context<E>; id: string; status: Exclude<IS["status"], "open">; message: string }) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	const updatedIncident = await incident.updateStatus(status, message);
-	// TODO: move this to the dispatcher
-	await dispatchIncidentStatusUpdatedEvent(c, status, message, updatedIncident);
-	return updatedIncident;
+	await incident.updateStatus(status, message);
 }

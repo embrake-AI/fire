@@ -97,11 +97,9 @@ export function useUpdateIncidentStatus(incidentId: string, options?: { onSucces
 			return { previousIncident };
 		},
 
-		onSuccess: (data) => {
-			if (data.status === "mitigating" || data.status === "resolved") {
-				options?.onSuccess?.(data.status);
-				queryClient.invalidateQueries({ queryKey: ["incident", incidentId] });
-			}
+		onSuccess: (_data, variables) => {
+			options?.onSuccess?.(variables.status);
+			queryClient.invalidateQueries({ queryKey: ["incident", incidentId] });
 		},
 
 		onError: (_err, _variables, context) => {
