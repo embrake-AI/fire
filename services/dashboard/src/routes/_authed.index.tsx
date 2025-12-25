@@ -89,7 +89,7 @@ function IncidentsContent() {
 
 function NoIncidents() {
 	return (
-		<section class="flex flex-col items-center justify-center py-16 px-6 animate-in fade-in slide-in-from-bottom-2 duration-500 ease-out">
+		<section class="flex flex-col items-center justify-center py-16 px-6">
 			<div class="relative mb-6">
 				<div class="absolute inset-0 bg-emerald-400/20 rounded-full blur-xl animate-pulse" />
 				<div class="relative p-4 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-50 border border-emerald-200/60">
