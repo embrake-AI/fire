@@ -83,10 +83,12 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 	const slackUsersQuery = useQuery(() => ({
 		queryKey: ["slack-users"],
 		queryFn: getSlackUsersFn,
+		staleTime: Infinity,
 	}));
 	const slackGroupsQuery = useQuery(() => ({
 		queryKey: ["slack-groups"],
 		queryFn: getSlackUserGroupsFn,
+		staleTime: Infinity,
 	}));
 
 	const assigneeName = createMemo(() => {
@@ -276,6 +278,7 @@ function IncidentDetail() {
 	const incidentQuery = useQuery(() => ({
 		queryKey: ["incident", params().incidentId],
 		queryFn: () => getIncidentByIdFn({ data: { id: params().incidentId } }),
+		staleTime: Infinity,
 		refetchInterval: 5_000,
 	}));
 	const incident = () => incidentQuery.data;

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Link, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { Check, ChevronDown, Hash, Lock, Plus } from "lucide-solid";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show, Suspense } from "solid-js";
 import { SlackIcon } from "~/components/icons/SlackIcon";
 import { Button } from "~/components/ui/button";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "~/components/ui/command";
@@ -25,7 +25,9 @@ export default function StartIncidentButton() {
 				<Plus class="mr-2 h-4 w-4" /> Start Incident
 			</DialogTrigger>
 			<Show when={open()}>
-				<StartIncidentDialogContent onClose={() => setOpen(false)} />
+				<Suspense>
+					<StartIncidentDialogContent onClose={() => setOpen(false)} />
+				</Suspense>
 			</Show>
 		</Dialog>
 	);
@@ -56,12 +58,14 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 	const entryPointsQuery = useQuery(() => ({
 		queryKey: ["entry-points"],
 		queryFn: getEntryPointsFn,
+		staleTime: 60_000,
 	}));
 
 	const getIntegrationsFn = useServerFn(getIntegrations);
 	const integrationsQuery = useQuery(() => ({
 		queryKey: ["integrations"],
 		queryFn: getIntegrationsFn,
+		staleTime: 60_000,
 	}));
 
 	const getSlackBotChannelsFn = useServerFn(getSlackBotChannels);
@@ -69,6 +73,7 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 		queryKey: ["slack-bot-channels"],
 		queryFn: getSlackBotChannelsFn,
 		enabled: postToSlack(),
+		staleTime: Infinity,
 	}));
 
 	const someEntryPoint = () => !!entryPointsQuery.data?.some((ep) => !!ep.prompt);
@@ -169,7 +174,7 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 					</Show>
 
 					<DialogFooter>
-						<Button type="submit" disabled={!canSubmit() || startIncidentMutation.isPending}>
+						<Button type="submit" disabled={integrationsQuery.isPending || entryPointsQuery.isPending || !canSubmit() || startIncidentMutation.isPending}>
 							{startIncidentMutation.isPending ? "Starting..." : "Start Incident"}
 						</Button>
 					</DialogFooter>

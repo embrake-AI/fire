@@ -5,7 +5,6 @@ import { useServerFn } from "@tanstack/solid-start";
 import { ChevronRight, CircleCheck, Flame, ShieldAlert, Wrench } from "lucide-solid";
 import type { JSX } from "solid-js";
 import { createMemo, For, Show, Suspense } from "solid-js";
-import { Loading } from "~/components/Loading";
 import { Card } from "~/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { getSeverity } from "~/lib/incident-config";
@@ -19,7 +18,7 @@ function IncidentsList() {
 	return (
 		<div class="flex-1 bg-background p-6 md:p-8">
 			<div class="max-w-4xl mx-auto space-y-8">
-				<Suspense fallback={<IncidentsLoading />}>
+				<Suspense>
 					<IncidentsContent />
 				</Suspense>
 			</div>
@@ -32,7 +31,7 @@ function IncidentsContent() {
 	const incidentsQuery = useQuery(() => ({
 		queryKey: ["incidents"],
 		queryFn: getIncidentsFn,
-		refetchInterval: 15_000,
+		refetchInterval: 10_000,
 	}));
 	const incidents = () => incidentsQuery.data ?? [];
 
@@ -72,7 +71,7 @@ function IncidentsContent() {
 	const noIncidents = () => openIncidents().length === 0 && mitigatingIncidents().length === 0 && resolvedIncidents().length === 0;
 
 	return (
-		<div class="animate-in fade-in duration-300 space-y-8">
+		<div class="space-y-8">
 			<Show when={noIncidents()}>
 				<NoIncidents />
 			</Show>
@@ -88,17 +87,9 @@ function IncidentsContent() {
 	);
 }
 
-function IncidentsLoading() {
-	return (
-		<div class="flex items-center justify-center py-32">
-			<Loading />
-		</div>
-	);
-}
-
 function NoIncidents() {
 	return (
-		<section class="flex flex-col items-center justify-center py-16 px-6">
+		<section class="flex flex-col items-center justify-center py-16 px-6 animate-in fade-in slide-in-from-bottom-2 duration-500 ease-out">
 			<div class="relative mb-6">
 				<div class="absolute inset-0 bg-emerald-400/20 rounded-full blur-xl animate-pulse" />
 				<div class="relative p-4 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-50 border border-emerald-200/60">

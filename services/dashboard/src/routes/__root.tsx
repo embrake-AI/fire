@@ -1,8 +1,8 @@
 import { type QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import { createRootRouteWithContext, ErrorComponent, HeadContent, Outlet, Scripts, useRouter } from "@tanstack/solid-router";
+import { Flame } from "lucide-solid";
 import { createEffect, on, onMount, Show } from "solid-js";
 import { HydrationScript } from "solid-js/web";
-import { Loading } from "~/components/Loading";
 import { Button } from "~/components/ui/button";
 import { Toaster } from "~/components/ui/toast";
 import { initializeAuth, isAuthReady } from "~/lib/auth-store";
@@ -65,7 +65,7 @@ function RootShell() {
 						when={isAuthReady()}
 						fallback={
 							<main class="flex-1 flex items-center justify-center bg-background">
-								<Loading />
+								<Flame class="w-8 h-8 text-orange-500/70 animate-pulse" />
 							</main>
 						}
 					>

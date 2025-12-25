@@ -151,17 +151,17 @@ function AddEntryPointPicker(props: AddEntryPointPickerProps) {
 
 function AddEntryPointPickerContent(props: { onSelect: (entity: SlackEntity) => void; isAdding: Accessor<boolean> }) {
 	const getIntegrationFn = useServerFn(getIntegrations);
-	const integrationQuery = useQuery(() => ({
-		queryKey: ["integration"],
+	const integrationsQuery = useQuery(() => ({
+		queryKey: ["integrations"],
 		queryFn: getIntegrationFn,
 		staleTime: 60_000,
 	}));
 
 	return (
 		<Show
-			when={integrationQuery.data?.some((i) => i.platform === "slack" && i.installedAt)}
+			when={integrationsQuery.data?.some((i) => i.platform === "slack" && i.installedAt)}
 			fallback={
-				<Show when={!integrationQuery.data?.length}>
+				<Show when={!integrationsQuery.data?.length}>
 					<div class="flex flex-col items-center justify-center py-8 px-6 text-center">
 						<div class="relative mb-4">
 							<div class="absolute inset-0 bg-amber-400/20 rounded-full blur-xl animate-pulse" />
