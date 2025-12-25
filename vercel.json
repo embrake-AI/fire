@@ -1,10 +1,5 @@
 {
 	"$schema": "https://openapi.vercel.sh/vercel.json",
 	"buildCommand": "bun run build:dashboard && cp -r services/dashboard/.vercel/output .vercel/output",
-	"installCommand": "bun install",
-	"rewrites": [
-		{ "source": "/_serverFn/:path*", "destination": "/_serverFn/:path*" },
-		{ "source": "/api/:path*", "destination": "/api/:path*" },
-		{ "source": "/:path*", "destination": "/_shell.html" }
-	]
+	"installCommand": "bun install"
 }
