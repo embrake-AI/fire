@@ -1,0 +1,86 @@
+---
+description: Avoid accidental Suspense triggers from queries in dialogs/modals
+alwaysApply: false
+---
+
+# Queries in Dialogs Pattern
+
+When using TanStack Query with Suspense enabled globally, queries in dialogs can accidentally trigger parent Suspense boundaries even when the dialog is closed.
+
+## The Problem
+
+```tsx
+// ❌ BAD: Query exists even when dialog is closed
+function MyDialog() {
+    const [open, setOpen] = createSignal(false)
+
+    // This query is created immediately, not just when dialog opens
+    const dataQuery = useQuery(() => ({
+        queryKey: ['data'],
+        queryFn: fetchData,
+        enabled: open(), // enabled:false doesn't prevent Suspense evaluation!
+    }))
+
+    // This memo can trigger suspension even when open() is false
+    // because accessing query.data evaluates the reactive graph
+    const derived = createMemo(() => open() && dataQuery.data?.someField)
+
+    return (
+        <Dialog open={open()} onOpenChange={setOpen}>
+            <DialogContent>...</DialogContent>
+        </Dialog>
+    )
+}
+```
+
+The `enabled: false` option prevents fetching but does NOT prevent the query from participating in Suspense. Any reactive access to query data (even guarded by `open()`) can trigger parent Suspense boundaries.
+
+## The Solution
+
+Move queries into a subcomponent that only renders when the dialog is open:
+
+```tsx
+// ✅ GOOD: Queries only exist when dialog content renders
+function MyDialog() {
+    const [open, setOpen] = createSignal(false)
+
+    return (
+        <Dialog open={open()} onOpenChange={setOpen}>
+            <DialogTrigger>Open</DialogTrigger>
+            <Show when={open()}>
+                <MyDialogContent onClose={() => setOpen(false)} />
+            </Show>
+        </Dialog>
+    )
+}
+
+// Queries live here - component only mounts when dialog is open
+function MyDialogContent(props: { onClose: () => void }) {
+    // Now safe - query only exists when dialog is visible
+    const dataQuery = useQuery(() => ({
+        queryKey: ['data'],
+        queryFn: fetchData,
+    }))
+
+    // Safe to derive from query data
+    const derived = () => dataQuery.data?.someField
+
+    return <DialogContent>...</DialogContent>
+}
+```
+
+## Key Points
+
+1. **Wrap dialog content in `<Show when={open()}>`** to defer component creation
+2. **Move all queries to the inner component** that only renders when open
+3. **No need for `enabled` or `suspense: false`** - component lifecycle handles it
+4. **Pass `onClose` callback** instead of sharing signal setters
+5. **State resets naturally** when dialog closes (component unmounts)
+
+## Benefits
+
+-   Queries only created when needed
+-   No accidental Suspense triggers
+-   State automatically resets on close
+-   Cleaner separation of concerns
+-   No `suspense: false` overrides needed

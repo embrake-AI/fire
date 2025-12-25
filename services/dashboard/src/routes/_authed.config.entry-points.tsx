@@ -32,7 +32,7 @@ function EntryPointsContent() {
 	const entryPointsQuery = useQuery(() => ({
 		queryKey: ["entry-points"],
 		queryFn: getEntryPointsFn,
-		refetchInterval: 60_000,
+		staleTime: 60_000,
 	}));
 	const entryPoints = () => entryPointsQuery.data ?? [];
 

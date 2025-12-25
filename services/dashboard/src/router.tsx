@@ -6,8 +6,7 @@ import { routeTree } from "./routeTree.gen";
 const queryClientOptions: QueryClientConfig = {
 	defaultOptions: {
 		queries: {
-			retry: isServer ? 0 : 1,
-			suspense: true,
+			retry: 1,
 		},
 		mutations: {
 			retry: 0,

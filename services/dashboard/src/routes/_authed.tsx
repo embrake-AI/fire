@@ -5,10 +5,7 @@ import { getAuth, isAuthReady } from "~/lib/auth-store";
 
 export const Route = createFileRoute("/_authed")({
 	beforeLoad: ({ location }) => {
-		// Wait for auth to be ready before making redirect decisions
-		// This prevents redirecting to /login before client bootstrap finishes
 		if (!isAuthReady()) {
-			// Auth not ready yet - router will re-run this after invalidate()
 			return;
 		}
 
@@ -25,11 +22,13 @@ export const Route = createFileRoute("/_authed")({
 
 function AuthedLayout() {
 	return (
-		<Show when={isAuthReady()} fallback={<div class="flex-1 p-6">Loading…</div>}>
+		<Show when={isAuthReady()}>
 			<Header />
-			<main class="flex-1 flex flex-col">
-				<Outlet />
-			</main>
+			<Suspense fallback={<div class="flex-1 p-6">Loading…</div>}>
+				<main class="flex-1 flex flex-col">
+					<Outlet />
+				</main>
+			</Suspense>
 		</Show>
 	);
 }

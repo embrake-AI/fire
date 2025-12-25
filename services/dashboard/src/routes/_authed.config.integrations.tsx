@@ -3,11 +3,12 @@ import { createFileRoute, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { LoaderCircle } from "lucide-solid";
 import type { Accessor, JSX } from "solid-js";
-import { createSignal, onMount, Show } from "solid-js";
+import { createSignal, onMount, Show, Suspense } from "solid-js";
 import { SlackIcon } from "~/components/icons/SlackIcon";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { Skeleton } from "~/components/ui/skeleton";
 import { showToast } from "~/components/ui/toast";
 import { disconnectIntegration, getInstallUrl, getIntegrations } from "~/lib/integrations";
 
@@ -21,6 +22,33 @@ export const Route = createFileRoute("/_authed/config/integrations")({
 });
 
 function IntegrationsConfig() {
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Integrations</CardTitle>
+			</CardHeader>
+			<Suspense fallback={<IntegrationsContentSkeleton />}>
+				<IntegrationsContent />
+			</Suspense>
+		</Card>
+	);
+}
+
+function IntegrationsContentSkeleton() {
+	return (
+		<CardContent>
+			<div class="flex items-center justify-between py-2">
+				<div class="flex items-center gap-3">
+					<Skeleton class="size-8 rounded" />
+					<Skeleton variant="text" class="h-5 w-16" />
+				</div>
+				<Skeleton class="h-8 w-24 rounded-md" />
+			</div>
+		</CardContent>
+	);
+}
+
+function IntegrationsContent() {
 	const params = Route.useSearch();
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
@@ -29,7 +57,7 @@ function IntegrationsConfig() {
 	const integrationsQuery = useQuery(() => ({
 		queryKey: ["integrations"],
 		queryFn: getIntegrationsFn,
-		suspense: true,
+		staleTime: 60_000,
 	}));
 
 	onMount(() => {
@@ -87,21 +115,16 @@ function IntegrationsConfig() {
 	};
 
 	return (
-		<Card>
-			<CardHeader>
-				<CardTitle>Integrations</CardTitle>
-			</CardHeader>
-			<CardContent>
-				<IntegrationCard
-					name="Slack"
-					icon={<SlackIcon class="size-8" />}
-					connected={() => isConnected("slack")}
-					onConnect={() => handleConnect("slack")}
-					loading={isConnecting() || disconnectMutation.isPending}
-					onDisconnect={() => handleDisconnect("slack")}
-				/>
-			</CardContent>
-		</Card>
+		<CardContent class="animate-in fade-in duration-300">
+			<IntegrationCard
+				name="Slack"
+				icon={<SlackIcon class="size-8" />}
+				connected={() => isConnected("slack")}
+				onConnect={() => handleConnect("slack")}
+				loading={isConnecting() || disconnectMutation.isPending}
+				onDisconnect={() => handleDisconnect("slack")}
+			/>
+		</CardContent>
 	);
 }
 
