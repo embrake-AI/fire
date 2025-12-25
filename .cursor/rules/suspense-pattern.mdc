@@ -36,7 +36,7 @@ function PageContent() {
         queryFn: fetchData,
     }))
 
-    return <CardContent class="animate-in fade-in duration-300">{/* Render query.data */}</CardContent>
+    return <CardContent>{/* Render query.data */}</CardContent>
 }
 
 // Skeleton matches content structure (not the full page)
@@ -54,7 +54,37 @@ function ContentSkeleton() {
 1. **Static shell renders immediately**: Headers, navigation, card containers, page layout
 2. **Suspense wraps only data-dependent content**: The component that calls `useQuery`
 3. **Skeleton matches content structure**: Don't duplicate static elements in skeleton
-4. **Add `animate-in fade-in duration-300`** to content for smooth transition
+
+## Animation Guidelines
+
+⚠️ **Do NOT add fade-in animations to data content components**
+
+Adding `animate-in fade-in` to components that render query data causes flickering on every refetch, even when the DOM doesn't change. The animation class re-triggers whenever the component re-renders.
+
+**Bad** - causes flicker on refetch:
+
+```tsx
+function PageContent() {
+    const query = useQuery(...)
+    return <div class="animate-in fade-in duration-300">{/* data */}</div>
+}
+```
+
+**Good** - no animation on data content:
+
+```tsx
+function PageContent() {
+    const query = useQuery(...)
+    return <div>{/* data */}</div>
+}
+```
+
+**Where animations ARE appropriate:**
+
+-   Skeleton/loading fallbacks (they only show during initial load)
+-   Empty states (UI transitions, not data refetches)
+-   UI components (popovers, tooltips, modals - visibility changes)
+-   One-time app shell transitions (e.g., after auth is ready)
 
 ## When to Use Suspense vs Show
 

@@ -75,7 +75,7 @@ function EntryPointsContent() {
 	};
 
 	return (
-		<div class="space-y-6 animate-in fade-in duration-300">
+		<div class="space-y-6">
 			<AddEntryPointPicker isOpen={isPickerOpen} setIsOpen={setIsPickerOpen} isAdding={() => createMutation.isPending} onSelect={handleSelectEntity} />
 
 			<Show when={!isPickerOpen()}>

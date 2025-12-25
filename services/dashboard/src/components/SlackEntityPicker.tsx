@@ -89,7 +89,7 @@ function EntityList(props: SlackEntityPickerProps) {
 	const hasResults = () => filteredUsers().length > 0 || filteredGroups().length > 0;
 
 	return (
-		<div class="animate-in fade-in duration-300">
+		<div>
 			<Show when={hasResults()} fallback={<CommandEmpty>{emptyMessage()}</CommandEmpty>}>
 				<Show when={filteredUsers().length > 0}>
 					<CommandGroup heading={mode() === "all" ? "Users" : undefined}>

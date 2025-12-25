@@ -300,13 +300,7 @@ function IncidentDetail() {
 				</Link>
 
 				<Suspense fallback={<IncidentSkeleton />}>
-					<Show when={incident()?.state}>
-						{(state) => (
-							<div class="animate-in fade-in duration-300">
-								<IncidentHeader incident={state} />
-							</div>
-						)}
-					</Show>
+					<Show when={incident()?.state}>{(state) => <IncidentHeader incident={state} />}</Show>
 				</Suspense>
 			</div>
 		</div>

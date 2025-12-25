@@ -115,7 +115,7 @@ function IntegrationsContent() {
 	};
 
 	return (
-		<CardContent class="animate-in fade-in duration-300">
+		<CardContent>
 			<IntegrationCard
 				name="Slack"
 				icon={<SlackIcon class="size-8" />}

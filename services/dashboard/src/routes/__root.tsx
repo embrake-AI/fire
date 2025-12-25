@@ -69,7 +69,7 @@ function RootShell() {
 							</main>
 						}
 					>
-						<div class="animate-in fade-in duration-300 flex flex-col flex-1">
+						<div class="flex flex-col flex-1">
 							<Outlet />
 						</div>
 					</Show>
