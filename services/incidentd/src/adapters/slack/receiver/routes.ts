@@ -131,7 +131,7 @@ slackRoutes.post("/events", async (c) => {
 				return c.text("OK");
 			}
 
-			const botOriginated = message.parent_user_id === slackIntegration.data.botUserId;
+			const botOriginated = message.parent_user_id && message.parent_user_id === slackIntegration.data.botUserId;
 			if (botOriginated) {
 				const incidentIdFromMetadata = await getIncidentIdFromMessageMetadata({
 					botToken: slackIntegration.data.botToken,
