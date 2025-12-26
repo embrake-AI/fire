@@ -1,5 +1,7 @@
 import type { IS, IS_Event, ListIncidentsElement } from "@fire/common";
+import { incidentAnalysis } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
+import { and, desc, eq } from "drizzle-orm";
 import { authMiddleware } from "./auth-middleware";
 import { db } from "./db";
 import type { SlackChannel } from "./slack";
@@ -167,3 +169,89 @@ export const startIncident = createServerFn({ method: "POST" })
 		const { id } = (await response.json()) as { id: string };
 		return { id };
 	});
+
+export type ResolvedIncident = {
+	id: string;
+	title: string;
+	description: string;
+	severity: "low" | "medium" | "high";
+	createdAt: Date;
+	resolvedAt: Date;
+};
+
+export const getResolvedIncidents = createServerFn({ method: "GET" })
+	.middleware([authMiddleware])
+	.handler(async ({ context }) => {
+		const resolved = await db
+			.select({
+				id: incidentAnalysis.id,
+				title: incidentAnalysis.title,
+				description: incidentAnalysis.description,
+				severity: incidentAnalysis.severity,
+				createdAt: incidentAnalysis.createdAt,
+				resolvedAt: incidentAnalysis.resolvedAt,
+			})
+			.from(incidentAnalysis)
+			.where(eq(incidentAnalysis.clientId, context.clientId))
+			.orderBy(desc(incidentAnalysis.resolvedAt))
+			.limit(50);
+		// No pagination for now, when someone reaches 50, I'll add it
+		return resolved;
+	});
+
+export const getAnalysisById = createServerFn({ method: "GET" })
+	.inputValidator((data: { id: string }) => data)
+	.middleware([authMiddleware])
+	.handler(async ({ data, context }) => {
+		const [analysis] = await db
+			.select()
+			.from(incidentAnalysis)
+			.where(and(eq(incidentAnalysis.id, data.id), eq(incidentAnalysis.clientId, context.clientId)));
+
+		// Return null if not found - analysis might still be calculating
+		return analysis ?? null;
+	});
+
+export type IncidentAnalysis = NonNullable<Awaited<ReturnType<typeof getAnalysisById>>>;
+
+export function computeIncidentMetrics(analysis: IncidentAnalysis) {
+	const events = analysis.events;
+
+	// assumes events are ordered
+	const startedAt = new Date(analysis.events[0].created_at).getTime();
+
+	let timeToFirstResponse: number | null = null;
+	let timeToAssigneeResponse: number | null = null;
+	let timeToMitigate: number | null = null;
+	let totalDuration: number | null = null;
+	const assignees = new Set<string>();
+
+	for (const event of events) {
+		if (event.event_type === "INCIDENT_CREATED") {
+			assignees.add(event.event_data.assignee);
+		} else if (event.event_type === "MESSAGE_ADDED") {
+			if (timeToFirstResponse === null) {
+				timeToFirstResponse = new Date(event.created_at).getTime() - startedAt;
+			}
+			if (assignees.has(event.event_data.userId)) {
+				assignees.add(event.event_data.userId);
+				timeToAssigneeResponse = new Date(event.created_at).getTime() - startedAt;
+			}
+		} else if (event.event_type === "STATUS_UPDATE") {
+			if (event.event_data.status === "mitigating") {
+				timeToMitigate = new Date(event.created_at).getTime() - startedAt;
+			} else if (event.event_data.status === "resolved") {
+				totalDuration = new Date(event.created_at).getTime() - startedAt;
+			}
+		} else if (event.event_type === "ASSIGNEE_UPDATE") {
+			assignees.add(event.event_data.assignee);
+		}
+	}
+
+	return {
+		timeToFirstResponse,
+		timeToAssigneeResponse,
+		timeToMitigate,
+		totalDuration,
+	};
+}

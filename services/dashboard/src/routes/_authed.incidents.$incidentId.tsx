@@ -2,26 +2,23 @@ import type { IS } from "@fire/common";
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { ArrowLeft, Clock, Monitor, User } from "lucide-solid";
-import type { Accessor, Component } from "solid-js";
-import { createEffect, createMemo, createSignal, For, onMount, Show, Suspense } from "solid-js";
-import { createStore, reconcile } from "solid-js/store";
+import { ArrowLeft, User } from "lucide-solid";
+import type { Accessor } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show, Suspense } from "solid-js";
 import { AssigneeName } from "~/components/AssigneeName";
-import { SlackIcon } from "~/components/icons/SlackIcon";
 import { type SlackEntity, SlackEntityPicker } from "~/components/SlackEntityPicker";
+import { Timeline } from "~/components/Timeline";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Textarea } from "~/components/ui/textarea";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { getSeverity, getStatus } from "~/lib/incident-config";
-import { getIncidentById, type IncidentEvent } from "~/lib/incidents";
+import { getIncidentById, getIncidents } from "~/lib/incidents";
 import { useUpdateIncidentAssignee, useUpdateIncidentSeverity, useUpdateIncidentStatus } from "~/lib/incidents.hooks";
-import { getEventConfig } from "~/lib/timeline-events";
 
 function IncidentSkeleton() {
 	return (
@@ -91,6 +88,8 @@ export const Route = createFileRoute("/_authed/incidents/$incidentId")({
 function IncidentDetail() {
 	const params = Route.useParams();
 	const navigate = useNavigate();
+	const queryClient = useQueryClient();
+
 	const getIncidentByIdFn = useServerFn(getIncidentById);
 	const incidentQuery = useQuery(() => ({
 		queryKey: ["incident", params().incidentId],
@@ -102,16 +101,32 @@ function IncidentDetail() {
 
 	createEffect(() => {
 		if (incidentQuery.data?.error === "NOT_FOUND") {
-			console.log("Would navigate to /analysis/:incidentId", params().incidentId);
-			// TODO: navigate({ to: "/analysis/:incidentId", params: { incidentId: params().incidentId } });
-			navigate({ to: "/" });
+			navigate({ to: "/analysis/$incidentId", params: { incidentId: params().incidentId } });
 		}
 	});
+
+	const getIncidentsFn = useServerFn(getIncidents);
+	const prefetchIncidents = () => {
+		const state = queryClient.getQueryState(["incidents"]);
+		if (state?.status === "success" && !state.isInvalidated) {
+			return;
+		}
+		void queryClient.prefetchQuery({
+			queryKey: ["incidents"],
+			queryFn: getIncidentsFn,
+			staleTime: 10_000,
+		});
+	};
 
 	return (
 		<div class="flex-1 bg-background p-6 md:p-8">
 			<div class="max-w-5xl mx-auto">
-				<Link to="/" class="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6">
+				<Link
+					to="/"
+					class="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6"
+					onMouseEnter={prefetchIncidents}
+					onFocusIn={prefetchIncidents}
+				>
 					<ArrowLeft class="w-4 h-4" />
 					Back to incidents
 				</Link>
@@ -133,7 +148,6 @@ function IncidentDetail() {
 
 function IncidentHeader(props: { incident: Accessor<IS> }) {
 	const queryClient = useQueryClient();
-	const navigate = useNavigate();
 	const incident = () => props.incident();
 	const updateSeverityMutation = useUpdateIncidentSeverity(incident().id);
 	const updateAssigneeMutation = useUpdateIncidentAssignee(incident().id);
@@ -146,7 +160,6 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 					queryClient.setQueryData(["incidents"], newIncidents);
 				}
 				await queryClient.invalidateQueries({ queryKey: ["incidents"] });
-				navigate({ to: "/" });
 			}
 		},
 	});
@@ -298,95 +311,6 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 						</PopoverContent>
 					</Popover>
 				</div>
-			</div>
-		</div>
-	);
-}
-
-function formatTime(timestamp: string) {
-	const date = new Date(timestamp);
-	return date.toLocaleString(undefined, {
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-	});
-}
-
-function Timeline(props: { events: IncidentEvent[] }) {
-	const [events, setEvents] = createStore<IncidentEvent[]>([]);
-
-	createEffect(() => {
-		setEvents(reconcile(props.events, { key: "id" }));
-	});
-
-	return (
-		<Card>
-			<CardHeader>
-				<CardTitle class="flex items-center gap-2 text-lg">
-					<Clock class="w-5 h-5 text-muted-foreground" />
-					Timeline
-				</CardTitle>
-			</CardHeader>
-			<CardContent>
-				<div>
-					<div class="relative">
-						<div class="absolute left-4 top-0 bottom-0 w-px bg-border" />
-						<div class="space-y-6">
-							<For each={events}>{(event) => <TimelineRow event={event} />}</For>
-						</div>
-					</div>
-				</div>
-			</CardContent>
-		</Card>
-	);
-}
-
-const ADAPTER_ICON = {
-	slack: SlackIcon,
-	dashboard: Monitor,
-} as const satisfies Record<"slack" | "dashboard", Component>;
-
-function TimelineRow(props: { event: IncidentEvent }) {
-	const config = getEventConfig(props.event.event_type);
-	const Icon = config.icon;
-	const Render = config.render;
-	const AdapterIcon = ADAPTER_ICON[props.event.adapter];
-
-	const animationClasses = ["animate-in", "fade-in", "slide-in-from-top-2", "duration-300"];
-
-	let el!: HTMLDivElement;
-
-	onMount(() => {
-		const handler = (e: AnimationEvent) => {
-			if (e.target !== el) return;
-			el.classList.remove(...animationClasses);
-			el.removeEventListener("animationend", handler);
-		};
-
-		el.addEventListener("animationend", handler);
-	});
-
-	return (
-		<div ref={el} class={`relative flex gap-4 pl-0 ${animationClasses.join(" ")}`}>
-			<div class={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${config.iconBg}`}>
-				<Icon class={`h-4 w-4 ${config.iconColor}`} />
-			</div>
-			<div class="flex-1 pt-0.5">
-				<div class="flex items-center gap-2 mb-1">
-					<span class="font-medium text-sm text-foreground">{config.label}</span>
-					<span class="text-xs text-muted-foreground">{formatTime(props.event.created_at)}</span>
-					<span class="text-muted-foreground/40">·</span>
-					<Tooltip>
-						<TooltipTrigger>
-							<AdapterIcon class="w-3.5 h-3.5 text-muted-foreground/60" />
-						</TooltipTrigger>
-						<TooltipContent>
-							<p class="text-[10px] capitalize">{props.event.adapter}</p>
-						</TooltipContent>
-					</Tooltip>
-				</div>
-				<Render data={props.event.event_data} />
 			</div>
 		</div>
 	);

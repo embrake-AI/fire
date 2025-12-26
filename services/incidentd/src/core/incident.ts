@@ -1,7 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 import type { EntryPoint, EventLog, IS, IS_Event } from "@fire/common";
+import { incidentAnalysis } from "@fire/db/schema";
 import type { Metadata } from "../handler";
-import { calculateIncidentInfo } from "./idontknowhowtonamethisitswhereillplacecallstoai";
+import { getDB } from "../lib/db";
+import { calculateIncidentInfo, generateIncidentSummary } from "./idontknowhowtonamethisitswhereillplacecallstoai";
 
 export type DOState = IS & {
 	metadata: Metadata;
@@ -51,6 +53,8 @@ export class Incident extends DurableObject<Env> {
 			return { error: "NOT_FOUND" };
 		} else if (!state._initialized) {
 			return { error: "NOT_INITIALIZED" };
+		} else if (state.status === "resolved") {
+			return { error: "RESOLVED" };
 		}
 		return state;
 	}
@@ -184,8 +188,49 @@ export class Incident extends DurableObject<Env> {
 		});
 	}
 
+	private async persistAnalysis() {
+		const state = this.ctx.storage.kv.get<DOState>(S_KEY)!;
+		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log ORDER BY id ASC").toArray();
+
+		const eventsForStorage = events.map((e) => ({
+			id: e.id,
+			event_type: e.event_type,
+			event_data: JSON.parse(e.event_data),
+			adapter: e.adapter,
+			created_at: e.created_at,
+			// TODO: Add userId to the event data
+		}));
+
+		const summary = await generateIncidentSummary(
+			{
+				title: state.title,
+				description: state.description,
+				severity: state.severity,
+				prompt: state.prompt,
+			},
+			eventsForStorage,
+			this.env.OPENAI_API_KEY,
+		);
+
+		const db = getDB(this.env.db);
+		await db.insert(incidentAnalysis).values({
+			id: state.id,
+			clientId: state.metadata.clientId,
+			title: state.title,
+			description: state.description,
+			severity: state.severity,
+			assignee: state.assignee,
+			createdBy: state.createdBy,
+			source: state.source,
+			prompt: state.prompt,
+			summary,
+			events: eventsForStorage,
+			createdAt: state.createdAt,
+		});
+	}
+
 	private async destroy() {
-		// TODO: Persist events
+		await this.persistAnalysis();
 		await Promise.all([this.ctx.storage.deleteAlarm(), this.ctx.storage.deleteAll()]);
 	}
 
@@ -272,14 +317,13 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	async get() {
-		const state = this.getState();
-		if ("error" in state) {
+		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
+		if (!state) {
 			return { error: "NOT_FOUND" };
+		} else if (!state._initialized) {
+			return { error: "INITIALIZING" };
 		}
 		const { metadata, _initialized, ...rest } = state;
-		if (!state._initialized) {
-			throw new Error("Unreachable");
-		}
 		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log ORDER BY id ASC").toArray();
 		return { state: rest, events };
 	}

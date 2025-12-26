@@ -36,6 +36,7 @@
 		"drizzle-orm": "catalog:"
 	},
 	"devDependencies": {
+		"@fire/common": "workspace:*",
 		"drizzle-kit": "catalog:",
 		"typescript": "catalog:"
 	},

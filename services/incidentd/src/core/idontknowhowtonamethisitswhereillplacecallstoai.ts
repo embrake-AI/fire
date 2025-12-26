@@ -1,4 +1,4 @@
-import type { EntryPoint, IS } from "@fire/common";
+import type { EntryPoint, IS, IS_Event } from "@fire/common";
 import { ASSERT } from "../lib/utils";
 
 type IncidentInfo = {
@@ -99,4 +99,61 @@ Select the most appropriate entry point and provide the incident details.`;
 	ASSERT(content, "No response content from OpenAI");
 
 	return JSON.parse(content) as IncidentInfo;
+}
+
+const SUMMARY_SYSTEM_PROMPT = `You are an incident post-mortem analyst. Given an incident's details and its timeline of events, generate a concise summary of what happened, how it was handled, and the resolution.
+
+Your summary should:
+1. Briefly describe what the incident was about
+2. Highlight key actions taken (assignee changes, severity updates, status transitions)
+3. Mention how long it took for the incident to be acknowledged, and how long it lasted
+4. Note any important messages or decisions made during the incident
+
+Keep the summary to 2-5 sentences, focusing on the most important aspects.`;
+
+export async function generateIncidentSummary(
+	incident: { title: string; description: string; severity: IS["severity"]; prompt: string },
+	events: (IS_Event & { created_at: string })[],
+	openaiApiKey: string,
+): Promise<string> {
+	const eventDescriptions = events.map((e) => `[${e.created_at}] ${e.event_type}: ${JSON.stringify(e.event_data)}`).join("\n");
+
+	const userMessage = `Incident: ${incident.title}
+Description: ${incident.description}
+Severity: ${incident.severity}
+Original Report: ${incident.prompt}
+
+Timeline:
+${eventDescriptions}
+
+Generate a summary of this incident.`;
+
+	const response = await fetch("https://api.openai.com/v1/chat/completions", {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${openaiApiKey}`,
+		},
+		body: JSON.stringify({
+			model: "gpt-4o-mini",
+			messages: [
+				{ role: "system", content: SUMMARY_SYSTEM_PROMPT },
+				{ role: "user", content: userMessage },
+			],
+		}),
+	});
+
+	if (!response.ok) {
+		const error = await response.text();
+		throw new Error(`OpenAI API error: ${response.status} - ${error}`);
+	}
+
+	const data = (await response.json()) as {
+		choices: Array<{ message: { content: string } }>;
+	};
+
+	const content = data.choices[0]?.message?.content;
+	ASSERT(content, "No response content from OpenAI");
+
+	return content;
 }

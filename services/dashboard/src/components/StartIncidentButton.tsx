@@ -48,8 +48,8 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 	const startIncidentMutation = useMutation(() => ({
 		mutationFn: async (data: { prompt: string; channel?: SlackChannel["id"] }) => startIncidentFn({ data }),
 		onSuccess: async (incident) => {
-			navigate({ to: "/incidents/$incidentId", params: { incidentId: incident.id } });
 			await queryClient.invalidateQueries({ queryKey: ["incidents"] });
+			navigate({ to: "/incidents/$incidentId", params: { incidentId: incident.id } });
 			props.onClose();
 		},
 	}));

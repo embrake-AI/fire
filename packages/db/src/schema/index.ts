@@ -1,4 +1,5 @@
 export * from "./auth";
 export * from "./entry-point";
 export * from "./ignore";
+export * from "./incident";
 export * from "./integration";

@@ -20,6 +20,7 @@ import { Route as AuthedIncidentsIncidentIdRouteImport } from './routes/_authed.
 import { Route as AuthedConfigIntegrationsRouteImport } from './routes/_authed.config.integrations'
 import { Route as AuthedConfigEscalationRouteImport } from './routes/_authed.config.escalation'
 import { Route as AuthedConfigEntryPointsRouteImport } from './routes/_authed.config.entry-points'
+import { Route as AuthedAnalysisIncidentIdRouteImport } from './routes/_authed.analysis.$incidentId'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -77,12 +78,19 @@ const AuthedConfigEntryPointsRoute = AuthedConfigEntryPointsRouteImport.update({
   path: '/entry-points',
   getParentRoute: () => AuthedConfigRoute,
 } as any)
+const AuthedAnalysisIncidentIdRoute =
+  AuthedAnalysisIncidentIdRouteImport.update({
+    id: '/analysis/$incidentId',
+    path: '/analysis/$incidentId',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/config': typeof AuthedConfigRouteWithChildren
   '/auth/error': typeof AuthErrorRoute
   '/': typeof AuthedIndexRoute
+  '/analysis/$incidentId': typeof AuthedAnalysisIncidentIdRoute
   '/config/entry-points': typeof AuthedConfigEntryPointsRoute
   '/config/escalation': typeof AuthedConfigEscalationRoute
   '/config/integrations': typeof AuthedConfigIntegrationsRoute
@@ -95,6 +103,7 @@ export interface FileRoutesByTo {
   '/config': typeof AuthedConfigRouteWithChildren
   '/auth/error': typeof AuthErrorRoute
   '/': typeof AuthedIndexRoute
+  '/analysis/$incidentId': typeof AuthedAnalysisIncidentIdRoute
   '/config/entry-points': typeof AuthedConfigEntryPointsRoute
   '/config/escalation': typeof AuthedConfigEscalationRoute
   '/config/integrations': typeof AuthedConfigIntegrationsRoute
@@ -109,6 +118,7 @@ export interface FileRoutesById {
   '/_authed/config': typeof AuthedConfigRouteWithChildren
   '/auth/error': typeof AuthErrorRoute
   '/_authed/': typeof AuthedIndexRoute
+  '/_authed/analysis/$incidentId': typeof AuthedAnalysisIncidentIdRoute
   '/_authed/config/entry-points': typeof AuthedConfigEntryPointsRoute
   '/_authed/config/escalation': typeof AuthedConfigEscalationRoute
   '/_authed/config/integrations': typeof AuthedConfigIntegrationsRoute
@@ -123,6 +133,7 @@ export interface FileRouteTypes {
     | '/config'
     | '/auth/error'
     | '/'
+    | '/analysis/$incidentId'
     | '/config/entry-points'
     | '/config/escalation'
     | '/config/integrations'
@@ -135,6 +146,7 @@ export interface FileRouteTypes {
     | '/config'
     | '/auth/error'
     | '/'
+    | '/analysis/$incidentId'
     | '/config/entry-points'
     | '/config/escalation'
     | '/config/integrations'
@@ -148,6 +160,7 @@ export interface FileRouteTypes {
     | '/_authed/config'
     | '/auth/error'
     | '/_authed/'
+    | '/_authed/analysis/$incidentId'
     | '/_authed/config/entry-points'
     | '/_authed/config/escalation'
     | '/_authed/config/integrations'
@@ -243,6 +256,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AuthedConfigEntryPointsRouteImport
       parentRoute: typeof AuthedConfigRoute
     }
+    '/_authed/analysis/$incidentId': {
+      id: '/_authed/analysis/$incidentId'
+      path: '/analysis/$incidentId'
+      fullPath: '/analysis/$incidentId'
+      preLoaderRoute: typeof AuthedAnalysisIncidentIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
   }
 }
 
@@ -265,12 +285,14 @@ const AuthedConfigRouteWithChildren = AuthedConfigRoute._addFileChildren(
 interface AuthedRouteChildren {
   AuthedConfigRoute: typeof AuthedConfigRouteWithChildren
   AuthedIndexRoute: typeof AuthedIndexRoute
+  AuthedAnalysisIncidentIdRoute: typeof AuthedAnalysisIncidentIdRoute
   AuthedIncidentsIncidentIdRoute: typeof AuthedIncidentsIncidentIdRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedConfigRoute: AuthedConfigRouteWithChildren,
   AuthedIndexRoute: AuthedIndexRoute,
+  AuthedAnalysisIncidentIdRoute: AuthedAnalysisIncidentIdRoute,
   AuthedIncidentsIncidentIdRoute: AuthedIncidentsIncidentIdRoute,
 }
 

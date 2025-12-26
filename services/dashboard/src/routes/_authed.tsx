@@ -48,7 +48,7 @@ function AuthedLayout() {
 	return (
 		<Show when={authed()}>
 			<Header />
-			<main class="flex-1 flex flex-col">
+			<main class="flex-1 flex flex-col overflow-y-auto">
 				<Outlet />
 			</main>
 		</Show>

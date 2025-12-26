@@ -2,9 +2,10 @@ import type { ListIncidentsElement } from "@fire/common";
 import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { ChevronRight, CircleCheck, Flame, ShieldAlert, Wrench } from "lucide-solid";
+import { ChevronRight, CircleCheck, Flame, Wrench } from "lucide-solid";
 import type { JSX } from "solid-js";
 import { createMemo, createSignal, For, onMount, Show, Suspense } from "solid-js";
+import { ResolvedIncidents } from "~/components/ResolvedIncidents";
 import { Card } from "~/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { getSeverity } from "~/lib/incident-config";
@@ -16,8 +17,8 @@ export const Route = createFileRoute("/_authed/")({
 
 function IncidentsList() {
 	return (
-		<div class="flex-1 bg-background p-6 md:p-8">
-			<div class="max-w-4xl mx-auto space-y-8">
+		<div class="flex-1 bg-background p-6 md:p-8 flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
+			<div class="max-w-4xl mx-auto w-full flex-1 flex flex-col overflow-hidden">
 				<Suspense>
 					<IncidentsContent />
 				</Suspense>
@@ -28,10 +29,12 @@ function IncidentsList() {
 
 function IncidentsContent() {
 	const getIncidentsFn = useServerFn(getIncidents);
+
 	const incidentsQuery = useQuery(() => ({
 		queryKey: ["incidents"],
 		queryFn: getIncidentsFn,
 		refetchInterval: 10_000,
+		staleTime: 10_000,
 	}));
 	const incidents = () => incidentsQuery.data ?? [];
 
@@ -48,11 +51,6 @@ function IncidentsContent() {
 			.filter((inc) => inc.status === "mitigating")
 			.sort(sortBySeverity),
 	);
-	const resolvedIncidents = createMemo(() =>
-		incidents()
-			.filter((inc) => inc.status === "resolved")
-			.sort(sortBySeverity),
-	);
 
 	const OpenIncidentsSection = (): JSX.Element => (
 		<IncidentSection icon={<Flame class="w-5 h-5 text-red-500" />} iconBg="bg-red-100" title="Active Incidents" incidents={openIncidents()} />
@@ -62,28 +60,26 @@ function IncidentsContent() {
 		<IncidentSection icon={<Wrench class="w-5 h-5 text-amber-500" />} iconBg="bg-amber-100" title="Being Mitigated" incidents={mitigatingIncidents()} />
 	);
 
-	const ResolvedIncidentsSection = (): JSX.Element => (
-		<IncidentSection icon={<ShieldAlert class="w-4 h-4 text-muted-foreground" />} iconBg="bg-muted" title="Resolved Incidents" incidents={resolvedIncidents()} muted collapsible />
-	);
-
 	const openAndMitigatingIncidents = () => openIncidents().length > 0 && mitigatingIncidents().length > 0;
 	const onlyMitigatingIncidents = () => mitigatingIncidents().length > 0 && openIncidents().length === 0;
-	const noIncidents = () => openIncidents().length === 0 && mitigatingIncidents().length === 0 && resolvedIncidents().length === 0;
+	const noActiveIncidents = () => openIncidents().length === 0 && mitigatingIncidents().length === 0;
 
 	return (
-		<div class="space-y-8">
-			<Show when={noIncidents()}>
-				<NoIncidents />
-			</Show>
+		<>
+			<div class="space-y-8 flex-1 overflow-y-auto pr-1">
+				<Show when={noActiveIncidents()}>
+					<NoIncidents />
+				</Show>
 
-			<Show when={onlyMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
+				<Show when={onlyMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
+				<Show when={openIncidents().length > 0}>{OpenIncidentsSection()}</Show>
+				<Show when={openAndMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
+			</div>
 
-			<Show when={openIncidents().length > 0}>{OpenIncidentsSection()}</Show>
-
-			<Show when={openAndMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
-
-			<Show when={resolvedIncidents().length > 0}>{ResolvedIncidentsSection()}</Show>
-		</div>
+			<Suspense>
+				<ResolvedIncidents />
+			</Suspense>
+		</>
 	);
 }
 
