@@ -1,1 +1,0 @@
-ALTER TABLE "entry_point" ADD COLUMN "is_fallback" boolean DEFAULT false NOT NULL;
