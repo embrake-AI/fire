@@ -15,6 +15,7 @@ interface Sender {
 	incidentSeverityUpdated: ((env: Env, id: string, incident: Incident, metadata: Metadata) => Promise<void>) | undefined;
 	incidentAssigneeUpdated: ((env: Env, id: string, incident: Incident, metadata: Metadata) => Promise<void>) | undefined;
 	incidentStatusUpdated: ((env: Env, id: string, incident: Incident, message: string, metadata: Metadata) => Promise<void>) | undefined;
+	messageAdded: ((env: Env, id: string, message: string, userId: string, messageId: string, metadata: Metadata) => Promise<void>) | undefined;
 }
 
 const senders: Sender[] = [slackSender];
@@ -65,4 +66,12 @@ export async function dispatchIncidentStatusUpdatedEvent(env: Env, id: string, s
 		...(status === "resolved" ? [env.incidents.prepare("DELETE FROM incident WHERE id = ?").bind(id).run()] : []),
 		...senders.map((sender) => sender.incidentStatusUpdated?.(env, id, incident, message, metadata)),
 	]);
+}
+
+export async function dispatchMessageAddedEvent(env: Env, id: string, message: string, userId: string, messageId: string, metadata: Metadata) {
+	const incident = await env.incidents.prepare("SELECT status, assignee, severity, title, description FROM incident WHERE id = ?").bind(id).first<Incident>();
+	if (!incident) {
+		return;
+	}
+	await Promise.all([...senders.map((sender) => sender.messageAdded?.(env, id, message, userId, messageId, metadata))]);
 }

@@ -1,5 +1,5 @@
 import type { IS_Event } from "@fire/common";
-import { CircleCheck, Flame, ShieldAlert, TriangleAlert, User } from "lucide-solid";
+import { CircleCheck, Flame, MessageSquare, ShieldAlert, TriangleAlert, User } from "lucide-solid";
 import type { Component } from "solid-js";
 import { Show } from "solid-js";
 import { AssigneeName } from "~/components/AssigneeName";
@@ -103,5 +103,19 @@ export const eventRegistry: EventConfigMap = {
 				</p>
 			);
 		},
+	},
+	MESSAGE_ADDED: {
+		icon: MessageSquare,
+		iconBg: "bg-blue-100",
+		iconColor: "text-blue-600",
+		label: "New Message",
+		render: ({ data }) => (
+			<div class="space-y-1.5">
+				<p class="text-sm font-medium">
+					<AssigneeName id={() => data.userId} />:
+				</p>
+				<p class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{data.message}</p>
+			</div>
+		),
 	},
 } satisfies EventConfigMap;

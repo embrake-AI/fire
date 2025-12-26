@@ -11,7 +11,6 @@ import type { Metadata } from "../../../handler";
 export async function incidentStarted(env: Env, id: string, { severity, status, assignee, title }: Incident, metadata: Metadata) {
 	const { botToken, channel, thread } = metadata;
 	if (!botToken || !channel) {
-		// Not created through Slack, so no message to send
 		// Thread is optional, if we have a channe and no thread, we'll post in the channel directly
 		return;
 	}
@@ -34,6 +33,10 @@ export async function incidentStarted(env: Env, id: string, { severity, status, 
 				thread_ts: thread,
 				...(shouldBroadcast && { reply_broadcast: true }),
 				blocks,
+				metadata: {
+					event_type: "incident",
+					event_payload: { id },
+				},
 			}),
 		}),
 		fetch(`https://slack.com/api/reactions.remove`, {
@@ -305,3 +308,6 @@ function incidentBlocks({
 
 	return blocks;
 }
+
+// TODO: We could post dashboard messages to slack. Not needed for now.
+export const messageAdded = undefined;

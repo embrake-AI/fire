@@ -29,7 +29,7 @@
 		{
 			"binding": "db",
 			"id": "7c77b7f308b24603ab22eba0f301cbf0",
-			"localConnectionString": "postgresql://postgres:postgres@localhost:5432/fire"
+			"localConnectionString": "postgres://tsdbadmin:szieef5fkxd3gtju@xh8o54gjbf.y1sqcqooer.tsdb.cloud.timescale.com:36537/tsdb",
 		}
 	],
 	"d1_databases": [

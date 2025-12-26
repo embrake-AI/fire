@@ -5,6 +5,9 @@ export type BasicContext = { Bindings: Env };
 export type AuthContext = BasicContext & { Variables: { auth: { clientId: string } } };
 export type Metadata = Record<string, string> & { clientId: string; identifier: string };
 
+// identifier -> idFromName
+// id -> idFromString
+
 export async function startIncident<E extends AuthContext>({
 	c,
 	m,
@@ -99,4 +102,24 @@ export async function updateStatus<E extends BasicContext>({
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
 	await incident.updateStatus(status, message, adapter);
+}
+
+export async function addMessage<E extends BasicContext>({
+	c,
+	identifier,
+	id,
+	message,
+	userId,
+	messageId,
+	adapter,
+}: {
+	c: Context<E>;
+	message: string;
+	userId: string;
+	messageId: string;
+	adapter: "slack" | "dashboard";
+} & ({ identifier: string; id?: never } | { id: string; identifier?: never })) {
+	const incidentId = id ? c.env.INCIDENT.idFromString(id) : c.env.INCIDENT.idFromName(identifier!);
+	const incident = c.env.INCIDENT.get(incidentId);
+	await incident.addMessage(message, userId, messageId, adapter);
 }

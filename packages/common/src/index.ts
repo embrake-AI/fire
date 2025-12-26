@@ -45,6 +45,14 @@ export type IS_Event =
 			event_data: {
 				severity: IS["severity"];
 			};
+	  }
+	| {
+			event_type: "MESSAGE_ADDED";
+			event_data: {
+				message: string;
+				userId: string;
+				messageId: string;
+			};
 	  };
 
 export type EventLog = {

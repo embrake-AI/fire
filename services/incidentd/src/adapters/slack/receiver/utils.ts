@@ -295,3 +295,44 @@ export async function getSlackIntegrationByClientId(opts: { hyperdrive: Hyperdri
 	const [result] = await db.select({ clientId: integration.clientId, data: integration.data }).from(integration).where(eq(integration.clientId, clientId)).limit(1);
 	return result ?? null;
 }
+
+/**
+ * Fetches the incident ID from a Slack message's metadata.
+ * This is used to identify incidents created from the dashboard that were posted to Slack.
+ *
+ * Should only be called after verifying the message is from a bot (via event.message.bot_id).
+ *
+ * Returns null if:
+ * - The message doesn't have incident metadata
+ * - The fetch fails
+ */
+export async function getIncidentIdFromMessageMetadata({ botToken, channel, messageTs }: { botToken: string; channel: string; messageTs: string }): Promise<string | null> {
+	try {
+		const response = await fetch(`https://slack.com/api/conversations.history?channel=${channel}&latest=${messageTs}&inclusive=true&limit=1&include_all_metadata=true`, {
+			headers: {
+				Authorization: `Bearer ${botToken}`,
+			},
+		});
+		const data = await response.json<{
+			ok: boolean;
+			messages?: Array<{
+				ts: string;
+				metadata?: {
+					event_type: string;
+					event_payload: { id?: string };
+				};
+			}>;
+		}>();
+		if (!data.ok || !data.messages?.length) {
+			return null;
+		}
+		const message = data.messages[0];
+		if (message.metadata?.event_type === "incident" && message.metadata.event_payload?.id) {
+			return message.metadata.event_payload.id;
+		}
+		return null;
+	} catch (error) {
+		console.error("Failed to fetch message metadata from Slack", error);
+		return null;
+	}
+}

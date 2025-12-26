@@ -1,10 +1,10 @@
 import type { IS } from "@fire/common";
 import type { Context } from "hono";
 import { Hono } from "hono";
-import { type AuthContext, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
+import { type AuthContext, addMessage, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
 import { ASSERT_NEVER } from "../../../lib/utils";
 import { verifySlackRequestMiddleware } from "./middleware";
-import { getSlackIntegration, handleStatusUpdate, type SlackEventPayload, type SlackInteractionPayload } from "./utils";
+import { getIncidentIdFromMessageMetadata, getSlackIntegration, handleStatusUpdate, type SlackEventPayload, type SlackInteractionPayload } from "./utils";
 
 type SlackContext = { Bindings: Env };
 
@@ -19,6 +19,8 @@ slackRoutes.post("/events", async (c) => {
 
 	if (body.type === "event_callback") {
 		const event = body.event;
+		const enterpriseId = body.enterprise_id ?? null;
+		const isEnterpriseInstall = body.is_enterprise_install ?? false;
 
 		if (event.type === "app_mention") {
 			if (event.subtype === "bot_message") {
@@ -33,12 +35,11 @@ slackRoutes.post("/events", async (c) => {
 				return c.text("OK");
 			}
 
-			const text = event.text as string;
+			const text = event.text;
 			const user = event.user!; // It's not a bot message, so user is required
 			const thread = event.thread_ts ?? event.ts;
 			const teamId = body.team_id ?? event.team;
-			const enterpriseId = body.enterprise_id ?? null;
-			const isEnterpriseInstall = body.is_enterprise_install ?? false;
+
 			const channel = event.channel;
 			const prompt = text.replace(/<@[^>]+>\s*/g, "").trim();
 
@@ -97,6 +98,66 @@ slackRoutes.post("/events", async (c) => {
 				},
 				entryPoints: slackIntegration.entryPoints,
 			});
+		} else if (event.type === "message" && (event.channel_type === "channel" || event.channel_type === "group")) {
+			// hard-coding the type copied from testing. Not sure why types differ.
+			const message = event as {
+				user: string;
+				ts: string;
+				text: string;
+				team: string;
+				thread_ts?: string;
+				parent_user_id?: string;
+				channel: string;
+			};
+			const text = message.text;
+			const user = message.user;
+			const thread = message.thread_ts;
+			const channel = event.channel;
+			const teamId = body.team_id ?? message.team;
+			if (!text || !user || !thread || !teamId || !channel) {
+				// likely the message is not in the thread or it's a bot message
+				return c.text("OK");
+			}
+
+			const slackIntegration = await getSlackIntegration({
+				hyperdrive: c.env.db,
+				teamId,
+				enterpriseId,
+				isEnterpriseInstall,
+				withEntryPoints: false,
+			});
+			if (!slackIntegration) {
+				console.error(`No Slack integration found for ${teamId}`);
+				return c.text("OK");
+			}
+
+			const botOriginated = message.parent_user_id === slackIntegration.data.botUserId;
+			if (botOriginated) {
+				const incidentIdFromMetadata = await getIncidentIdFromMessageMetadata({
+					botToken: slackIntegration.data.botToken,
+					channel,
+					messageTs: thread,
+				});
+				if (incidentIdFromMetadata) {
+					await addMessage({
+						c: c as Context<AuthContext>,
+						id: incidentIdFromMetadata,
+						message: text,
+						userId: user,
+						messageId: message.ts,
+						adapter: "slack",
+					});
+				}
+			} else {
+				await addMessage({
+					c: c as Context<AuthContext>,
+					identifier: thread,
+					message: text,
+					userId: user,
+					messageId: message.ts,
+					adapter: "slack",
+				});
+			}
 		}
 
 		return c.text("OK");

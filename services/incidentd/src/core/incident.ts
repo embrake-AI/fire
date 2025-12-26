@@ -245,6 +245,17 @@ export class Incident extends DurableObject<Env> {
 		await this.commit({ state, event: { event_type: "STATUS_UPDATE", event_data: { status, message } }, adapter });
 	}
 
+	async addMessage(message: string, userId: string, messageId: string, adapter: "slack" | "dashboard") {
+		const state = this.assertState();
+		const existingMessage = this.ctx.storage.sql
+			.exec<{ id: number }>("SELECT id FROM event_log WHERE event_type = 'MESSAGE_ADDED' AND json_extract(event_data, '$.messageId') = ? LIMIT 1", messageId)
+			.toArray();
+		if (existingMessage.length) {
+			return;
+		}
+		await this.commit({ state, event: { event_type: "MESSAGE_ADDED", event_data: { message, userId, messageId } }, adapter });
+	}
+
 	async get() {
 		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
 		if (!state) {
