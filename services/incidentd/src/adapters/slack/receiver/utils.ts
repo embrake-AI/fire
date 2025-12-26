@@ -271,6 +271,7 @@ export async function getSlackIntegration(opts: {
 							assigneeId: true,
 							prompt: true,
 							type: true,
+							isFallback: true,
 						},
 					}
 				: {},
@@ -284,7 +285,7 @@ export async function getSlackIntegration(opts: {
 	return {
 		clientId: result.id,
 		data: result.integrations[0]?.data,
-		entryPoints: result.entryPoints.map((ep) => ({ assignee: ep.assigneeId, prompt: ep.prompt })) ?? [],
+		entryPoints: result.entryPoints.map((ep) => ({ assignee: ep.assigneeId, prompt: ep.prompt, isFallback: ep.isFallback })) ?? [],
 	};
 }
 

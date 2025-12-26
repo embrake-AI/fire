@@ -1,7 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
-import type { EntryPoint, SlackUser, SlackUserGroup } from "./entry-points";
-import { createEntryPoint, deleteEntryPoint, updateEntryPointPrompt } from "./entry-points";
+import type { getEntryPoints, SlackUser, SlackUserGroup } from "./entry-points";
+import { createEntryPoint, deleteEntryPoint, setFallbackEntryPoint, updateEntryPointPrompt } from "./entry-points";
+
+type GetEntryPointsResponse = Awaited<ReturnType<typeof getEntryPoints>>;
 
 /**
  * Hook for creating entry points with optimistic updates.
@@ -13,25 +15,28 @@ export function useCreateEntryPoint(options?: { onMutate?: (tempId: string) => v
 	const createEntryPointFn = useServerFn(createEntryPoint);
 
 	return useMutation(() => ({
-		mutationFn: (data: { id: string; type: "slack-user" | "slack-user-group"; optimisticData: { name: string; avatar?: string } }) =>
+		mutationFn: (data: { id: string; type: GetEntryPointsResponse[number]["type"]; optimisticData: { name: string; avatar?: string } }) =>
 			createEntryPointFn({ data: { id: data.id, type: data.type } }),
 
 		onMutate: async (newData) => {
 			await queryClient.cancelQueries({ queryKey: ["entry-points"] });
 
-			const previousEntryPoints = queryClient.getQueryData<EntryPoint[]>(["entry-points"]);
+			const previousEntryPoints = queryClient.getQueryData<GetEntryPointsResponse>(["entry-points"]);
 
 			const tempId = `temp-${Date.now()}`;
+			const isFirst = (previousEntryPoints?.length ?? 0) === 0;
+
 			const optimisticEntryPoint = {
 				id: tempId,
 				type: newData.type,
 				prompt: "",
 				assigneeId: newData.id,
+				isFallback: isFirst,
 				name: newData.optimisticData.name,
 				avatar: newData.optimisticData.avatar,
-			};
+			} as GetEntryPointsResponse[number];
 
-			queryClient.setQueryData<EntryPoint[]>(["entry-points"], (old) => [optimisticEntryPoint, ...(old ?? [])]);
+			queryClient.setQueryData<GetEntryPointsResponse>(["entry-points"], (old) => [optimisticEntryPoint, ...(old ?? [])]);
 
 			options?.onMutate?.(tempId);
 
@@ -74,9 +79,9 @@ export function useDeleteEntryPoint(options?: { onSuccess?: () => void; onError?
 		onMutate: async (id) => {
 			await queryClient.cancelQueries({ queryKey: ["entry-points"] });
 
-			const previousEntryPoints = queryClient.getQueryData<EntryPoint[]>(["entry-points"]);
+			const previousEntryPoints = queryClient.getQueryData<GetEntryPointsResponse>(["entry-points"]);
 
-			queryClient.setQueryData<EntryPoint[]>(["entry-points"], (old) => old?.filter((ep) => ep.id !== id));
+			queryClient.setQueryData<GetEntryPointsResponse>(["entry-points"], (old) => old?.filter((ep) => ep.id !== id));
 
 			return { previousEntryPoints };
 		},
@@ -112,9 +117,44 @@ export function useUpdateEntryPointPrompt(options?: { onSuccess?: () => void; on
 		onMutate: async ({ id, prompt }) => {
 			await queryClient.cancelQueries({ queryKey: ["entry-points"] });
 
-			const previousEntryPoints = queryClient.getQueryData<EntryPoint[]>(["entry-points"]);
+			const previousEntryPoints = queryClient.getQueryData<GetEntryPointsResponse>(["entry-points"]);
 
-			queryClient.setQueryData<EntryPoint[]>(["entry-points"], (old) => old?.map((ep) => (ep.id === id ? { ...ep, prompt } : ep)));
+			queryClient.setQueryData<GetEntryPointsResponse>(["entry-points"], (old) => old?.map((ep) => (ep.id === id ? { ...ep, prompt } : ep)));
+
+			return { previousEntryPoints };
+		},
+
+		onSuccess: () => {
+			options?.onSuccess?.();
+			queryClient.invalidateQueries({ queryKey: ["entry-points"] });
+		},
+
+		onError: (_err, _variables, context) => {
+			if (context?.previousEntryPoints) {
+				queryClient.setQueryData(["entry-points"], context.previousEntryPoints);
+			}
+			options?.onError?.();
+		},
+	}));
+}
+
+/**
+ * Hook for setting an entry point as fallback with optimistic updates.
+ */
+export function useSetFallbackEntryPoint(options?: { onSuccess?: () => void; onError?: () => void }) {
+	const queryClient = useQueryClient();
+
+	const setFallbackEntryPointFn = useServerFn(setFallbackEntryPoint);
+
+	return useMutation(() => ({
+		mutationFn: (id: string) => setFallbackEntryPointFn({ data: { id } }),
+
+		onMutate: async (id) => {
+			await queryClient.cancelQueries({ queryKey: ["entry-points"] });
+
+			const previousEntryPoints = queryClient.getQueryData<GetEntryPointsResponse>(["entry-points"]);
+
+			queryClient.setQueryData<GetEntryPointsResponse>(["entry-points"], (old) => old?.map((ep) => ({ ...ep, isFallback: ep.id === id })));
 
 			return { previousEntryPoints };
 		},

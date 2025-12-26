@@ -11,7 +11,7 @@ type IncidentInfo = {
 // We could allow users to tune the system prompt (when high, medium, low)
 const SYSTEM_PROMPT = `You are an incident triage assistant. Given an incident report and a list of entry points (each with a prompt describing when to be chosen and an assignee), you must:
 
-1. Select the most appropriate assignee based on which entry point best matches the incident
+1. Select the most appropriate assignee based on which entry point best matches the incident. If no entry point is a clear match, you MUST select the one marked as "FALLBACK".
 2. Determine the severity (low, medium, or high) based on the impact and urgency
 3. Generate a concise title (max 60 chars) that captures the essence of the incident
 4. Write a brief description explaining the incident and why you chose that entry point
@@ -51,7 +51,9 @@ const RESPONSE_SCHEMA = (assignees: string[]) =>
 export async function calculateIncidentInfo(prompt: string, entryPoints: EntryPoint[], openaiApiKey: string): Promise<IncidentInfo> {
 	ASSERT(entryPoints.length > 0, "At least one entry point is required");
 
-	const entryPointsDescription = entryPoints.map((ep, i) => `${i + 1}. Assignee: ${ep.assignee}\n   Choose when: ${ep.prompt}`).join("\n");
+	const entryPointsDescription = entryPoints
+		.map((ep, i) => `${i + 1}. Assignee: ${ep.assignee}\n   Choose when: ${ep.prompt}${ep.isFallback ? " (FALLBACK - Choose if no others match)" : ""}`)
+		.join("\n");
 
 	const userMessage = `Entry Points:
 ${entryPointsDescription}

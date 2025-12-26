@@ -24,11 +24,9 @@ function AuthedLayout() {
 	return (
 		<Show when={isAuthReady()}>
 			<Header />
-			<Suspense fallback={<div class="flex-1 p-6">Loading…</div>}>
-				<main class="flex-1 flex flex-col">
-					<Outlet />
-				</main>
-			</Suspense>
+			<main class="flex-1 flex flex-col">
+				<Outlet />
+			</main>
 		</Show>
 	);
 }

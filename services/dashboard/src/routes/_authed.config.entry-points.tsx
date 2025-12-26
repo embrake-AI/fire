@@ -1,15 +1,15 @@
 import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { Link2, LoaderCircle, Pencil, Plus, Trash2, TriangleAlert, Users, UsersRound, X } from "lucide-solid";
+import { Link2, LoaderCircle, Pencil, Plus, Star, Trash2, TriangleAlert, Users, UsersRound, X } from "lucide-solid";
 import { type Accessor, createEffect, createSignal, Index, Show, Suspense } from "solid-js";
 import { type SlackEntity, SlackEntityPicker } from "~/components/SlackEntityPicker";
 import { AutoSaveTextarea } from "~/components/ui/auto-save-textarea";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { type EntryPoint, getEntryPoints } from "~/lib/entry-points";
-import { toCreateGroupInput, toCreateInput, useCreateEntryPoint, useDeleteEntryPoint, useUpdateEntryPointPrompt } from "~/lib/entry-points.hooks";
+import { getEntryPoints } from "~/lib/entry-points";
+import { toCreateGroupInput, toCreateInput, useCreateEntryPoint, useDeleteEntryPoint, useSetFallbackEntryPoint, useUpdateEntryPointPrompt } from "~/lib/entry-points.hooks";
 import { getIntegrations } from "~/lib/integrations";
 import { cn } from "~/lib/utils/client";
 
@@ -53,6 +53,7 @@ function EntryPointsContent() {
 
 	const deleteMutation = useDeleteEntryPoint();
 	const updateMutation = useUpdateEntryPointPrompt();
+	const setFallbackMutation = useSetFallbackEntryPoint();
 
 	const handleSelectEntity = (entity: SlackEntity) => {
 		if (entity.type === "user") {
@@ -74,6 +75,10 @@ function EntryPointsContent() {
 		await updateMutation.mutateAsync({ id, prompt });
 	};
 
+	const handleSetFallback = (id: string) => {
+		setFallbackMutation.mutate(id);
+	};
+
 	return (
 		<div class="space-y-6">
 			<AddEntryPointPicker isOpen={isPickerOpen} setIsOpen={setIsPickerOpen} isAdding={() => createMutation.isPending} onSelect={handleSelectEntity} />
@@ -89,7 +94,9 @@ function EntryPointsContent() {
 									index={index}
 									onDelete={handleDelete}
 									onUpdatePrompt={handleUpdatePrompt}
+									onSetFallback={handleSetFallback}
 									isDeleting={deleteMutation.isPending && deleteMutation.variables === entryPoint().id}
+									isSettingFallback={setFallbackMutation.isPending}
 									isNewlyCreated={newlyCreatedId() === entryPoint().id}
 									onEditComplete={() => {
 										setNewlyCreatedId(null);
@@ -101,7 +108,7 @@ function EntryPointsContent() {
 				</Show>
 			</Show>
 
-			<EntryPointsFooter count={entryPoints().filter((ep) => !!ep.prompt).length} />
+			<EntryPointsFooter count={entryPoints().filter((ep) => !!ep.prompt && !ep.isFallback).length} />
 		</div>
 	);
 }
@@ -250,14 +257,16 @@ function EntryPointsFooter(props: EntryPointsFooterProps) {
 }
 
 // --- Entry Point Card ---
-
+type GetEntryPointsResponse = Awaited<ReturnType<typeof getEntryPoints>>;
 interface EntryPointCardProps {
-	entryPoint: EntryPoint;
+	entryPoint: GetEntryPointsResponse[number];
 	name: string;
 	index: number;
 	onDelete: (id: string) => void;
 	onUpdatePrompt: (id: string, prompt: string) => Promise<void>;
+	onSetFallback: (id: string) => void;
 	isDeleting: boolean;
+	isSettingFallback: boolean;
 	isNewlyCreated: boolean;
 	onEditComplete: () => void;
 }
@@ -293,18 +302,15 @@ function EntryPointCard(props: EntryPointCardProps) {
 	const hasMissingPrompt = () => !props.entryPoint.prompt.trim();
 	const isGroup = () => props.entryPoint.type === "slack-user-group";
 
+	const incomplete = () => hasMissingPrompt() && !isEditing() && !props.entryPoint.isFallback;
+
 	return (
-		<div
-			class={cn(
-				"group border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors",
-				hasMissingPrompt() && !isEditing() ? "border-amber-300 bg-amber-50/50" : "border-border",
-			)}
-		>
-			<div class="flex items-center gap-3 p-4">
+		<div class={cn("group border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors", incomplete() ? "border-amber-300 bg-amber-50/50" : "border-border")}>
+			<div class="flex items-center gap-3 p-4 overflow-hidden">
 				<div
 					class={cn(
 						"flex items-center justify-center w-8 h-8 rounded-full font-medium text-sm shrink-0",
-						hasMissingPrompt() && !isEditing() ? "bg-amber-100 text-amber-600" : isGroup() ? "bg-emerald-100 text-emerald-600" : "bg-blue-100 text-blue-600",
+						incomplete() ? "bg-amber-100 text-amber-600" : isGroup() ? "bg-emerald-100 text-emerald-600" : "bg-blue-100 text-blue-600",
 					)}
 				>
 					<Show
@@ -323,39 +329,72 @@ function EntryPointCard(props: EntryPointCardProps) {
 				</div>
 				<div class="flex-1 min-w-0">
 					<div class="flex items-center gap-2">
-						<span class="text-sm font-medium">{props.name}</span>
-						<Show when={!isEditing()}>
-							<Show
-								when={props.entryPoint.prompt.trim()}
-								fallback={
-									<span class="text-sm text-amber-600 flex items-center gap-1.5">
-										<TriangleAlert class="w-3.5 h-3.5" />
-										Missing prompt — will never be matched
-									</span>
-								}
-							>
-								<span class="text-sm text-muted-foreground truncate">— {getFirstLine(props.entryPoint.prompt)}</span>
+						<span class="text-sm font-medium shrink-0">{props.name}</span>
+
+						<Show
+							when={!incomplete()}
+							fallback={
+								<span class="text-sm text-amber-600 flex items-center gap-1.5 min-w-0">
+									<TriangleAlert class="w-3.5 h-3.5 shrink-0" />
+									<span class="truncate">Missing prompt — will never be matched</span>
+								</span>
+							}
+						>
+							<Show when={!hasMissingPrompt()}>
+								<span class="text-sm text-muted-foreground truncate min-w-0">— {getFirstLine(props.entryPoint.prompt)}</span>
 							</Show>
 						</Show>
 
 						<Show when={!isEditing()}>
-							<Button variant="ghost" size="icon" onClick={handleEditClick} class="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 text-muted-foreground">
+							<Button variant="ghost" size="icon" onClick={handleEditClick} class="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 text-muted-foreground shrink-0">
 								<Pencil class="w-3.5 h-3.5" />
 							</Button>
 						</Show>
 					</div>
 				</div>
-				<Button
-					variant="ghost"
-					size="icon"
-					class="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
-					onClick={() => props.onDelete(props.entryPoint.id)}
-					disabled={props.isDeleting}
-				>
-					<Show when={props.isDeleting} fallback={<Trash2 class="w-4 h-4" />}>
-						<LoaderCircle class="w-4 h-4 animate-spin" />
+
+				<div class="flex items-center shrink-0">
+					<Show when={props.entryPoint.isFallback}>
+						<div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-bold uppercase tracking-wider shrink-0">
+							<Star class="w-2.5 h-2.5 fill-current" />
+							Fallback
+						</div>
 					</Show>
-				</Button>
+
+					<div
+						class={cn(
+							"flex items-center gap-1 transition-all duration-300 ease-in-out overflow-hidden",
+							isEditing() ? "max-w-[160px] opacity-100 ml-2" : "max-w-0 group-hover:max-w-[160px] opacity-0 group-hover:opacity-100 ml-0 group-hover:ml-2 group-hover:delay-200",
+						)}
+					>
+						<Show when={!props.entryPoint.isFallback}>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-8 px-2 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 cursor-pointer text-[10px] font-medium whitespace-nowrap"
+								onClick={() => props.onSetFallback(props.entryPoint.id)}
+								disabled={props.isSettingFallback}
+							>
+								<Show when={props.isSettingFallback} fallback={<Star class="w-3 h-3 mr-1" />}>
+									<LoaderCircle class="w-3 h-3 animate-spin mr-1" />
+								</Show>
+								{/* Set as fallback */}
+							</Button>
+						</Show>
+
+						<Button
+							variant="ghost"
+							size="icon"
+							class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer h-8 w-8 shrink-0"
+							onClick={() => props.onDelete(props.entryPoint.id)}
+							disabled={props.isDeleting}
+						>
+							<Show when={props.isDeleting} fallback={<Trash2 class="w-4 h-4" />}>
+								<LoaderCircle class="w-4 h-4 animate-spin" />
+							</Show>
+						</Button>
+					</div>
+				</div>
 			</div>
 
 			<Show when={isEditing()}>
@@ -363,7 +402,9 @@ function EntryPointCard(props: EntryPointCardProps) {
 					<AutoSaveTextarea
 						id={`prompt-${props.entryPoint.id}`}
 						label="Matching Prompt"
-						placeholder="Match this entry point when the incident..."
+						placeholder={
+							props.entryPoint.isFallback ? "Optional for fallback. Describe when to pick this if other prompts match partially..." : "Match this entry point when the incident..."
+						}
 						value={props.entryPoint.prompt}
 						onSave={handleSave}
 						onBlur={handleEditComplete}

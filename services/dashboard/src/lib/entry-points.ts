@@ -7,13 +7,6 @@ import { fetchSlackUserGroups, fetchSlackUsers } from "./slack";
 
 export type { SlackUser, SlackUserGroup } from "./slack";
 
-export type EntryPoint = {
-	id: string;
-	prompt: string;
-	type: "slack-user" | "slack-user-group";
-	assigneeId: string;
-};
-
 export const getEntryPoints = createServerFn({
 	method: "GET",
 })
@@ -28,7 +21,8 @@ export const getEntryPoints = createServerFn({
 		const botToken = slackIntegrationData.botToken;
 		const [slackUsers, slackUserGroups] = await Promise.all([fetchSlackUsers(botToken), fetchSlackUserGroups(botToken)]);
 
-		const entryPoints = await db.select().from(entryPoint).orderBy(desc(entryPoint.createdAt));
+		const entryPoints = await db.select().from(entryPoint).where(eq(entryPoint.clientId, context.clientId)).orderBy(desc(entryPoint.createdAt));
+
 		return entryPoints.map((ep) => {
 			if (ep.type === "slack-user") {
 				const slackUser = slackUsers.find((u) => u.id === ep.assigneeId);
@@ -41,6 +35,7 @@ export const getEntryPoints = createServerFn({
 					type: ep.type,
 					prompt: ep.prompt,
 					assigneeId: ep.assigneeId,
+					isFallback: ep.isFallback,
 					name: slackUser.name,
 					avatar: slackUser.avatar,
 				};
@@ -55,6 +50,7 @@ export const getEntryPoints = createServerFn({
 					type: ep.type,
 					prompt: ep.prompt,
 					assigneeId: ep.assigneeId,
+					isFallback: ep.isFallback,
 					name: slackUserGroup.handle,
 				};
 			} else {
@@ -95,6 +91,9 @@ export const createEntryPoint = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { id: string; type: "slack-user" | "slack-user-group" }) => data)
 	.handler(async ({ data, context }) => {
+		const existing = await db.select().from(entryPoint).where(eq(entryPoint.clientId, context.clientId)).limit(1);
+		const isFirst = existing.length === 0;
+
 		const [newEntryPoint] = await db
 			.insert(entryPoint)
 			.values({
@@ -102,6 +101,7 @@ export const createEntryPoint = createServerFn({ method: "POST" })
 				type: data.type,
 				prompt: "",
 				assigneeId: data.id,
+				isFallback: isFirst,
 			})
 			.returning();
 
@@ -110,6 +110,7 @@ export const createEntryPoint = createServerFn({ method: "POST" })
 			type: newEntryPoint.type,
 			prompt: newEntryPoint.prompt,
 			assigneeId: newEntryPoint.assigneeId,
+			isFallback: newEntryPoint.isFallback,
 		};
 	});
 
@@ -148,5 +149,30 @@ export const updateEntryPointPrompt = createServerFn({ method: "POST" })
 			type: updated.type,
 			prompt: updated.prompt,
 			externalId: updated.assigneeId,
+			isFallback: updated.isFallback,
 		};
+	});
+
+export const setFallbackEntryPoint = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
+	.inputValidator((data: { id: string }) => data)
+	.handler(async ({ data, context }) => {
+		await db.transaction(async (tx) => {
+			await tx
+				.update(entryPoint)
+				.set({ isFallback: false })
+				.where(and(eq(entryPoint.clientId, context.clientId), eq(entryPoint.isFallback, true)));
+
+			const [updated] = await tx
+				.update(entryPoint)
+				.set({ isFallback: true })
+				.where(and(eq(entryPoint.id, data.id), eq(entryPoint.clientId, context.clientId)))
+				.returning();
+
+			if (!updated) {
+				throw new Error("Entry point not found");
+			}
+		});
+
+		return { success: true };
 	});

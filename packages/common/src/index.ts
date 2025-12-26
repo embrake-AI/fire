@@ -48,4 +48,5 @@ export type IS_Event =
 export type EntryPoint = {
 	prompt: string;
 	assignee: string;
+	isFallback?: boolean;
 };
