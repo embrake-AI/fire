@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation } from "@tanstack/solid-router";
 import { Settings } from "lucide-solid";
 import { createMemo } from "solid-js";
-import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { Tabs, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 
 export const Route = createFileRoute("/_authed/config")({
 	component: ConfigLayout,
@@ -43,6 +43,7 @@ function ConfigLayout() {
 						<TabsTrigger value="integrations" as={Link} to="/config/integrations">
 							Integrations
 						</TabsTrigger>
+						<TabsIndicator />
 					</TabsList>
 				</Tabs>
 

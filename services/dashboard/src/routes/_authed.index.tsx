@@ -4,7 +4,7 @@ import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { ChevronRight, CircleCheck, Flame, ShieldAlert, Wrench } from "lucide-solid";
 import type { JSX } from "solid-js";
-import { createMemo, For, Show, Suspense } from "solid-js";
+import { createMemo, createSignal, For, onMount, Show, Suspense } from "solid-js";
 import { Card } from "~/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { getSeverity } from "~/lib/incident-config";
@@ -88,8 +88,20 @@ function IncidentsContent() {
 }
 
 function NoIncidents() {
+	const [mounted, setMounted] = createSignal(false);
+	onMount(() => {
+		requestAnimationFrame(() => {
+			setMounted(true);
+		});
+	});
 	return (
-		<section class="flex flex-col items-center justify-center py-16 px-6">
+		<section
+			class="flex flex-col items-center justify-center py-16 px-6 transition-opacity transition-transform duration-300 ease-out will-change-[opacity,transform]"
+			classList={{
+				"invisible scale-95": !mounted(),
+				"visible scale-100": mounted(),
+			}}
+		>
 			<div class="relative mb-6">
 				<div class="absolute inset-0 bg-emerald-400/20 rounded-full blur-xl animate-pulse" />
 				<div class="relative p-4 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-50 border border-emerald-200/60">

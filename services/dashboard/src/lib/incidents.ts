@@ -18,6 +18,8 @@ export const getIncidents = createServerFn({
 		return incidents;
 	});
 
+export type IncidentEvent = IS_Event & { id: number; created_at: string; adapter: "slack" | "dashboard" };
+
 export const getIncidentById = createServerFn({ method: "GET" })
 	.inputValidator((data: { id: string }) => data)
 	.middleware([authMiddleware])
@@ -26,11 +28,25 @@ export const getIncidentById = createServerFn({ method: "GET" })
 		if (!response.ok) {
 			throw new Error("Failed to fetch incident");
 		}
-		const incident = (await response.json()) as { state: IS; events: { event_type: string; event_data: string }[] } | { error: "NOT_FOUND" };
+		const incident = (await response.json()) as
+			| { state: IS; events: { id: number; event_type: string; event_data: string; created_at: string; adapter: "slack" | "dashboard" }[] }
+			| { error: "NOT_FOUND" };
 		if ("error" in incident) {
 			return { error: incident.error };
 		}
-		return { state: incident.state, events: incident.events.map((event) => ({ event_type: event.event_type, event_data: JSON.parse(event.event_data) }) as IS_Event) };
+		return {
+			state: incident.state,
+			events: incident.events.map(
+				(event) =>
+					({
+						event_type: event.event_type,
+						event_data: JSON.parse(event.event_data),
+						id: event.id,
+						created_at: event.created_at,
+						adapter: event.adapter,
+					}) as IncidentEvent,
+			),
+		};
 	});
 
 export const updateAssignee = createServerFn({ method: "POST" })

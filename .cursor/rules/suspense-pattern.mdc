@@ -57,33 +57,43 @@ function ContentSkeleton() {
 
 ## Animation Guidelines
 
-⚠️ **Do NOT add fade-in animations to data content components**
+⚠️ **Do NOT use `animate-in fade-in` anywhere in data-fetching routes**
 
-Adding `animate-in fade-in` to components that render query data causes flickering on every refetch, even when the DOM doesn't change. The animation class re-triggers whenever the component re-renders.
+These animations cause flickering on every refetch, even when the DOM doesn't change. The animation class re-triggers whenever the component re-renders. This applies to:
 
-**Bad** - causes flicker on refetch:
+-   Data content components
+-   Skeleton/loading fallbacks (they re-render on refetch too!)
+-   Any component inside a Suspense boundary
+
+**Bad** - causes flicker:
 
 ```tsx
 function PageContent() {
     const query = useQuery(...)
-    return <div class="animate-in fade-in duration-300">{/* data */}</div>
+    return <div class="animate-in fade-in duration-200">{/* data */}</div>
+}
+
+function ContentSkeleton() {
+    return <div class="animate-in fade-in duration-200">{/* skeleton */}</div>
 }
 ```
 
-**Good** - no animation on data content:
+**Good** - no animations:
 
 ```tsx
 function PageContent() {
     const query = useQuery(...)
     return <div>{/* data */}</div>
 }
+
+function ContentSkeleton() {
+    return <div>{/* skeleton */}</div>
+}
 ```
 
 **Where animations ARE appropriate:**
 
--   Skeleton/loading fallbacks (they only show during initial load)
--   Empty states (UI transitions, not data refetches)
--   UI components (popovers, tooltips, modals - visibility changes)
+-   UI components (popovers, tooltips, selects - visibility changes via `fade-in-0`)
 -   One-time app shell transitions (e.g., after auth is ready)
 
 ## When to Use Suspense vs Show

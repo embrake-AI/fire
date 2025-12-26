@@ -127,6 +127,7 @@ slackRoutes.post("/interaction", async (c) => {
 			id: incidentId,
 			status: newStatus,
 			message: statusMessage,
+			adapter: "slack",
 		});
 
 		return c.json({});
@@ -141,12 +142,14 @@ slackRoutes.post("/interaction", async (c) => {
 					c,
 					id: incidentId,
 					severity: action.selected_option.value,
+					adapter: "slack",
 				});
 			} else if (action.type === "users_select" && action.action_id === "set_assignee") {
 				await updateAssignee({
 					c,
 					id: incidentId,
 					assignee: action.selected_user,
+					adapter: "slack",
 				});
 			} else if (action.type === "static_select" && action.action_id === "set_status") {
 				const triggerId = payload.trigger_id;

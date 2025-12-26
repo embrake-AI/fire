@@ -47,7 +47,7 @@ dashboardRoutes.post("/:id/assignee", async (c) => {
 		return c.json({ error: "ID is required" }, 400);
 	}
 	const { assignee } = await c.req.json<{ assignee: string }>();
-	const incident = await updateAssignee({ c, id, assignee });
+	const incident = await updateAssignee({ c, id, assignee, adapter: "dashboard" });
 	return c.json({ incident });
 });
 
@@ -62,7 +62,7 @@ dashboardRoutes.post("/:id/severity", async (c) => {
 		return c.json({ error: "Invalid severity" }, 400);
 	}
 
-	const incident = await updateSeverity({ c, id, severity });
+	const incident = await updateSeverity({ c, id, severity, adapter: "dashboard" });
 	return c.json({ incident });
 });
 
@@ -77,7 +77,7 @@ dashboardRoutes.post("/:id/status", async (c) => {
 		return c.json({ error: "Invalid status" }, 400);
 	}
 
-	const incident = await updateStatus({ c, id, status, message });
+	const incident = await updateStatus({ c, id, status, message, adapter: "dashboard" });
 	return c.json({ incident });
 });
 

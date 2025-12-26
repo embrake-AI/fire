@@ -51,20 +51,52 @@ export async function getIncident<E extends BasicContext>({ c, id }: { c: Contex
 	return incident.get();
 }
 
-export async function updateSeverity<E extends BasicContext>({ c, id, severity }: { c: Context<E>; id: string; severity: IS["severity"] }) {
+export async function updateSeverity<E extends BasicContext>({
+	c,
+	id,
+	severity,
+	adapter,
+}: {
+	c: Context<E>;
+	id: string;
+	severity: IS["severity"];
+	adapter: "slack" | "dashboard";
+}) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	await incident.setSeverity(severity);
+	await incident.setSeverity(severity, adapter);
 }
 
-export async function updateAssignee<E extends BasicContext>({ c, id, assignee }: { c: Context<E>; id: string; assignee: IS["assignee"] }) {
+export async function updateAssignee<E extends BasicContext>({
+	c,
+	id,
+	assignee,
+	adapter,
+}: {
+	c: Context<E>;
+	id: string;
+	assignee: IS["assignee"];
+	adapter: "slack" | "dashboard";
+}) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	await incident.setAssignee(assignee);
+	await incident.setAssignee(assignee, adapter);
 }
 
-export async function updateStatus<E extends BasicContext>({ c, id, status, message }: { c: Context<E>; id: string; status: Exclude<IS["status"], "open">; message: string }) {
+export async function updateStatus<E extends BasicContext>({
+	c,
+	id,
+	status,
+	message,
+	adapter,
+}: {
+	c: Context<E>;
+	id: string;
+	status: Exclude<IS["status"], "open">;
+	message: string;
+	adapter: "slack" | "dashboard";
+}) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	await incident.updateStatus(status, message);
+	await incident.updateStatus(status, message, adapter);
 }

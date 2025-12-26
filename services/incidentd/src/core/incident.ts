@@ -150,12 +150,13 @@ export class Incident extends DurableObject<Env> {
 				event_data TEXT NOT NULL CHECK (json_valid(event_data)) NOT NULL,
 				created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
 				published_at TEXT DEFAULT NULL,
-				attempts INTEGER NOT NULL DEFAULT 0
+				attempts INTEGER NOT NULL DEFAULT 0,
+				adapter TEXT NOT NULL
 			);
 			CREATE INDEX idx_event_log_published_at ON event_log(published_at);`);
 			this.ctx.storage.kv.put(ELV_KEY, "1");
 			await this.commit(
-				{ state: payload, event: { event_type: "INCIDENT_CREATED", event_data: { assignee, createdBy, description, prompt, severity, source, status, title } } },
+				{ state: payload, event: { event_type: "INCIDENT_CREATED", event_data: { assignee, createdBy, description, prompt, severity, source, status, title } }, adapter: source },
 				{ skipAlarm: true },
 			);
 			this.ctx.storage.kv.delete(EP_KEY);
@@ -168,11 +169,11 @@ export class Incident extends DurableObject<Env> {
 	 * Outbox pattern
 	 * Atomically: commits the new state to the DO, enqueues an event to the event log and schedules an alarm to ensure eventual consistency.
 	 */
-	private async commit({ state, event }: { state: DOState; event?: IS_Event }, { skipAlarm = false }: { skipAlarm?: boolean } = {}) {
+	private async commit({ state, event, adapter }: { state: DOState; event?: IS_Event; adapter?: "slack" | "dashboard" }, { skipAlarm = false }: { skipAlarm?: boolean } = {}) {
 		await this.ctx.storage.transaction(async () => {
 			this.ctx.storage.kv.put<DOState>(S_KEY, state);
 			if (event) {
-				this.ctx.storage.sql.exec("INSERT INTO event_log (event_type, event_data) VALUES (?, ?)", event.event_type, JSON.stringify(event.event_data));
+				this.ctx.storage.sql.exec("INSERT INTO event_log (event_type, event_data, adapter) VALUES (?, ?, ?)", event.event_type, JSON.stringify(event.event_data), adapter);
 				if (!skipAlarm) {
 					await this.scheduleAlarmAtMost(Date.now());
 				}
@@ -214,23 +215,23 @@ export class Incident extends DurableObject<Env> {
 		}
 	}
 
-	async setSeverity(severity: DOState["severity"]) {
+	async setSeverity(severity: DOState["severity"], adapter: "slack" | "dashboard") {
 		const state = this.assertState();
 		if (state.severity !== severity) {
 			state.severity = severity;
-			await this.commit({ state, event: { event_type: "SEVERITY_UPDATE", event_data: { severity } } });
+			await this.commit({ state, event: { event_type: "SEVERITY_UPDATE", event_data: { severity } }, adapter });
 		}
 	}
 
-	async setAssignee(assignee: DOState["assignee"]) {
+	async setAssignee(assignee: DOState["assignee"], adapter: "slack" | "dashboard") {
 		const state = this.assertState();
 		if (state.assignee !== assignee) {
 			state.assignee = assignee;
-			await this.commit({ state, event: { event_type: "ASSIGNEE_UPDATE", event_data: { assignee } } });
+			await this.commit({ state, event: { event_type: "ASSIGNEE_UPDATE", event_data: { assignee } }, adapter });
 		}
 	}
 
-	async updateStatus(status: DOState["status"], message: string) {
+	async updateStatus(status: DOState["status"], message: string, adapter: "slack" | "dashboard") {
 		const state = this.assertState();
 		const currentStatus = state.status;
 
@@ -241,7 +242,7 @@ export class Incident extends DurableObject<Env> {
 		}
 
 		state.status = status;
-		await this.commit({ state, event: { event_type: "STATUS_UPDATE", event_data: { status, message } } });
+		await this.commit({ state, event: { event_type: "STATUS_UPDATE", event_data: { status, message } }, adapter });
 	}
 
 	async get() {

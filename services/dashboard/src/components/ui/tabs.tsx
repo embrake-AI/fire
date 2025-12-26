@@ -7,20 +7,17 @@ import { cn } from "~/lib/utils/client";
 
 const Tabs = TabsPrimitive.Root;
 
-type TabsVariant = "default" | "underline";
-
 type TabsListProps<T extends ValidComponent = "div"> = TabsPrimitive.TabsListProps<T> & {
 	class?: string | undefined;
-	variant?: TabsVariant;
 };
 
 const TabsList = <T extends ValidComponent = "div">(props: PolymorphicProps<T, TabsListProps<T>>) => {
-	const [local, others] = splitProps(props as TabsListProps, ["class", "variant"]);
+	const [local, others] = splitProps(props as TabsListProps, ["class"]);
 	return (
 		<TabsPrimitive.List
 			class={cn(
-				"inline-flex items-center text-muted-foreground",
-				local.variant === "underline" ? "h-auto gap-4 justify-start bg-transparent p-0" : "h-10 justify-center rounded-md bg-muted p-1",
+				"relative inline-flex items-center text-muted-foreground border-border",
+				"data-[orientation=horizontal]:border-b data-[orientation=vertical]:border-l",
 				local.class,
 			)}
 			{...others}
@@ -30,18 +27,17 @@ const TabsList = <T extends ValidComponent = "div">(props: PolymorphicProps<T, T
 
 type TabsTriggerProps<T extends ValidComponent = "button"> = TabsPrimitive.TabsTriggerProps<T> & {
 	class?: string | undefined;
-	variant?: TabsVariant;
 };
 
 const TabsTrigger = <T extends ValidComponent = "button">(props: PolymorphicProps<T, TabsTriggerProps<T>>) => {
-	const [local, others] = splitProps(props as TabsTriggerProps, ["class", "variant"]);
+	const [local, others] = splitProps(props as TabsTriggerProps, ["class"]);
 	return (
 		<TabsPrimitive.Trigger
 			class={cn(
-				"cursor-pointer inline-flex items-center justify-center whitespace-nowrap text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-				local.variant === "underline"
-					? "px-0 py-2 bg-transparent hover:bg-transparent rounded-none border-b-2 border-transparent hover:border-muted-foreground/50 hover:text-foreground data-[selected]:border-foreground data-[selected]:text-foreground"
-					: "rounded-sm px-3 py-1.5 hover:bg-muted/50 hover:text-foreground data-[selected]:bg-background data-[selected]:text-foreground data-[selected]:shadow-sm",
+				"cursor-pointer inline-flex items-center justify-center whitespace-nowrap px-3 py-2 text-sm font-medium",
+				"hover:text-foreground data-[selected]:text-foreground",
+				"ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+				"disabled:pointer-events-none disabled:opacity-50",
 				local.class,
 			)}
 			{...others}
@@ -72,7 +68,9 @@ const TabsIndicator = <T extends ValidComponent = "div">(props: PolymorphicProps
 	return (
 		<TabsPrimitive.Indicator
 			class={cn(
-				"duration-250ms absolute transition-all data-[orientation=horizontal]:-bottom-px data-[orientation=vertical]:-right-px data-[orientation=horizontal]:h-[2px] data-[orientation=vertical]:w-[2px]",
+				"absolute bg-foreground transition-[transform,width,height] duration-200",
+				"data-[orientation=horizontal]:-bottom-px data-[orientation=horizontal]:h-[2px]",
+				"data-[orientation=vertical]:w-[2px]",
 				local.class,
 			)}
 			{...others}

@@ -2,30 +2,33 @@ import type { IS } from "@fire/common";
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { ArrowLeft, User } from "lucide-solid";
-import type { Accessor } from "solid-js";
-import { createEffect, createMemo, createSignal, For, Show, Suspense } from "solid-js";
+import { ArrowLeft, Clock, Monitor, User } from "lucide-solid";
+import type { Accessor, Component } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onMount, Show, Suspense } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
+import { AssigneeName } from "~/components/AssigneeName";
+import { SlackIcon } from "~/components/icons/SlackIcon";
 import { type SlackEntity, SlackEntityPicker } from "~/components/SlackEntityPicker";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader } from "~/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Textarea } from "~/components/ui/textarea";
-import { getSlackUserGroups, getSlackUsers } from "~/lib/entry-points";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { getSeverity, getStatus } from "~/lib/incident-config";
-import { getIncidentById } from "~/lib/incidents";
+import { getIncidentById, type IncidentEvent } from "~/lib/incidents";
 import { useUpdateIncidentAssignee, useUpdateIncidentSeverity, useUpdateIncidentStatus } from "~/lib/incidents.hooks";
+import { getEventConfig } from "~/lib/timeline-events";
 
 function IncidentSkeleton() {
 	return (
-		<div class="space-y-6 animate-in fade-in duration-200">
+		<div class="space-y-6">
 			<div class="space-y-4">
 				<div class="flex items-start justify-between gap-4">
-					<Skeleton class="h-9 w-80" />
+					<Skeleton class="h-9 w-120" />
 					<Skeleton variant="circular" class="h-8 w-24" />
 				</div>
 				<div class="flex items-center gap-3">
@@ -35,17 +38,46 @@ function IncidentSkeleton() {
 				</div>
 			</div>
 
-			<Card>
-				<CardHeader class="pb-0">
-					<div class="flex gap-4 border-b border-transparent">
-						<Skeleton variant="text" class="h-5 w-24" />
-						<Skeleton variant="text" class="h-5 w-28" />
-					</div>
+			<Card class="overflow-hidden">
+				<CardHeader>
+					<Skeleton class="h-6 w-28" />
 				</CardHeader>
-				<CardContent class="space-y-2 pt-6">
-					<Skeleton variant="text" class="w-full" />
-					<Skeleton variant="text" class="w-4/5" />
-					<Skeleton variant="text" class="w-3/5" />
+				<CardContent>
+					<div
+						class="space-y-6"
+						style={{
+							"mask-image": "linear-gradient(to bottom, black 0%, black 40%, transparent 100%)",
+							"-webkit-mask-image": "linear-gradient(to bottom, black 0%, black 40%, transparent 100%)",
+						}}
+					>
+						<div class="flex gap-4">
+							<Skeleton variant="circular" class="h-8 w-8 shrink-0" />
+							<div class="flex-1 space-y-2">
+								<Skeleton variant="text" class="w-48" />
+								<Skeleton variant="text" class="w-full" />
+							</div>
+						</div>
+						<div class="flex gap-4">
+							<Skeleton variant="circular" class="h-8 w-8 shrink-0" />
+							<div class="flex-1 space-y-2">
+								<Skeleton variant="text" class="w-36" />
+								<Skeleton variant="text" class="w-3/4" />
+							</div>
+						</div>
+						<div class="flex gap-4">
+							<Skeleton variant="circular" class="h-8 w-8 shrink-0" />
+							<div class="flex-1 space-y-2">
+								<Skeleton variant="text" class="w-52" />
+								<Skeleton variant="text" class="w-2/3" />
+							</div>
+						</div>
+						<div class="flex gap-4">
+							<Skeleton variant="circular" class="h-8 w-8 shrink-0" />
+							<div class="flex-1 space-y-2">
+								<Skeleton variant="text" class="w-40" />
+							</div>
+						</div>
+					</div>
 				</CardContent>
 			</Card>
 		</div>
@@ -55,6 +87,49 @@ function IncidentSkeleton() {
 export const Route = createFileRoute("/_authed/incidents/$incidentId")({
 	component: IncidentDetail,
 });
+
+function IncidentDetail() {
+	const params = Route.useParams();
+	const navigate = useNavigate();
+	const getIncidentByIdFn = useServerFn(getIncidentById);
+	const incidentQuery = useQuery(() => ({
+		queryKey: ["incident", params().incidentId],
+		queryFn: () => getIncidentByIdFn({ data: { id: params().incidentId } }),
+		staleTime: Infinity,
+		refetchInterval: 5_000,
+	}));
+	const incident = () => incidentQuery.data;
+
+	createEffect(() => {
+		if (incidentQuery.data?.error === "NOT_FOUND") {
+			console.log("Would navigate to /analysis/:incidentId", params().incidentId);
+			// TODO: navigate({ to: "/analysis/:incidentId", params: { incidentId: params().incidentId } });
+			navigate({ to: "/" });
+		}
+	});
+
+	return (
+		<div class="flex-1 bg-background p-6 md:p-8">
+			<div class="max-w-5xl mx-auto">
+				<Link to="/" class="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6">
+					<ArrowLeft class="w-4 h-4" />
+					Back to incidents
+				</Link>
+
+				<Suspense fallback={<IncidentSkeleton />}>
+					<Show when={incident()?.state}>
+						{(state) => (
+							<div class="space-y-6">
+								<IncidentHeader incident={state} />
+								<Show when={incident()?.events}>{(events) => <Timeline events={events()} />}</Show>
+							</div>
+						)}
+					</Show>
+				</Suspense>
+			</div>
+		</div>
+	);
+}
 
 function IncidentHeader(props: { incident: Accessor<IS> }) {
 	const queryClient = useQueryClient();
@@ -77,28 +152,6 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 	});
 
 	const status = () => getStatus(incident().status);
-
-	const getSlackUsersFn = useServerFn(getSlackUsers);
-	const getSlackUserGroupsFn = useServerFn(getSlackUserGroups);
-	const slackUsersQuery = useQuery(() => ({
-		queryKey: ["slack-users"],
-		queryFn: getSlackUsersFn,
-		staleTime: Infinity,
-	}));
-	const slackGroupsQuery = useQuery(() => ({
-		queryKey: ["slack-groups"],
-		queryFn: getSlackUserGroupsFn,
-		staleTime: Infinity,
-	}));
-
-	const assigneeName = createMemo(() => {
-		if (!incident().assignee) return null;
-		const user = slackUsersQuery.data?.find((u) => u.id === incident().assignee);
-		if (user) return user.name;
-		const group = slackGroupsQuery.data?.find((g) => g.id === incident().assignee);
-		if (group) return group.name;
-		return incident().assignee;
-	});
 
 	const [open, setOpen] = createSignal(false);
 
@@ -202,10 +255,10 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 				<div class="flex flex-wrap items-center gap-3">
 					<Select
 						value={incident().severity}
-						onChange={(val) => val && updateSeverityMutation.mutate(val as IS["severity"])}
+						onChange={(val) => val && updateSeverityMutation.mutate(val)}
 						options={["low", "medium", "high"]}
 						itemComponent={(props) => {
-							const config = getSeverity(props.item.rawValue as IS["severity"]);
+							const config = getSeverity(props.item.rawValue);
 							return (
 								<SelectItem item={props.item}>
 									<div class="flex items-center gap-2">
@@ -228,7 +281,9 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 					<Popover open={open()} onOpenChange={setOpen}>
 						<PopoverTrigger as={Button} variant="ghost" size="sm" class="h-8 gap-2 bg-muted/50 hover:bg-muted font-normal">
 							<User class="h-4 w-4 text-muted-foreground" />
-							<span class="text-sm">{assigneeName() || "Unassigned"}</span>
+							<span class="text-sm">
+								<AssigneeName id={() => incident().assignee} />
+							</span>
 						</PopoverTrigger>
 						<PopoverContent class="p-0 w-[280px]">
 							<SlackEntityPicker
@@ -244,64 +299,94 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 					</Popover>
 				</div>
 			</div>
-
-			<Card>
-				<Tabs defaultValue="description">
-					<CardHeader class="pb-0">
-						<TabsList variant="underline">
-							<TabsTrigger variant="underline" value="description">
-								Description
-							</TabsTrigger>
-							<TabsTrigger variant="underline" value="prompt">
-								Original Prompt
-							</TabsTrigger>
-						</TabsList>
-					</CardHeader>
-					<CardContent class="pt-6">
-						<TabsContent value="description" class="mt-0">
-							<p class="text-muted-foreground leading-relaxed whitespace-pre-wrap">{incident().description}</p>
-						</TabsContent>
-						<TabsContent value="prompt" class="mt-0">
-							<p class="text-muted-foreground leading-relaxed font-mono text-sm bg-muted p-4 rounded-md">{incident().prompt}</p>
-						</TabsContent>
-					</CardContent>
-				</Tabs>
-			</Card>
 		</div>
 	);
 }
 
-function IncidentDetail() {
-	const params = Route.useParams();
-	const navigate = useNavigate();
-	const getIncidentByIdFn = useServerFn(getIncidentById);
-	const incidentQuery = useQuery(() => ({
-		queryKey: ["incident", params().incidentId],
-		queryFn: () => getIncidentByIdFn({ data: { id: params().incidentId } }),
-		staleTime: Infinity,
-		refetchInterval: 5_000,
-	}));
-	const incident = () => incidentQuery.data;
+function formatTime(timestamp: string) {
+	const date = new Date(timestamp);
+	return date.toLocaleString(undefined, {
+		month: "short",
+		day: "numeric",
+		hour: "2-digit",
+		minute: "2-digit",
+	});
+}
+
+function Timeline(props: { events: IncidentEvent[] }) {
+	const [events, setEvents] = createStore<IncidentEvent[]>([]);
 
 	createEffect(() => {
-		if (incidentQuery.data?.error === "NOT_FOUND") {
-			console.log("Would navigate to /analysis/:incidentId", params().incidentId);
-			// TODO: navigate({ to: "/analysis/:incidentId", params: { incidentId: params().incidentId } });
-			navigate({ to: "/" });
-		}
+		setEvents(reconcile(props.events, { key: "id" }));
 	});
 
 	return (
-		<div class="flex-1 bg-background p-6 md:p-8">
-			<div class="max-w-5xl mx-auto">
-				<Link to="/" class="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6">
-					<ArrowLeft class="w-4 h-4" />
-					Back to incidents
-				</Link>
+		<Card>
+			<CardHeader>
+				<CardTitle class="flex items-center gap-2 text-lg">
+					<Clock class="w-5 h-5 text-muted-foreground" />
+					Timeline
+				</CardTitle>
+			</CardHeader>
+			<CardContent>
+				<div>
+					<div class="relative">
+						<div class="absolute left-4 top-0 bottom-0 w-px bg-border" />
+						<div class="space-y-6">
+							<For each={events}>{(event) => <TimelineRow event={event} />}</For>
+						</div>
+					</div>
+				</div>
+			</CardContent>
+		</Card>
+	);
+}
 
-				<Suspense fallback={<IncidentSkeleton />}>
-					<Show when={incident()?.state}>{(state) => <IncidentHeader incident={state} />}</Show>
-				</Suspense>
+const ADAPTER_ICON = {
+	slack: SlackIcon,
+	dashboard: Monitor,
+} as const satisfies Record<"slack" | "dashboard", Component>;
+
+function TimelineRow(props: { event: IncidentEvent }) {
+	const config = getEventConfig(props.event.event_type);
+	const Icon = config.icon;
+	const Render = config.render;
+	const AdapterIcon = ADAPTER_ICON[props.event.adapter];
+
+	const animationClasses = ["animate-in", "fade-in", "slide-in-from-top-2", "duration-300"];
+
+	let el!: HTMLDivElement;
+
+	onMount(() => {
+		const handler = (e: AnimationEvent) => {
+			if (e.target !== el) return;
+			el.classList.remove(...animationClasses);
+			el.removeEventListener("animationend", handler);
+		};
+
+		el.addEventListener("animationend", handler);
+	});
+
+	return (
+		<div ref={el} class={`relative flex gap-4 pl-0 ${animationClasses.join(" ")}`}>
+			<div class={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${config.iconBg}`}>
+				<Icon class={`h-4 w-4 ${config.iconColor}`} />
+			</div>
+			<div class="flex-1 pt-0.5">
+				<div class="flex items-center gap-2 mb-1">
+					<span class="font-medium text-sm text-foreground">{config.label}</span>
+					<span class="text-xs text-muted-foreground">{formatTime(props.event.created_at)}</span>
+					<span class="text-muted-foreground/40">·</span>
+					<Tooltip>
+						<TooltipTrigger>
+							<AdapterIcon class="w-3 h-3 text-muted-foreground/60" />
+						</TooltipTrigger>
+						<TooltipContent>
+							<p class="text-[10px] capitalize">{props.event.adapter}</p>
+						</TooltipContent>
+					</Tooltip>
+				</div>
+				<Render data={props.event.event_data} />
 			</div>
 		</div>
 	);

@@ -12,7 +12,7 @@ export const Skeleton: Component<SkeletonProps> = (props) => {
 	return (
 		<div
 			class={cn(
-				"bg-muted/50 animate-pulse",
+				"bg-muted/50 animate-pulse animate-infinite",
 				local.variant === "circular" && "rounded-full",
 				local.variant === "text" && "rounded h-4",
 				(!local.variant || local.variant === "rectangular") && "rounded-md",

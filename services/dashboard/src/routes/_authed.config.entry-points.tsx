@@ -194,7 +194,7 @@ function AddEntryPointPickerContent(props: { onSelect: (entity: SlackEntity) => 
 
 function EntryPointsContentSkeleton() {
 	return (
-		<div class="space-y-6 animate-in fade-in duration-200">
+		<div class="space-y-6">
 			<Skeleton class="h-10 w-36" />
 			<div class="space-y-3">
 				<EntryPointCardSkeleton />
