@@ -1,13 +1,14 @@
-import { type IS, IS_SEVERITY } from "@fire/common";
+import { IS_SEVERITY } from "@fire/common";
 import type { ActionsBlock, KnownBlock } from "@slack/types";
-import type { DOState } from "../../../core/incident";
+import type { Incident } from "../../../dispatcher";
+import type { Metadata } from "../../../handler";
 
 /**
  * Useful guide to create Slack messages (has sub-routes for each type of message):
  *   - https://docs.slack.dev/messaging/
  */
 
-export async function incidentStarted(env: Env, { id, severity, status, assignee, metadata, title }: DOState) {
+export async function incidentStarted(env: Env, id: string, { severity, status, assignee, title }: Incident, metadata: Metadata) {
 	const { botToken, channel, thread } = metadata;
 	if (!botToken || !channel) {
 		// Not created through Slack, so no message to send
@@ -59,20 +60,21 @@ export async function incidentStarted(env: Env, { id, severity, status, assignee
 	}
 }
 
-export async function incidentSeverityUpdated(env: Env, newSeverity: IS["severity"], { id, status, assignee, metadata, title }: DOState) {
+export async function incidentSeverityUpdated(env: Env, id: string, incident: Incident, metadata: Metadata) {
+	const { severity, status, assignee, title } = incident;
 	const { botToken, channel, thread, postedMessageTs } = metadata;
 	if (!botToken || !channel || !postedMessageTs) {
 		// Not created through Slack, so no message to send
 		return;
 	}
-	const shouldBroadcast = newSeverity === "high" && !!thread;
+	const shouldBroadcast = severity === "high" && !!thread;
 	await updateIncidentMessage({
 		frontendUrl: env.FRONTEND_URL,
 		botToken,
 		channel,
 		postedMessageTs,
 		id,
-		severity: newSeverity,
+		severity,
 		status,
 		assignee,
 		broadcast: shouldBroadcast,
@@ -80,16 +82,18 @@ export async function incidentSeverityUpdated(env: Env, newSeverity: IS["severit
 	});
 }
 
-export async function incidentAssigneeUpdated(env: Env, newAssignee: string, { id, severity, status, metadata, title }: DOState) {
+export async function incidentAssigneeUpdated(env: Env, id: string, incident: Incident, metadata: Metadata) {
+	const { severity, status, assignee, title } = incident;
 	const { botToken, channel, postedMessageTs } = metadata;
 	if (!botToken || !channel || !postedMessageTs) {
 		// Not created through Slack, so no message to send
 		return;
 	}
-	await updateIncidentMessage({ frontendUrl: env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity, status, assignee: newAssignee, incidentName: title });
+	await updateIncidentMessage({ frontendUrl: env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity, status, assignee, incidentName: title });
 }
 
-export async function incidentStatusUpdated(env: Env, newStatus: Exclude<IS["status"], "open">, message: string, { id, severity, assignee, metadata, title }: DOState) {
+export async function incidentStatusUpdated(env: Env, id: string, incident: Incident, message: string, metadata: Metadata) {
+	const { severity, status, assignee, title } = incident;
 	const { botToken, channel, postedMessageTs } = metadata;
 	if (!botToken || !channel || !postedMessageTs) {
 		// Not created through Slack, so no message to send
@@ -102,7 +106,7 @@ export async function incidentStatusUpdated(env: Env, newStatus: Exclude<IS["sta
 		postedMessageTs,
 		id,
 		severity,
-		status: newStatus,
+		status,
 		assignee,
 		statusMessage: message,
 		incidentName: title,
@@ -127,8 +131,8 @@ async function updateIncidentMessage({
 	channel: string;
 	postedMessageTs: string;
 	id: string;
-	severity: IS["severity"];
-	status: IS["status"];
+	severity: Incident["severity"];
+	status: Incident["status"];
 	assignee: string;
 	statusMessage?: string;
 	broadcast?: boolean;
@@ -172,7 +176,7 @@ async function updateIncidentMessage({
  * mitigating -> resolved
  * resolved -> (none, terminal state)
  */
-function getValidStatusTransitions(currentStatus: IS["status"]): IS["status"][] {
+function getValidStatusTransitions(currentStatus: Incident["status"]): Incident["status"][] {
 	switch (currentStatus) {
 		case "open":
 			return ["mitigating", "resolved"];
@@ -186,7 +190,7 @@ function getValidStatusTransitions(currentStatus: IS["status"]): IS["status"][] 
 /**
  * Format status for display with emoji indicator
  */
-function formatStatus(status: IS["status"]): string {
+function formatStatus(status: Incident["status"]): string {
 	switch (status) {
 		case "open":
 			return "🔴 Open";
@@ -208,8 +212,8 @@ function incidentBlocks({
 }: {
 	frontendUrl: string;
 	incidentId: string;
-	severity: IS["severity"];
-	status: IS["status"];
+	severity: Incident["severity"];
+	status: Incident["status"];
 	assigneeUserId?: string;
 	statusMessage?: string;
 	title: string;

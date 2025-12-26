@@ -1,4 +1,4 @@
-import type { EntryPoint, IS } from "@fire/common";
+import type { EntryPoint, IS, ListIncidentsElement } from "@fire/common";
 import type { Context } from "hono";
 
 export type BasicContext = { Bindings: Env };
@@ -39,18 +39,9 @@ export async function startIncident<E extends AuthContext>({
 export async function listIncidents<E extends AuthContext>({ c }: { c: Context<E> }) {
 	const clientId = c.var.auth.clientId;
 	const incidents = await c.env.incidents
-		.prepare("SELECT id, identifier, status, assignee, severity, createdAt, title, description FROM incident WHERE client_id = ?")
+		.prepare("SELECT id, status, assignee, severity, createdAt, title, description FROM incident WHERE client_id = ?")
 		.bind(clientId)
-		.all<{
-			id: number;
-			identifier: string;
-			status: string;
-			assignee: string;
-			severity: string;
-			createdAt: string;
-			title: string;
-			description: string;
-		}>();
+		.all<ListIncidentsElement>();
 	return incidents.results;
 }
 

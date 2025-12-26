@@ -1,4 +1,4 @@
-import type { IS } from "@fire/common";
+import type { ListIncidentsElement } from "@fire/common";
 import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
@@ -36,7 +36,7 @@ function IncidentsContent() {
 	const incidents = () => incidentsQuery.data ?? [];
 
 	const severityOrder = { high: 0, medium: 1, low: 2 } as const;
-	const sortBySeverity = (a: IS, b: IS) => severityOrder[a.severity] - severityOrder[b.severity];
+	const sortBySeverity = (a: ListIncidentsElement, b: ListIncidentsElement) => severityOrder[a.severity] - severityOrder[b.severity];
 
 	const openIncidents = createMemo(() =>
 		incidents()
@@ -102,7 +102,7 @@ function NoIncidents() {
 	);
 }
 
-function IncidentSection(props: { icon: JSX.Element; iconBg: string; title: string; incidents: IS[]; muted?: boolean; collapsible?: boolean }) {
+function IncidentSection(props: { icon: JSX.Element; iconBg: string; title: string; incidents: ListIncidentsElement[]; muted?: boolean; collapsible?: boolean }) {
 	const incidentsList = () => (
 		<div class="space-y-3">
 			<For each={props.incidents}>{(incident) => <IncidentCard incident={incident} muted={props.muted} />}</For>
@@ -140,7 +140,7 @@ function IncidentSection(props: { icon: JSX.Element; iconBg: string; title: stri
 	);
 }
 
-function IncidentCard(props: { incident: IS; muted?: boolean }) {
+function IncidentCard(props: { incident: ListIncidentsElement; muted?: boolean }) {
 	const severity = () => getSeverity(props.incident.severity);
 
 	return (
@@ -150,7 +150,7 @@ function IncidentCard(props: { incident: IS; muted?: boolean }) {
 					<div class="flex items-start gap-3 min-w-0 flex-1">
 						<div class={`shrink-0 mt-0.5 ${props.muted ? "text-muted-foreground/50" : severity().color}`}>{severity().icon("sm")}</div>
 						<div class="min-w-0 flex-1">
-							<h2 class={`font-medium truncate ${props.muted ? "text-muted-foreground" : "text-foreground"}`}>{props.incident.title || props.incident.prompt}</h2>
+							<h2 class={`font-medium truncate ${props.muted ? "text-muted-foreground" : "text-foreground"}`}>{props.incident.title}</h2>
 							<Show when={props.incident.description}>
 								<p class={`text-sm mt-1 line-clamp-2 ${props.muted ? "text-muted-foreground/50" : "text-muted-foreground"}`}>{props.incident.description}</p>
 							</Show>

@@ -1,4 +1,4 @@
-import type { IS, IS_Event } from "@fire/common";
+import type { IS, IS_Event, ListIncidentsElement } from "@fire/common";
 import { createServerFn } from "@tanstack/solid-start";
 import { authMiddleware } from "./auth-middleware";
 import { db } from "./db";
@@ -14,7 +14,7 @@ export const getIncidents = createServerFn({
 		if (!response.ok) {
 			throw new Error("Failed to fetch incidents");
 		}
-		const { incidents } = (await response.json()) as { incidents: IS[] };
+		const { incidents } = (await response.json()) as { incidents: ListIncidentsElement[] };
 		return incidents;
 	});
 

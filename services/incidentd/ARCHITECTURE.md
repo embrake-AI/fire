@@ -39,7 +39,7 @@ To ensure reliable downstream processing without an external queue, the DO imple
 
 -   The DO persists incident state and (if relevant) appends an event to an `event_log` table.
 -   Each outbox row has `published_at` which indicates whether the event has been successfully dispatched.
--   The DO schedules an alarm to ensure the outbox will be drained even if the fast path fails.
+-   The DO schedules an alarm to ensure the outbox will be drained
 
 This provides **at-least-once** delivery semantics to downstream processing, with strong transactional consistency between state changes and outbox enqueue.
 
@@ -47,8 +47,6 @@ This provides **at-least-once** delivery semantics to downstream processing, wit
 
 Instead of a separate queue consumer, the DO itself is the driver of eventual consistency:
 
--   After committing state + outbox, the DO attempts a **fast-path dispatch**.
--   If fast-path dispatch fails (or the Worker crashes), the DO alarm will retry later.
 -   The alarm handler drains the outbox in order and calls `incidentd.dispatch(...)` using a Service Binding.
 -   The dispatcher performs side effects:
     -   update the D1 control-plane index
@@ -107,13 +105,11 @@ The Incident Durable Object is the transactional core of the system. It:
 -   Persists state atomically
 -   Appends outbox events into `event_log` for downstream processing
 -   Schedules an alarm to guarantee eventual dispatch
--   Attempts a fast-path dispatch (best effort)
 
 ### Dispatcher (Service Binding entrypoint)
 
 The dispatcher is the common exit point for side effects. It is invoked by:
 
--   the DO fast-path (best effort)
 -   the DO alarm drain loop (reliable fallback)
 
 Responsibilities:
@@ -186,10 +182,10 @@ Senders are isolated per adapter and are invoked only by the dispatcher.
 │  │  • Transactional source of truth                  │  │       └─▶ Schedule alarm (<= OUTBOX_FLUSH_DELAY_MS)
 │  │  • start() │ setSeverity() │ setAssignee() │ get()│  │
 │  └───────────────────────────────────────────────────┘  │
-│                                                         │     Fast path (best effort):
-│                                                         │       └─▶ Call dispatcher via Service Binding
-│                                                         │           - on success: set published_at
-│                                                         │           - on failure: alarm will retry later
+│                                                         │
+│                                                         │
+│                                                         │
+│                                                         │
 └──────────────────────────┬──────────────────────────────┘
                            │
                            │  Reliable fallback:

@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import type { EntryPoint, IS, IS_Event } from "@fire/common";
+import type { EntryPoint, EventLog, IS, IS_Event } from "@fire/common";
 import type { Metadata } from "../handler";
 import { ASSERT } from "../lib/utils";
 import { calculateIncidentInfo } from "./idontknowhowtonamethisitswhereillplacecallstoai";
@@ -9,19 +9,10 @@ export type DOState = IS & {
 	_initialized: boolean;
 };
 
-type EventLog = {
-	id: number;
-	created_at: string;
-	event_type: IS_Event["event_type"];
-	event_data: string;
-	published_at: string | null;
-	attempts: number;
-};
-
 const S_KEY = "S";
 const ELV_KEY = "ELV";
 const EP_KEY = "EP";
-const OUTBOX_FLUSH_DELAY_MS = 100;
+const ALARM_INTERVAL_MS = 200;
 const MAX_ATTEMPTS = 3;
 
 /**
@@ -34,12 +25,12 @@ const MAX_ATTEMPTS = 3;
  *
  * Invariants:
  * - An update is accepted iff the state is commited: `state` snapshot + `event` row
- * - A state update is (transactionally) committed iff an alarm is scheduled in at most `OUTBOX_FLUSH_DELAY_MS` milliseconds
+ * - A state update is (transactionally) committed iff an alarm is scheduled
  * - An Incident exists iff `start` is called. Otherwise, it rejects all other calls.
+ * - An event is dispatched only when all previous events have been published or failed MAX_ATTEMPTS times.
  *
  * Acknowledge callers on state persistence, not on side effects:
- * - LLM calls are executed in the alarm handler (non-blocking, can only run one at a time).
- * - We attempt side-effects after state persistence (fast path), and fall back to the alarm to ensure durable execution.
+ * - All side effects are executed in the alarm handler (non-blocking, can only run one at a time).
  *
  * Retrieve from ctx.storage, not from local state:
  * - Both would work, but retrieving from storage is as efficient since cloudflare will cache the result.
@@ -69,6 +60,10 @@ export class Incident extends DurableObject<Env> {
 		await this.ctx.storage.setAlarm(time);
 	}
 
+	/**
+	 * Either succeeds and there is no unpublished event
+	 * or fails throwing an error (and retries)
+	 */
 	async alarm() {
 		let state = this.ctx.storage.kv.get<DOState>(S_KEY);
 		if (!state) {
@@ -98,7 +93,7 @@ export class Incident extends DurableObject<Env> {
 							event_id: event.id,
 							incident_id: state.id,
 						},
-						state,
+						state.metadata,
 					);
 					this.ctx.storage.sql.exec("UPDATE event_log SET published_at = CURRENT_TIMESTAMP WHERE id = ? AND published_at IS NULL", event.id);
 				} catch (error) {
@@ -116,7 +111,7 @@ export class Incident extends DurableObject<Env> {
 
 		const remaining = this.ctx.storage.sql.exec<{ id: number }>("SELECT id FROM event_log WHERE published_at IS NULL AND attempts < ? LIMIT 1", MAX_ATTEMPTS).toArray();
 		if (remaining.length) {
-			await this.scheduleAlarmAtMost(Date.now() + OUTBOX_FLUSH_DELAY_MS);
+			await this.scheduleAlarmAtMost(Date.now() + ALARM_INTERVAL_MS);
 		} else {
 			if (state.status === "resolved") {
 				await this.destroy();
@@ -159,7 +154,10 @@ export class Incident extends DurableObject<Env> {
 			);
 			CREATE INDEX idx_event_log_published_at ON event_log(published_at);`);
 			this.ctx.storage.kv.put(ELV_KEY, "1");
-			await this.commit(payload, { event_type: "INCIDENT_CREATED", event_data: { assignee, createdBy, description, prompt, severity, source, status, title } });
+			await this.commit(
+				{ state: payload, event: { event_type: "INCIDENT_CREATED", event_data: { assignee, createdBy, description, prompt, severity, source, status, title } } },
+				{ skipAlarm: true },
+			);
 			this.ctx.storage.kv.delete(EP_KEY);
 		});
 		return payload;
@@ -169,44 +167,17 @@ export class Incident extends DurableObject<Env> {
 	 * Assumes `state` is already committed to the DO.
 	 * Outbox pattern
 	 * Atomically: commits the new state to the DO, enqueues an event to the event log and schedules an alarm to ensure eventual consistency.
-	 * Fast path: publishes the event.
 	 */
-	private async commit(state: DOState, event: IS_Event | undefined) {
-		const eventLog = await this.ctx.storage.transaction(async () => {
+	private async commit({ state, event }: { state: DOState; event?: IS_Event }, { skipAlarm = false }: { skipAlarm?: boolean } = {}) {
+		await this.ctx.storage.transaction(async () => {
 			this.ctx.storage.kv.put<DOState>(S_KEY, state);
-			let eventLog: Exclude<EventLog, "created_at"> | undefined;
 			if (event) {
-				eventLog = this.ctx.storage.sql
-					.exec<Exclude<EventLog, "created_at">>(
-						"INSERT INTO event_log (event_type, event_data) VALUES (?, ?) RETURNING id, event_type, event_data",
-						event.event_type,
-						JSON.stringify(event.event_data),
-					)
-					.one();
+				this.ctx.storage.sql.exec("INSERT INTO event_log (event_type, event_data) VALUES (?, ?)", event.event_type, JSON.stringify(event.event_data));
+				if (!skipAlarm) {
+					await this.scheduleAlarmAtMost(Date.now());
+				}
 			}
-			if (event) {
-				await this.scheduleAlarmAtMost(Date.now() + OUTBOX_FLUSH_DELAY_MS);
-			}
-			return eventLog;
 		});
-		if (eventLog?.id) {
-			// `waitUntil` is no-op (by default has this behavior), I choose to add it for consistency
-			this.ctx.waitUntil(
-				this.fastPath(eventLog).catch(() => {
-					console.warn("Fast path failed for event", eventLog);
-				}),
-			);
-		}
-	}
-
-	private async fastPath(eventLog: Exclude<EventLog, "created_at">) {
-		const state = this.assertState();
-		const eventId = eventLog.id;
-		const eventType = eventLog.event_type;
-		const eventData = JSON.parse(eventLog.event_data);
-		const incidentId = state.id;
-		await this.env.incidentd.dispatch({ incident_id: incidentId, event_id: eventId, event_type: eventType, event_data: eventData }, state);
-		this.ctx.storage.sql.exec("UPDATE event_log SET published_at = CURRENT_TIMESTAMP WHERE id = ? AND published_at IS NULL", eventId);
 	}
 
 	private async destroy() {
@@ -247,7 +218,7 @@ export class Incident extends DurableObject<Env> {
 		const state = this.assertState();
 		if (state.severity !== severity) {
 			state.severity = severity;
-			await this.commit(state, { event_type: "SEVERITY_UPDATE", event_data: { severity } });
+			await this.commit({ state, event: { event_type: "SEVERITY_UPDATE", event_data: { severity } } });
 		}
 	}
 
@@ -255,7 +226,7 @@ export class Incident extends DurableObject<Env> {
 		const state = this.assertState();
 		if (state.assignee !== assignee) {
 			state.assignee = assignee;
-			await this.commit(state, { event_type: "ASSIGNEE_UPDATE", event_data: { assignee } });
+			await this.commit({ state, event: { event_type: "ASSIGNEE_UPDATE", event_data: { assignee } } });
 		}
 	}
 
@@ -270,7 +241,7 @@ export class Incident extends DurableObject<Env> {
 		}
 
 		state.status = status;
-		await this.commit(state, { event_type: "STATUS_UPDATE", event_data: { status, message } });
+		await this.commit({ state, event: { event_type: "STATUS_UPDATE", event_data: { status, message } } });
 	}
 
 	async get() {
@@ -289,7 +260,7 @@ export class Incident extends DurableObject<Env> {
 	async addMetadata(metadata: Record<string, string>) {
 		const state = this.assertState();
 		state.metadata = { ...state.metadata, ...metadata };
-		await this.commit(state, undefined);
+		await this.commit({ state });
 		return state;
 	}
 }

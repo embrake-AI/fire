@@ -20,6 +20,8 @@ export type IS = {
 	description: string;
 };
 
+export type ListIncidentsElement = Pick<IS, "id" | "status" | "assignee" | "severity" | "createdAt" | "title" | "description">;
+
 export type IS_Event =
 	| {
 			event_type: "INCIDENT_CREATED";
@@ -44,6 +46,15 @@ export type IS_Event =
 				severity: IS["severity"];
 			};
 	  };
+
+export type EventLog = {
+	id: number;
+	created_at: string;
+	event_type: IS_Event["event_type"];
+	event_data: string;
+	published_at: string | null;
+	attempts: number;
+};
 
 export type EntryPoint = {
 	prompt: string;
