@@ -19,12 +19,13 @@ function ConfigLayout() {
 		const path = location().pathname;
 		if (path.includes("escalation")) return "escalation";
 		if (path.includes("integrations")) return "integrations";
+		if (path.includes("api-keys")) return "api-keys";
 		return "entry-points";
 	});
 
 	return (
 		<div class="flex-1 bg-background p-6 md:p-8">
-			<div class="max-w-4xl mx-auto">
+			<div class="max-w-5xl mx-auto">
 				<div class="flex items-center gap-3 mb-6">
 					<div class="p-2 rounded-lg bg-muted">
 						<Settings class="w-5 h-5 text-muted-foreground" />
@@ -42,6 +43,9 @@ function ConfigLayout() {
 						</TabsTrigger>
 						<TabsTrigger value="integrations" as={Link} to="/config/integrations">
 							Integrations
+						</TabsTrigger>
+						<TabsTrigger value="api-keys" as={Link} to="/config/api-keys">
+							API Keys
 						</TabsTrigger>
 						<TabsIndicator />
 					</TabsList>

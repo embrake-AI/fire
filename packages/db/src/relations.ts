@@ -11,5 +11,9 @@ export const relations = defineRelations(schema, (r) => ({
 			from: r.client.id,
 			to: r.entryPoint.clientId,
 		}),
+		apiKeys: r.many.apiKey({
+			from: r.client.id,
+			to: r.apiKey.clientId,
+		}),
 	},
 }));
