@@ -122,7 +122,7 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 									<SwitchThumb />
 								</SwitchControl>
 								<div class="flex items-center">
-									<SlackIcon class="h-8 w-8" />
+									<SlackIcon class="h-5 w-5 mr-1" />
 									<SwitchLabel>Post on Slack</SwitchLabel>
 								</div>
 							</Switch>

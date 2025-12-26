@@ -124,6 +124,7 @@ export const startIncident = createServerFn({ method: "POST" })
 						assigneeId: true,
 						prompt: true,
 						type: true,
+						isFallback: true,
 					},
 				},
 			},
@@ -148,6 +149,7 @@ export const startIncident = createServerFn({ method: "POST" })
 		const entryPoints = client.entryPoints.map((ep) => ({
 			assignee: ep.assigneeId,
 			prompt: ep.prompt,
+			isFallback: ep.isFallback,
 			// type: ep.type, // For now, not needed at the `incidentd` service
 		}));
 		const response = await signedFetch(

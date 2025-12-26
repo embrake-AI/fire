@@ -5,7 +5,7 @@ import { cn } from "~/lib/utils/client";
 export function SlackIcon(props: ComponentProps<"svg">) {
 	const [local, others] = splitProps(props, ["class"]);
 	return (
-		<svg role="img" aria-label="Slack" viewBox="0 0 270 270" xmlns="http://www.w3.org/2000/svg" class={cn("shrink-0", local.class)} {...others}>
+		<svg role="img" aria-label="Slack" viewBox="70 70 130 130" xmlns="http://www.w3.org/2000/svg" class={cn("shrink-0", local.class)} {...others}>
 			<path fill="#E01E5A" d="M99.4,151.2c0,7.1-5.8,12.9-12.9,12.9c-7.1,0-12.9-5.8-12.9-12.9c0-7.1,5.8-12.9,12.9-12.9h12.9V151.2z" />
 			<path fill="#E01E5A" d="M105.9,151.2c0-7.1,5.8-12.9,12.9-12.9s12.9,5.8,12.9,12.9v32.3c0,7.1-5.8,12.9-12.9,12.9s-12.9-5.8-12.9-12.9V151.2z" />
 			<path fill="#36C5F0" d="M118.8,99.4c-7.1,0-12.9-5.8-12.9-12.9c0-7.1,5.8-12.9,12.9-12.9s12.9,5.8,12.9,12.9v12.9H118.8z" />

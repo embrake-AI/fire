@@ -60,5 +60,5 @@ export type EventLog = {
 export type EntryPoint = {
 	prompt: string;
 	assignee: string;
-	isFallback?: boolean;
+	isFallback: boolean;
 };

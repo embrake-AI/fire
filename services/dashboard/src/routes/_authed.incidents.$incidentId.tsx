@@ -379,7 +379,7 @@ function TimelineRow(props: { event: IncidentEvent }) {
 					<span class="text-muted-foreground/40">·</span>
 					<Tooltip>
 						<TooltipTrigger>
-							<AdapterIcon class="w-3 h-3 text-muted-foreground/60" />
+							<AdapterIcon class="w-3.5 h-3.5 text-muted-foreground/60" />
 						</TooltipTrigger>
 						<TooltipContent>
 							<p class="text-[10px] capitalize">{props.event.adapter}</p>

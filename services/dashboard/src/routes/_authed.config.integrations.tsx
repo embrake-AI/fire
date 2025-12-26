@@ -118,7 +118,7 @@ function IntegrationsContent() {
 		<CardContent>
 			<IntegrationCard
 				name="Slack"
-				icon={<SlackIcon class="size-8" />}
+				icon={<SlackIcon class="size-5" />}
 				connected={() => isConnected("slack")}
 				onConnect={() => handleConnect("slack")}
 				loading={isConnecting() || disconnectMutation.isPending}
