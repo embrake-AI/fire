@@ -54,12 +54,15 @@ export async function dispatchIncidentAssigneeUpdatedEvent(env: Env, id: string,
 }
 
 export async function dispatchIncidentStatusUpdatedEvent(env: Env, id: string, status: Exclude<IS["status"], "open">, message: string, metadata: Metadata) {
-	const incident =
-		status === "resolved"
-			? await env.incidents.prepare("DELETE FROM incident WHERE id = ? RETURNING status, assignee, severity, title, description").bind(id).first<Incident>()
-			: await env.incidents.prepare("UPDATE incident SET status = ? WHERE id = ? RETURNING status, assignee, severity, title, description").bind(status, id).first<Incident>();
+	const incident = await env.incidents
+		.prepare("UPDATE incident SET status = ? WHERE id = ? RETURNING status, assignee, severity, title, description")
+		.bind(status, id)
+		.first<Incident>();
 	if (!incident) {
 		return;
 	}
-	await Promise.all([...senders.map((sender) => sender.incidentStatusUpdated?.(env, id, incident, message, metadata))]);
+	await Promise.all([
+		...(status === "resolved" ? [env.incidents.prepare("DELETE FROM incident WHERE id = ?").bind(id).run()] : []),
+		...senders.map((sender) => sender.incidentStatusUpdated?.(env, id, incident, message, metadata)),
+	]);
 }
