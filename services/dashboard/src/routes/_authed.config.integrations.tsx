@@ -96,8 +96,13 @@ function IntegrationsContent() {
 			queryClient.setQueryData(["integrations"], previousData?.filter((i) => i.platform !== data) ?? []);
 			return { previousData };
 		},
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["integrations"] });
+		onSuccess: async (_, variables) => {
+			await queryClient.invalidateQueries({ queryKey: ["integrations"] });
+			showToast({
+				title: "Integration disconnected",
+				description: `${variables.data} has been successfully disconnected from your workspace.`,
+				variant: "success",
+			});
 		},
 		onError: (_err, _variables, context) => {
 			if (context?.previousData) {
@@ -118,7 +123,7 @@ function IntegrationsContent() {
 		<CardContent>
 			<IntegrationCard
 				name="Slack"
-				icon={<SlackIcon class="size-5" />}
+				icon={<SlackIcon class="size-4" />}
 				connected={() => isConnected("slack")}
 				onConnect={() => handleConnect("slack")}
 				loading={isConnecting() || disconnectMutation.isPending}
@@ -147,7 +152,7 @@ function IntegrationCard(props: IntegrationCardProps) {
 	return (
 		<div class="flex items-center justify-between py-2">
 			<div class="flex items-center">
-				<div class="flex items-center">
+				<div class="flex items-center gap-2">
 					{props.icon}
 					<span class="font-medium text-foreground">{props.name}</span>
 				</div>
