@@ -12,14 +12,17 @@ export type DOState = IS & {
 type EventLog = {
 	id: number;
 	created_at: string;
-	event_type: string;
+	event_type: IS_Event["event_type"];
 	event_data: string;
+	published_at: string | null;
+	attempts: number;
 };
 
 const S_KEY = "S";
 const ELV_KEY = "ELV";
 const EP_KEY = "EP";
-const OUTBOX_FLUSH_DELAY_MS = 200;
+const OUTBOX_FLUSH_DELAY_MS = 100;
+const MAX_ATTEMPTS = 3;
 
 /**
  * An Incident is the source of truth for an incident. It is agnostic of the communication channel(s).
@@ -48,7 +51,7 @@ export class Incident extends DurableObject<Env> {
 		this.ctx.blockConcurrencyWhile(() => this.migrate());
 	}
 
-	async migrate() {
+	private async migrate() {
 		// No migrations yet
 	}
 
@@ -84,27 +87,34 @@ export class Incident extends DurableObject<Env> {
 			);
 			state = this.ctx.storage.kv.get<DOState>(S_KEY)!;
 		}
-		const events = this.ctx.storage.sql
-			.exec<{ id: number; event_type: IS_Event["event_type"]; event_data: string }>(
-				"SELECT id, event_type, event_data FROM event_log WHERE published_at IS NULL ORDER BY id ASC LIMIT 100",
-			)
-			.toArray();
+		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log WHERE published_at IS NULL AND attempts < ? ORDER BY id ASC LIMIT 100", MAX_ATTEMPTS).toArray();
 		if (events.length > 0) {
 			for (const event of events) {
-				await this.env.incidentd.dispatch(
-					{
-						event_type: event.event_type,
-						event_data: JSON.parse(event.event_data),
-						event_id: event.id,
-						incident_id: state.id,
-					},
-					state,
-				);
-				this.ctx.storage.sql.exec("UPDATE event_log SET published_at = CURRENT_TIMESTAMP WHERE id = ? AND published_at IS NULL", event.id);
+				try {
+					await this.env.incidentd.dispatch(
+						{
+							event_type: event.event_type,
+							event_data: JSON.parse(event.event_data),
+							event_id: event.id,
+							incident_id: state.id,
+						},
+						state,
+					);
+					this.ctx.storage.sql.exec("UPDATE event_log SET published_at = CURRENT_TIMESTAMP WHERE id = ? AND published_at IS NULL", event.id);
+				} catch (error) {
+					const attempts = event.attempts + 1;
+					if (attempts >= MAX_ATTEMPTS) {
+						console.error("Event failed after MAX_ATTEMPTS attempts, giving up", MAX_ATTEMPTS, event, error);
+					} else {
+						console.warn("Error dispatching event", event, error);
+					}
+					this.ctx.storage.sql.exec("UPDATE event_log SET attempts = ? WHERE id = ?", attempts, event.id);
+					throw error;
+				}
 			}
 		}
 
-		const remaining = this.ctx.storage.sql.exec<{ id: number }>("SELECT id FROM event_log WHERE published_at IS NULL LIMIT 1").toArray();
+		const remaining = this.ctx.storage.sql.exec<{ id: number }>("SELECT id FROM event_log WHERE published_at IS NULL AND attempts < ? LIMIT 1", MAX_ATTEMPTS).toArray();
 		if (remaining.length) {
 			await this.scheduleAlarmAtMost(Date.now() + OUTBOX_FLUSH_DELAY_MS);
 		} else {
@@ -144,7 +154,8 @@ export class Incident extends DurableObject<Env> {
 				event_type TEXT NOT NULL,
 				event_data TEXT NOT NULL CHECK (json_valid(event_data)) NOT NULL,
 				created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
-				published_at TEXT DEFAULT NULL
+				published_at TEXT DEFAULT NULL,
+				attempts INTEGER NOT NULL DEFAULT 0
 			);
 			CREATE INDEX idx_event_log_published_at ON event_log(published_at);`);
 			this.ctx.storage.kv.put(ELV_KEY, "1");
@@ -162,14 +173,12 @@ export class Incident extends DurableObject<Env> {
 	 */
 	private async commit(state: DOState, event: IS_Event | undefined) {
 		const eventLog = await this.ctx.storage.transaction(async () => {
-			if (state) {
-				this.ctx.storage.kv.put<DOState>(S_KEY, state);
-			}
-			let eventLog: { id: number; event_type: IS_Event["event_type"]; event_data: string } | undefined;
+			this.ctx.storage.kv.put<DOState>(S_KEY, state);
+			let eventLog: Exclude<EventLog, "created_at"> | undefined;
 			if (event) {
 				eventLog = this.ctx.storage.sql
-					.exec<{ id: number; event_type: IS_Event["event_type"]; event_data: string }>(
-						"INSERT INTO event_log (event_type, event_data) VALUES (?, ?) RETURNING id",
+					.exec<Exclude<EventLog, "created_at">>(
+						"INSERT INTO event_log (event_type, event_data) VALUES (?, ?) RETURNING id, event_type, event_data",
 						event.event_type,
 						JSON.stringify(event.event_data),
 					)
@@ -181,29 +190,27 @@ export class Incident extends DurableObject<Env> {
 			return eventLog;
 		});
 		if (eventLog?.id) {
-			// fast path
-			try {
-				state ??= this.ctx.storage.kv.get<DOState>(S_KEY)!;
-				await this.env.incidentd.dispatch(
-					{
-						incident_id: state.id,
-						event_id: eventLog.id,
-						event_type: eventLog.event_type,
-						event_data: JSON.parse(eventLog.event_data),
-					},
-					state,
-				);
-				this.ctx.storage.sql.exec("UPDATE event_log SET published_at = CURRENT_TIMESTAMP WHERE id = ? AND published_at IS NULL", eventLog.id);
-				if (state.status === "resolved") {
-					await this.destroy();
-				}
-			} catch {
-				// alarm is scheduled, so we can ignore the error here
-			}
+			// `waitUntil` is no-op (by default has this behavior), I choose to add it for consistency
+			this.ctx.waitUntil(
+				this.fastPath(eventLog).catch(() => {
+					console.warn("Fast path failed for event", eventLog);
+				}),
+			);
 		}
 	}
 
+	private async fastPath(eventLog: Exclude<EventLog, "created_at">) {
+		const state = this.assertState();
+		const eventId = eventLog.id;
+		const eventType = eventLog.event_type;
+		const eventData = JSON.parse(eventLog.event_data);
+		const incidentId = state.id;
+		await this.env.incidentd.dispatch({ incident_id: incidentId, event_id: eventId, event_type: eventType, event_data: eventData }, state);
+		this.ctx.storage.sql.exec("UPDATE event_log SET published_at = CURRENT_TIMESTAMP WHERE id = ? AND published_at IS NULL", eventId);
+	}
+
 	private async destroy() {
+		// TODO: Persist events
 		await Promise.all([this.ctx.storage.deleteAlarm(), this.ctx.storage.deleteAll()]);
 	}
 
