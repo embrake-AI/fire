@@ -1,7 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import type { EntryPoint, EventLog, IS, IS_Event } from "@fire/common";
 import type { Metadata } from "../handler";
-import { ASSERT } from "../lib/utils";
 import { calculateIncidentInfo } from "./idontknowhowtonamethisitswhereillplacecallstoai";
 
 export type DOState = IS & {
@@ -46,9 +45,13 @@ export class Incident extends DurableObject<Env> {
 		// No migrations yet
 	}
 
-	private assertState() {
+	private getState() {
 		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
-		ASSERT(state?._initialized, "Incident not initialized");
+		if (!state) {
+			return { error: "NOT_FOUND" };
+		} else if (!state._initialized) {
+			return { error: "NOT_INITIALIZED" };
+		}
 		return state;
 	}
 
@@ -216,7 +219,10 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	async setSeverity(severity: DOState["severity"], adapter: "slack" | "dashboard") {
-		const state = this.assertState();
+		const state = this.getState();
+		if ("error" in state) {
+			return state;
+		}
 		if (state.severity !== severity) {
 			state.severity = severity;
 			await this.commit({ state, event: { event_type: "SEVERITY_UPDATE", event_data: { severity } }, adapter });
@@ -224,7 +230,10 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	async setAssignee(assignee: DOState["assignee"], adapter: "slack" | "dashboard") {
-		const state = this.assertState();
+		const state = this.getState();
+		if ("error" in state) {
+			return state;
+		}
 		if (state.assignee !== assignee) {
 			state.assignee = assignee;
 			await this.commit({ state, event: { event_type: "ASSIGNEE_UPDATE", event_data: { assignee } }, adapter });
@@ -232,7 +241,10 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	async updateStatus(status: DOState["status"], message: string, adapter: "slack" | "dashboard") {
-		const state = this.assertState();
+		const state = this.getState();
+		if ("error" in state) {
+			return state;
+		}
 		const currentStatus = state.status;
 
 		const invalidTransition = currentStatus === "resolved" || (currentStatus === "mitigating" && status === "open");
@@ -246,7 +258,10 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	async addMessage(message: string, userId: string, messageId: string, adapter: "slack" | "dashboard") {
-		const state = this.assertState();
+		const state = this.getState();
+		if ("error" in state) {
+			return state;
+		}
 		const existingMessage = this.ctx.storage.sql
 			.exec<{ id: number }>("SELECT id FROM event_log WHERE event_type = 'MESSAGE_ADDED' AND json_extract(event_data, '$.messageId') = ? LIMIT 1", messageId)
 			.toArray();
@@ -257,8 +272,8 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	async get() {
-		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
-		if (!state) {
+		const state = this.getState();
+		if ("error" in state) {
 			return { error: "NOT_FOUND" };
 		}
 		const { metadata, _initialized, ...rest } = state;
@@ -270,7 +285,10 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	async addMetadata(metadata: Record<string, string>) {
-		const state = this.assertState();
+		const state = this.getState();
+		if ("error" in state) {
+			return state;
+		}
 		state.metadata = { ...state.metadata, ...metadata };
 		await this.commit({ state });
 		return state;
