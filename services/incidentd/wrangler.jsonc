@@ -10,42 +10,41 @@
 	"migrations": [
 		{
 			"new_sqlite_classes": ["Incident"],
-			"tag": "v1"
-		}
+			"tag": "v1",
+		},
 	],
 	"durable_objects": {
 		"bindings": [
 			{
 				"class_name": "Incident",
-				"name": "INCIDENT"
-			}
-		]
+				"name": "INCIDENT",
+			},
+		],
 	},
 	"observability": {
-		"enabled": true
+		"enabled": true,
 	},
 	"compatibility_flags": ["nodejs_compat"],
 	"hyperdrive": [
 		{
 			"binding": "db",
 			"id": "7c77b7f308b24603ab22eba0f301cbf0",
-			"localConnectionString": "postgres://tsdbadmin:szieef5fkxd3gtju@xh8o54gjbf.y1sqcqooer.tsdb.cloud.timescale.com:36537/tsdb",
-		}
+			"localConnectionString": "postgresql://postgres:postgres@localhost:5432/fire",
+		},
 	],
 	"d1_databases": [
 		{
 			"binding": "incidents",
-			"database_id": "9247b91c-2e42-4c61-af27-6ad3c77ada50"
-		}
+			"database_id": "9247b91c-2e42-4c61-af27-6ad3c77ada50",
+		},
 	],
 	"services": [
 		{
 			"binding": "incidentd",
 			"service": "incidentd",
-
-		}
+		},
 	],
-	"vars": { "FRONTEND_URL": "https://fire-dashboard-murex.vercel.app/" }
+	"vars": { "FRONTEND_URL": "https://fire-dashboard-murex.vercel.app/" },
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
