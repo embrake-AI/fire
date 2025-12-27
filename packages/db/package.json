@@ -14,6 +14,11 @@
 			"types": "./dist/relations.d.ts",
 			"import": "./dist/relations.js",
 			"default": "./dist/relations.js"
+		},
+		"./rotation-helpers": {
+			"types": "./dist/rotation-helpers.d.ts",
+			"import": "./dist/rotation-helpers.js",
+			"default": "./dist/rotation-helpers.js"
 		}
 	},
 	"files": [

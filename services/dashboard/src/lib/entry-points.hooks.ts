@@ -1,22 +1,26 @@
 import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
-import type { getEntryPoints, SlackUser, SlackUserGroup } from "./entry-points";
+import type { CreateEntryPointInput, getEntryPoints } from "./entry-points";
 import { createEntryPoint, deleteEntryPoint, setFallbackEntryPoint, updateEntryPointPrompt } from "./entry-points";
 
 type GetEntryPointsResponse = Awaited<ReturnType<typeof getEntryPoints>>;
 
-/**
- * Hook for creating entry points with optimistic updates.
- * Immediately adds the new entry point to the cache, then syncs with server.
- */
+type CreateEntryPointMutationInput = CreateEntryPointInput & {
+	optimisticData: { name?: string; avatar?: string };
+};
+
 export function useCreateEntryPoint(options?: { onMutate?: (tempId: string) => void; onSuccess?: (realId: string) => void; onError?: () => void; onSettled?: () => void }) {
 	const queryClient = useQueryClient();
 
 	const createEntryPointFn = useServerFn(createEntryPoint);
 
 	return useMutation(() => ({
-		mutationFn: (data: { id: string; type: GetEntryPointsResponse[number]["type"]; optimisticData: { name: string; avatar?: string } }) =>
-			createEntryPointFn({ data: { id: data.id, type: data.type } }),
+		mutationFn: (data: CreateEntryPointMutationInput) => {
+			if (data.type === "slack-user") {
+				return createEntryPointFn({ data: { type: "slack-user", assigneeId: data.assigneeId } });
+			}
+			return createEntryPointFn({ data: { type: "rotation", rotationId: data.rotationId } });
+		},
 
 		onMutate: async (newData) => {
 			await queryClient.cancelQueries({ queryKey: ["entry-points"] });
@@ -26,15 +30,28 @@ export function useCreateEntryPoint(options?: { onMutate?: (tempId: string) => v
 			const tempId = `temp-${Date.now()}`;
 			const isFirst = (previousEntryPoints?.length ?? 0) === 0;
 
-			const optimisticEntryPoint = {
+			const baseOptimistic = {
 				id: tempId,
-				type: newData.type,
 				prompt: "",
-				assigneeId: newData.id,
 				isFallback: isFirst,
 				name: newData.optimisticData.name,
-				avatar: newData.optimisticData.avatar,
-			} as GetEntryPointsResponse[number];
+			};
+
+			const optimisticEntryPoint = (
+				newData.type === "slack-user"
+					? {
+							...baseOptimistic,
+							type: "slack-user" as const,
+							assigneeId: newData.assigneeId,
+							avatar: newData.optimisticData.avatar,
+							rotationId: null,
+						}
+					: {
+							...baseOptimistic,
+							type: "rotation" as const,
+							rotationId: newData.rotationId,
+						}
+			) as GetEntryPointsResponse[number];
 
 			queryClient.setQueryData<GetEntryPointsResponse>(["entry-points"], (old) => [optimisticEntryPoint, ...(old ?? [])]);
 
@@ -49,7 +66,8 @@ export function useCreateEntryPoint(options?: { onMutate?: (tempId: string) => v
 			}
 			queryClient.invalidateQueries({ queryKey: ["entry-points"] });
 			queryClient.invalidateQueries({ queryKey: ["slack-users"] });
-			queryClient.invalidateQueries({ queryKey: ["slack-groups"] });
+			queryClient.invalidateQueries({ queryKey: ["rotations-for-entry-points"] });
+			queryClient.invalidateQueries({ queryKey: ["rotations"] });
 		},
 
 		onError: (_err, _variables, context) => {
@@ -64,10 +82,6 @@ export function useCreateEntryPoint(options?: { onMutate?: (tempId: string) => v
 	}));
 }
 
-/**
- * Hook for deleting entry points with optimistic updates.
- * Immediately removes the entry point from cache, rolls back on error.
- */
 export function useDeleteEntryPoint(options?: { onSuccess?: () => void; onError?: () => void }) {
 	const queryClient = useQueryClient();
 
@@ -90,7 +104,8 @@ export function useDeleteEntryPoint(options?: { onSuccess?: () => void; onError?
 			options?.onSuccess?.();
 			queryClient.invalidateQueries({ queryKey: ["entry-points"] });
 			queryClient.invalidateQueries({ queryKey: ["slack-users"] });
-			queryClient.invalidateQueries({ queryKey: ["slack-groups"] });
+			queryClient.invalidateQueries({ queryKey: ["rotations-for-entry-points"] });
+			queryClient.invalidateQueries({ queryKey: ["rotations"] });
 		},
 
 		onError: (_err, _variables, context) => {
@@ -102,10 +117,6 @@ export function useDeleteEntryPoint(options?: { onSuccess?: () => void; onError?
 	}));
 }
 
-/**
- * Hook for updating entry point prompts with optimistic updates.
- * Immediately updates the prompt in cache, rolls back on error.
- */
 export function useUpdateEntryPointPrompt(options?: { onSuccess?: () => void; onError?: () => void }) {
 	const queryClient = useQueryClient();
 
@@ -138,9 +149,6 @@ export function useUpdateEntryPointPrompt(options?: { onSuccess?: () => void; on
 	}));
 }
 
-/**
- * Hook for setting an entry point as fallback with optimistic updates.
- */
 export function useSetFallbackEntryPoint(options?: { onSuccess?: () => void; onError?: () => void }) {
 	const queryClient = useQueryClient();
 
@@ -173,24 +181,18 @@ export function useSetFallbackEntryPoint(options?: { onSuccess?: () => void; onE
 	}));
 }
 
-/**
- * Helper to create mutation input from Slack user
- */
-export function toCreateInput(user: SlackUser) {
+export function toCreateInput(user: { id: string; name?: string; avatar?: string }) {
 	return {
-		id: user.id,
 		type: "slack-user" as const,
+		assigneeId: user.id,
 		optimisticData: { name: user.name, avatar: user.avatar },
 	};
 }
 
-/**
- * Helper to create mutation input from Slack user group
- */
-export function toCreateGroupInput(group: SlackUserGroup) {
+export function toCreateRotationInput(rotation: { id: string; name: string }) {
 	return {
-		id: group.id,
-		type: "slack-user-group" as const,
-		optimisticData: { name: group.handle },
+		type: "rotation" as const,
+		rotationId: rotation.id,
+		optimisticData: { name: rotation.name },
 	};
 }

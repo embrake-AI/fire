@@ -1,12 +1,12 @@
-import { useQuery } from "@tanstack/solid-query";
-import { Check, UsersRound } from "lucide-solid";
-import { createMemo, For, Show, Suspense } from "solid-js";
+import { Check } from "lucide-solid";
+import { createMemo, For, onMount, Show, Suspense } from "solid-js";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "~/components/ui/command";
 import { Skeleton } from "~/components/ui/skeleton";
-import type { SlackUser, SlackUserGroup } from "~/lib/entry-points";
-import { getSlackUserGroups, getSlackUsers } from "~/lib/entry-points";
+import type { SlackUser } from "~/lib/slack";
+import { useSlackUser } from "~/lib/useSlackUser";
+import { useSlackUsers } from "~/lib/useSlackUsers";
 
-export type SlackEntity = { type: "user"; data: SlackUser } | { type: "group"; data: SlackUserGroup };
+export type SlackEntity = { type: "user"; id: string; name?: string; avatar?: string };
 
 interface SlackEntityPickerProps {
 	/** Called when an entity is selected */
@@ -16,7 +16,7 @@ interface SlackEntityPickerProps {
 	/** Currently selected entity ID (shows checkmark) */
 	selectedId?: string;
 	/** Placeholder text for search input */
-	placeholder?: string;
+	placeholder: string;
 	/** Whether to show both users and groups, or just one type */
 	mode?: "all" | "users" | "groups";
 	/** Custom empty state message */
@@ -26,17 +26,24 @@ interface SlackEntityPickerProps {
 }
 
 export function SlackEntityPicker(props: SlackEntityPickerProps) {
-	const placeholder = () => props.placeholder ?? "Search users or groups...";
+	const placeholder = () => props.placeholder;
+	let containerRef: HTMLDivElement | undefined;
+
+	onMount(() => {
+		containerRef?.querySelector("input")?.focus();
+	});
 
 	return (
-		<Command>
-			<CommandInput placeholder={placeholder()} />
-			<CommandList>
-				<Suspense fallback={<EntityListSkeleton />}>
-					<EntityList {...props} />
-				</Suspense>
-			</CommandList>
-		</Command>
+		<div ref={containerRef}>
+			<Command>
+				<CommandInput placeholder={placeholder()} />
+				<CommandList>
+					<Suspense fallback={<EntityListSkeleton />}>
+						<EntityList {...props} />
+					</Suspense>
+				</CommandList>
+			</Command>
+		</div>
 	);
 }
 
@@ -62,78 +69,21 @@ function EntityList(props: SlackEntityPickerProps) {
 	const mode = () => props.mode ?? "all";
 	const emptyMessage = () => props.emptyMessage ?? "No results found.";
 
-	const slackUsersQuery = useQuery(() => ({
-		queryKey: ["slack-users"],
-		queryFn: getSlackUsers,
-		enabled: mode() === "all" || mode() === "users",
-		staleTime: Infinity,
-	}));
-
-	const slackGroupsQuery = useQuery(() => ({
-		queryKey: ["slack-groups"],
-		queryFn: getSlackUserGroups,
-		enabled: mode() === "all" || mode() === "groups",
-		staleTime: Infinity,
-	}));
+	const slackUsersQuery = useSlackUsers();
 
 	const filteredUsers = createMemo(() => {
 		if (mode() === "groups") return [];
 		return (slackUsersQuery.data ?? []).filter((u) => !props.excludeId?.(u.id));
 	});
 
-	const filteredGroups = createMemo(() => {
-		if (mode() === "users") return [];
-		return (slackGroupsQuery.data ?? []).filter((g) => !props.excludeId?.(g.id));
-	});
-
-	const hasResults = () => filteredUsers().length > 0 || filteredGroups().length > 0;
+	const hasResults = () => filteredUsers().length > 0;
 
 	return (
 		<div>
 			<Show when={hasResults()} fallback={<CommandEmpty>{emptyMessage()}</CommandEmpty>}>
 				<Show when={filteredUsers().length > 0}>
 					<CommandGroup heading={mode() === "all" ? "Users" : undefined}>
-						<For each={filteredUsers()}>
-							{(user) => (
-								<CommandItem value={`${user.name} ${user.email}`} onSelect={() => props.onSelect({ type: "user", data: user })} disabled={props.disabled}>
-									<div class="flex items-center gap-3 w-full">
-										<UserAvatar name={user.name} />
-										<div class="flex-1 min-w-0">
-											<div class="text-sm font-medium">{user.name}</div>
-											<div class="text-xs text-muted-foreground truncate">{user.email}</div>
-										</div>
-										<Show when={props.selectedId === user.id}>
-											<Check class="h-4 w-4 text-primary" />
-										</Show>
-									</div>
-								</CommandItem>
-							)}
-						</For>
-					</CommandGroup>
-				</Show>
-
-				<Show when={filteredGroups().length > 0}>
-					<CommandGroup heading={mode() === "all" ? "Groups" : undefined}>
-						<For each={filteredGroups()}>
-							{(group) => (
-								<CommandItem value={`${group.name} ${group.handle}`} onSelect={() => props.onSelect({ type: "group", data: group })} disabled={props.disabled}>
-									<div class="flex items-center gap-3 w-full">
-										<div class="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-100 text-emerald-600">
-											<UsersRound class="w-4 h-4" />
-										</div>
-										<div class="flex-1 min-w-0">
-											<div class="text-sm font-medium">{group.name}</div>
-											<div class="text-xs text-muted-foreground truncate">
-												@{group.handle} · {group.memberCount} members
-											</div>
-										</div>
-										<Show when={props.selectedId === group.id}>
-											<Check class="h-4 w-4 text-primary" />
-										</Show>
-									</div>
-								</CommandItem>
-							)}
-						</For>
+						<For each={filteredUsers()}>{(user) => <EntityRow user={user} onSelect={props.onSelect} selected={props.selectedId === user.id} disabled={props.disabled} />}</For>
 					</CommandGroup>
 				</Show>
 			</Show>
@@ -141,13 +91,43 @@ function EntityList(props: SlackEntityPickerProps) {
 	);
 }
 
-function UserAvatar(props: { name: string }) {
+function EntityRow(props: { user: SlackUser; onSelect: SlackEntityPickerProps["onSelect"]; selected?: boolean; disabled?: boolean }) {
+	return (
+		<CommandItem
+			value={`${props.user.id} ${props.user.name} ${props.user.email}`}
+			onSelect={() => props.onSelect({ type: "user", id: props.user.id, name: props.user.name, avatar: props.user.avatar })}
+			disabled={props.disabled}
+		>
+			<div class="flex items-center gap-3 w-full">
+				<UserAvatar id={props.user.id} />
+				<div class="flex-1 min-w-0">
+					<div class="text-sm font-medium">{props.user.name}</div>
+					<div class="text-xs text-muted-foreground truncate">{props.user.email}</div>
+				</div>
+				<Show when={props.selected}>
+					<Check class="h-4 w-4 text-primary" />
+				</Show>
+			</div>
+		</CommandItem>
+	);
+}
+
+export function UserAvatar(props: { id: string }) {
+	const user = useSlackUser(() => props.id);
+
+	const name = () => user()?.name ?? "Unknown";
+	const avatar = () => user()?.avatar;
+
 	const initials = () =>
-		props.name
+		name()
 			.split(" ")
 			.map((n) => n[0])
 			.join("")
 			.slice(0, 2);
 
-	return <div class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-medium text-sm">{initials()}</div>;
+	return (
+		<Show when={avatar()} fallback={<div class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-medium text-sm">{initials()}</div>}>
+			<img src={avatar()} alt={name()} class="w-8 h-8 rounded-full object-cover shrink-0" />
+		</Show>
+	);
 }

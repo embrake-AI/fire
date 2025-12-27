@@ -18,6 +18,7 @@ import { Route as SlackOauthCallbackRouteImport } from './routes/slack/oauth/cal
 import { Route as ApiIncidentsMetricsRouteImport } from './routes/api/incidents/metrics'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedIncidentsIncidentIdRouteImport } from './routes/_authed.incidents.$incidentId'
+import { Route as AuthedConfigRotationRouteImport } from './routes/_authed.config.rotation'
 import { Route as AuthedConfigIntegrationsRouteImport } from './routes/_authed.config.integrations'
 import { Route as AuthedConfigEscalationRouteImport } from './routes/_authed.config.escalation'
 import { Route as AuthedConfigEntryPointsRouteImport } from './routes/_authed.config.entry-points'
@@ -69,6 +70,11 @@ const AuthedIncidentsIncidentIdRoute =
     path: '/incidents/$incidentId',
     getParentRoute: () => AuthedRoute,
   } as any)
+const AuthedConfigRotationRoute = AuthedConfigRotationRouteImport.update({
+  id: '/rotation',
+  path: '/rotation',
+  getParentRoute: () => AuthedConfigRoute,
+} as any)
 const AuthedConfigIntegrationsRoute =
   AuthedConfigIntegrationsRouteImport.update({
     id: '/integrations',
@@ -107,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/config/entry-points': typeof AuthedConfigEntryPointsRoute
   '/config/escalation': typeof AuthedConfigEscalationRoute
   '/config/integrations': typeof AuthedConfigIntegrationsRoute
+  '/config/rotation': typeof AuthedConfigRotationRoute
   '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/incidents/metrics': typeof ApiIncidentsMetricsRoute
@@ -122,6 +129,7 @@ export interface FileRoutesByTo {
   '/config/entry-points': typeof AuthedConfigEntryPointsRoute
   '/config/escalation': typeof AuthedConfigEscalationRoute
   '/config/integrations': typeof AuthedConfigIntegrationsRoute
+  '/config/rotation': typeof AuthedConfigRotationRoute
   '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/incidents/metrics': typeof ApiIncidentsMetricsRoute
@@ -139,6 +147,7 @@ export interface FileRoutesById {
   '/_authed/config/entry-points': typeof AuthedConfigEntryPointsRoute
   '/_authed/config/escalation': typeof AuthedConfigEscalationRoute
   '/_authed/config/integrations': typeof AuthedConfigIntegrationsRoute
+  '/_authed/config/rotation': typeof AuthedConfigRotationRoute
   '/_authed/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/incidents/metrics': typeof ApiIncidentsMetricsRoute
@@ -156,6 +165,7 @@ export interface FileRouteTypes {
     | '/config/entry-points'
     | '/config/escalation'
     | '/config/integrations'
+    | '/config/rotation'
     | '/incidents/$incidentId'
     | '/api/auth/$'
     | '/api/incidents/metrics'
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/config/entry-points'
     | '/config/escalation'
     | '/config/integrations'
+    | '/config/rotation'
     | '/incidents/$incidentId'
     | '/api/auth/$'
     | '/api/incidents/metrics'
@@ -187,6 +198,7 @@ export interface FileRouteTypes {
     | '/_authed/config/entry-points'
     | '/_authed/config/escalation'
     | '/_authed/config/integrations'
+    | '/_authed/config/rotation'
     | '/_authed/incidents/$incidentId'
     | '/api/auth/$'
     | '/api/incidents/metrics'
@@ -267,6 +279,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AuthedIncidentsIncidentIdRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/config/rotation': {
+      id: '/_authed/config/rotation'
+      path: '/rotation'
+      fullPath: '/config/rotation'
+      preLoaderRoute: typeof AuthedConfigRotationRouteImport
+      parentRoute: typeof AuthedConfigRoute
+    }
     '/_authed/config/integrations': {
       id: '/_authed/config/integrations'
       path: '/integrations'
@@ -310,6 +329,7 @@ interface AuthedConfigRouteChildren {
   AuthedConfigEntryPointsRoute: typeof AuthedConfigEntryPointsRoute
   AuthedConfigEscalationRoute: typeof AuthedConfigEscalationRoute
   AuthedConfigIntegrationsRoute: typeof AuthedConfigIntegrationsRoute
+  AuthedConfigRotationRoute: typeof AuthedConfigRotationRoute
 }
 
 const AuthedConfigRouteChildren: AuthedConfigRouteChildren = {
@@ -317,6 +337,7 @@ const AuthedConfigRouteChildren: AuthedConfigRouteChildren = {
   AuthedConfigEntryPointsRoute: AuthedConfigEntryPointsRoute,
   AuthedConfigEscalationRoute: AuthedConfigEscalationRoute,
   AuthedConfigIntegrationsRoute: AuthedConfigIntegrationsRoute,
+  AuthedConfigRotationRoute: AuthedConfigRotationRoute,
 }
 
 const AuthedConfigRouteWithChildren = AuthedConfigRoute._addFileChildren(

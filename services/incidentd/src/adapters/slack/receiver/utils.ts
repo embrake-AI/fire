@@ -268,10 +268,16 @@ export async function getSlackIntegration(opts: {
 			entryPoints: opts.withEntryPoints
 				? {
 						columns: {
-							assigneeId: true,
 							prompt: true,
 							type: true,
 							isFallback: true,
+						},
+						with: {
+							rotationWithAssignee: {
+								columns: {
+									effectiveAssignee: true,
+								},
+							},
 						},
 					}
 				: {},
@@ -285,7 +291,20 @@ export async function getSlackIntegration(opts: {
 	return {
 		clientId: result.id,
 		data: result.integrations[0]?.data,
-		entryPoints: result.entryPoints.map((ep) => ({ assignee: ep.assigneeId, prompt: ep.prompt, isFallback: ep.isFallback })) ?? [],
+		entryPoints:
+			result.entryPoints
+				.map((ep) => {
+					const assignee = "rotationWithAssignee" in ep && ep.rotationWithAssignee?.effectiveAssignee;
+					if (!assignee) {
+						return null;
+					}
+					return {
+						assignee,
+						prompt: ep.prompt,
+						isFallback: ep.isFallback,
+					};
+				})
+				.filter((ep) => !!ep) ?? [],
 	};
 }
 

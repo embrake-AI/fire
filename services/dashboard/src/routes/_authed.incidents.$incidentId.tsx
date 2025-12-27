@@ -2,11 +2,10 @@ import type { IS } from "@fire/common";
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { ArrowLeft, User } from "lucide-solid";
+import { ArrowLeft } from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, For, Show, Suspense } from "solid-js";
-import { AssigneeName } from "~/components/AssigneeName";
-import { type SlackEntity, SlackEntityPicker } from "~/components/SlackEntityPicker";
+import { type SlackEntity, SlackEntityPicker, UserAvatar } from "~/components/SlackEntityPicker";
 import { Timeline } from "~/components/Timeline";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -293,15 +292,12 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 
 					<Popover open={open()} onOpenChange={setOpen}>
 						<PopoverTrigger as={Button} variant="ghost" size="sm" class="h-8 gap-2 bg-muted/50 hover:bg-muted font-normal">
-							<User class="h-4 w-4 text-muted-foreground" />
-							<span class="text-sm">
-								<AssigneeName id={() => incident().assignee} />
-							</span>
+							<UserAvatar id={incident().assignee} />
 						</PopoverTrigger>
 						<PopoverContent class="p-0 w-[280px]">
 							<SlackEntityPicker
 								onSelect={(entity: SlackEntity) => {
-									updateAssigneeMutation.mutate(entity.data.id);
+									updateAssigneeMutation.mutate(entity.id);
 									setOpen(false);
 								}}
 								selectedId={incident().assignee ?? undefined}

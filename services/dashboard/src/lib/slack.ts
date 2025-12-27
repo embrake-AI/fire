@@ -5,13 +5,6 @@ export type SlackUser = {
 	avatar?: string;
 };
 
-export type SlackUserGroup = {
-	id: string;
-	name: string;
-	handle: string;
-	memberCount: number;
-};
-
 export type SlackChannel = {
 	id: string;
 	name: string;
@@ -37,17 +30,6 @@ type SlackUserResponse = {
 	response_metadata?: {
 		next_cursor?: string;
 	};
-	error?: string;
-};
-
-type SlackUserGroupResponse = {
-	ok: boolean;
-	usergroups?: Array<{
-		id: string;
-		name: string;
-		handle: string;
-		user_count: number;
-	}>;
 	error?: string;
 };
 
@@ -93,28 +75,6 @@ export async function fetchSlackUsers(botToken: string): Promise<SlackUser[]> {
 	} while (cursor);
 
 	return users;
-}
-
-export async function fetchSlackUserGroups(botToken: string): Promise<SlackUserGroup[]> {
-	const response = await fetch("https://slack.com/api/usergroups.list", {
-		headers: {
-			Authorization: `Bearer ${botToken}`,
-			"Content-Type": "application/json",
-		},
-	});
-
-	const data: SlackUserGroupResponse = await response.json();
-
-	if (!data.ok) {
-		throw new Error(`Slack API error: ${data.error}`);
-	}
-
-	return (data.usergroups || []).map((group) => ({
-		id: group.id,
-		name: group.name,
-		handle: group.handle,
-		memberCount: group.user_count,
-	}));
 }
 
 type SlackUsersConversationsResponse = {

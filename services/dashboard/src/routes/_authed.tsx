@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/solid-start";
 import { createMemo, Show } from "solid-js";
 import Header from "~/components/Header";
 import { getAuth, isAuthReady } from "~/lib/auth-store";
-import { getEntryPoints } from "~/lib/entry-points";
+import { getEntryPoints, getSlackUsers } from "~/lib/entry-points";
 import { getIntegrations } from "~/lib/integrations";
 
 export const Route = createFileRoute("/_authed")({
@@ -31,6 +31,7 @@ function AuthedLayout() {
 	});
 	const getEntryPointsFn = useServerFn(getEntryPoints);
 	const getIntegrationsFn = useServerFn(getIntegrations);
+	const getSlackUsersFn = useServerFn(getSlackUsers);
 
 	// app-wide interesting data. Kept to make things feel more responsive.
 	useQuery(() => ({
@@ -39,12 +40,22 @@ function AuthedLayout() {
 		staleTime: 60_000,
 		enabled: authed(),
 	}));
-	useQuery(() => ({
+	const integrationsQuery = useQuery(() => ({
 		queryKey: ["integrations"],
 		queryFn: getIntegrationsFn,
 		staleTime: 60_000,
 		enabled: authed(),
 	}));
+
+	const hasSlackIntegration = createMemo(() => integrationsQuery.data?.some((i) => i.platform === "slack" && i.installedAt));
+
+	useQuery(() => ({
+		queryKey: ["slack-users"],
+		queryFn: getSlackUsersFn,
+		staleTime: Infinity,
+		enabled: authed() && hasSlackIntegration(),
+	}));
+
 	return (
 		<Show when={authed()}>
 			<Header />

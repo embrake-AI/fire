@@ -16,4 +16,20 @@ export const relations = defineRelations(schema, (r) => ({
 			to: r.apiKey.clientId,
 		}),
 	},
+	rotation: {
+		rotationWithAssignee: r.one.rotationWithAssignee({
+			from: r.rotation.id,
+			to: r.rotationWithAssignee.id,
+		}),
+	},
+	entryPoint: {
+		rotationWithAssignee: r.one.rotationWithAssignee({
+			from: r.entryPoint.rotationId,
+			to: r.rotationWithAssignee.id,
+		}),
+		rotation: r.one.rotation({
+			from: r.entryPoint.rotationId,
+			to: r.rotation.id,
+		}),
+	},
 }));

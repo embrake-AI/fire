@@ -2,7 +2,7 @@ import type { IS_Event } from "@fire/common";
 import { CircleCheck, Flame, MessageSquare, ShieldAlert, TriangleAlert, User } from "lucide-solid";
 import type { Component } from "solid-js";
 import { Show } from "solid-js";
-import { AssigneeName } from "~/components/AssigneeName";
+import { UserAvatar } from "~/components/SlackEntityPicker";
 import { Badge } from "~/components/ui/badge";
 import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { getSeverity, getStatus } from "./incident-config";
@@ -83,10 +83,7 @@ export const eventRegistry: EventConfigMap = {
 		label: "Assignee Changed",
 		render: ({ data }) => (
 			<p class="text-sm text-muted-foreground">
-				Assigned to{" "}
-				<span class="font-medium text-foreground">
-					<AssigneeName id={() => data.assignee} />
-				</span>
+				Assigned to <UserAvatar id={data.assignee} />
 			</p>
 		),
 	},
@@ -111,9 +108,7 @@ export const eventRegistry: EventConfigMap = {
 		label: "New Message",
 		render: ({ data }) => (
 			<div class="space-y-1.5">
-				<p class="text-sm font-medium">
-					<AssigneeName id={() => data.userId} />:
-				</p>
+				<UserAvatar id={data.userId} />
 				<p class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{data.message}</p>
 			</div>
 		),

@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { ArrowLeft, ChartColumn, Clock, FileText, Sparkles, User } from "lucide-solid";
+import { ArrowLeft, ChartColumn, Clock, FileText, Sparkles } from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, Index, Match, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
-import { AssigneeName } from "~/components/AssigneeName";
+import { UserAvatar } from "~/components/SlackEntityPicker";
 import { Timeline } from "~/components/Timeline";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
@@ -193,8 +193,7 @@ function AnalysisHeader(props: { analysis: Accessor<IncidentAnalysis> }) {
 				<span class="text-muted-foreground/40">·</span>
 
 				<div class="flex items-center gap-2">
-					<User class="h-4 w-4" />
-					<AssigneeName id={() => analysis().assignee} />
+					<UserAvatar id={analysis().assignee} />
 				</div>
 
 				<span class="text-muted-foreground/40">·</span>

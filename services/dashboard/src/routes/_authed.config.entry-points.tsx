@@ -1,17 +1,20 @@
 import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { Link2, LoaderCircle, Pencil, Plus, Star, Trash2, TriangleAlert, Users, UsersRound, X } from "lucide-solid";
-import { type Accessor, createEffect, createSignal, Index, Show, Suspense } from "solid-js";
-import { type SlackEntity, SlackEntityPicker } from "~/components/SlackEntityPicker";
+import { Check, ChevronDown, ChevronUp, Link2, LoaderCircle, Plus, RefreshCw, Star, TriangleAlert, User, Users, X } from "lucide-solid";
+import { type Accessor, createEffect, createMemo, createSignal, For, Index, Show, Suspense } from "solid-js";
+import { SlackEntityPicker, UserAvatar } from "~/components/SlackEntityPicker";
 import { AutoSaveTextarea } from "~/components/ui/auto-save-textarea";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
+import { ConfigCard, ConfigCardActions, ConfigCardDeleteButton, ConfigCardRow, ConfigCardTitle } from "~/components/ui/config-card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { getEntryPoints } from "~/lib/entry-points";
-import { toCreateGroupInput, toCreateInput, useCreateEntryPoint, useDeleteEntryPoint, useSetFallbackEntryPoint, useUpdateEntryPointPrompt } from "~/lib/entry-points.hooks";
+import { toCreateInput, toCreateRotationInput, useCreateEntryPoint, useDeleteEntryPoint, useSetFallbackEntryPoint, useUpdateEntryPointPrompt } from "~/lib/entry-points.hooks";
 import { getIntegrations } from "~/lib/integrations";
-import { cn } from "~/lib/utils/client";
+import { getRotations } from "~/lib/rotation";
+import { useSlackUser } from "~/lib/useSlackUser";
 
 export const Route = createFileRoute("/_authed/config/entry-points")({
 	component: EntryPointsConfig,
@@ -27,6 +30,8 @@ function EntryPointsConfig() {
 	);
 }
 
+type PickerStep = "closed" | "type-selection" | "slack-user" | "rotation";
+
 function EntryPointsContent() {
 	const getEntryPointsFn = useServerFn(getEntryPoints);
 	const entryPointsQuery = useQuery(() => ({
@@ -36,13 +41,13 @@ function EntryPointsContent() {
 	}));
 	const entryPoints = () => entryPointsQuery.data ?? [];
 
-	const [isPickerOpen, setIsPickerOpen] = createSignal(false);
+	const [pickerStep, setPickerStep] = createSignal<PickerStep>("closed");
 	const [newlyCreatedId, setNewlyCreatedId] = createSignal<string | null>(null);
 
 	let inFlightCreate: ReturnType<typeof createMutation.mutateAsync> | null = null;
 	const createMutation = useCreateEntryPoint({
 		onMutate: (tempId) => {
-			setIsPickerOpen(false);
+			setPickerStep("closed");
 			setNewlyCreatedId(tempId);
 		},
 		onSuccess: (realId) => realId,
@@ -55,12 +60,12 @@ function EntryPointsContent() {
 	const updateMutation = useUpdateEntryPointPrompt();
 	const setFallbackMutation = useSetFallbackEntryPoint();
 
-	const handleSelectEntity = (entity: SlackEntity) => {
-		if (entity.type === "user") {
-			inFlightCreate = createMutation.mutateAsync(toCreateInput(entity.data));
-		} else {
-			inFlightCreate = createMutation.mutateAsync(toCreateGroupInput(entity.data));
-		}
+	const handleSelectSlackUser = (user: { id: string; name?: string; avatar?: string }) => {
+		inFlightCreate = createMutation.mutateAsync(toCreateInput(user));
+	};
+
+	const handleSelectRotation = (rotation: { id: string; name: string }) => {
+		inFlightCreate = createMutation.mutateAsync(toCreateRotationInput(rotation));
 	};
 
 	const handleDelete = (id: string) => {
@@ -81,16 +86,21 @@ function EntryPointsContent() {
 
 	return (
 		<div class="space-y-6">
-			<AddEntryPointPicker isOpen={isPickerOpen} setIsOpen={setIsPickerOpen} isAdding={() => createMutation.isPending} onSelect={handleSelectEntity} />
+			<AddEntryPointPicker
+				step={pickerStep}
+				setStep={setPickerStep}
+				isAdding={() => createMutation.isPending}
+				onSelectSlackUser={handleSelectSlackUser}
+				onSelectRotation={handleSelectRotation}
+			/>
 
-			<Show when={!isPickerOpen()}>
+			<Show when={pickerStep() === "closed"}>
 				<Show when={entryPoints().length > 0} fallback={<EntryPointsEmptyState />}>
 					<div class="space-y-3">
 						<Index each={entryPoints()}>
 							{(entryPoint, index) => (
 								<EntryPointCard
 									entryPoint={entryPoint()}
-									name={entryPoint().name}
 									index={index}
 									onDelete={handleDelete}
 									onUpdatePrompt={handleUpdatePrompt}
@@ -107,8 +117,7 @@ function EntryPointsContent() {
 					</div>
 				</Show>
 			</Show>
-
-			<EntryPointsFooter count={entryPoints().filter((ep) => !!ep.prompt && !ep.isFallback).length} />
+			<EntryPointsFooter count={entryPoints().filter((ep) => !!ep.prompt || ep.isFallback).length} />
 		</div>
 	);
 }
@@ -116,20 +125,35 @@ function EntryPointsContent() {
 // --- Add Entry Point Picker ---
 
 interface AddEntryPointPickerProps {
-	isOpen: Accessor<boolean>;
-	setIsOpen: (open: boolean) => void;
-	onSelect: (entity: SlackEntity) => void;
+	step: Accessor<PickerStep>;
+	setStep: (step: PickerStep) => void;
 	isAdding: Accessor<boolean>;
+	onSelectSlackUser: (user: { id: string; name?: string; avatar?: string }) => void;
+	onSelectRotation: (rotation: { id: string; name: string }) => void;
 }
 
 function AddEntryPointPicker(props: AddEntryPointPickerProps) {
-	const handleCancel = () => props.setIsOpen(false);
+	const handleCancel = () => props.setStep("closed");
+	const handleBack = () => props.setStep("type-selection");
+
+	const getTitle = createMemo(() => {
+		switch (props.step()) {
+			case "type-selection":
+				return "Add entry point";
+			case "slack-user":
+				return "Select Slack user";
+			case "rotation":
+				return "Select rotation";
+			default:
+				return "";
+		}
+	});
 
 	return (
 		<Show
-			when={props.isOpen()}
+			when={props.step() !== "closed"}
 			fallback={
-				<Button onClick={() => props.setIsOpen(true)} disabled={props.isAdding()}>
+				<Button onClick={() => props.setStep("type-selection")} disabled={props.isAdding()}>
 					<Plus class="w-4 h-4" />
 					Add Entry Point
 				</Button>
@@ -137,7 +161,14 @@ function AddEntryPointPicker(props: AddEntryPointPickerProps) {
 		>
 			<div class="border border-border rounded-lg bg-muted/20 overflow-hidden">
 				<div class="flex items-center justify-between px-4 py-3 border-b border-border">
-					<h4 class="text-sm font-medium text-foreground">Add entry point</h4>
+					<div class="flex items-center gap-2">
+						<Show when={props.step() !== "type-selection"}>
+							<Button variant="ghost" size="icon" class="h-8 w-8 cursor-pointer" onClick={handleBack}>
+								<ChevronDown class="w-4 h-4 rotate-90" />
+							</Button>
+						</Show>
+						<h4 class="text-sm font-medium text-foreground">{getTitle()}</h4>
+					</div>
 					<Button variant="ghost" size="icon" class="h-8 w-8 cursor-pointer" onClick={handleCancel}>
 						<X class="w-4 h-4" />
 					</Button>
@@ -149,14 +180,22 @@ function AddEntryPointPicker(props: AddEntryPointPickerProps) {
 						</div>
 					}
 				>
-					<AddEntryPointPickerContent onSelect={props.onSelect} isAdding={props.isAdding} />
+					<Show when={props.step() === "type-selection"}>
+						<TypeSelectionContent setStep={props.setStep} />
+					</Show>
+					<Show when={props.step() === "slack-user"}>
+						<SlackUserPickerContent onSelect={props.onSelectSlackUser} isAdding={props.isAdding} />
+					</Show>
+					<Show when={props.step() === "rotation"}>
+						<RotationPickerContent onSelect={props.onSelectRotation} isAdding={props.isAdding} />
+					</Show>
 				</Suspense>
 			</div>
 		</Show>
 	);
 }
 
-function AddEntryPointPickerContent(props: { onSelect: (entity: SlackEntity) => void; isAdding: Accessor<boolean> }) {
+function TypeSelectionContent(props: { setStep: (step: PickerStep) => void }) {
 	const getIntegrationFn = useServerFn(getIntegrations);
 	const integrationsQuery = useQuery(() => ({
 		queryKey: ["integrations"],
@@ -164,9 +203,11 @@ function AddEntryPointPickerContent(props: { onSelect: (entity: SlackEntity) => 
 		staleTime: 60_000,
 	}));
 
+	const hasSlackIntegration = () => integrationsQuery.data?.some((i) => i.platform === "slack" && i.installedAt);
+
 	return (
 		<Show
-			when={integrationsQuery.data?.some((i) => i.platform === "slack" && i.installedAt)}
+			when={hasSlackIntegration()}
 			fallback={
 				<Show when={!integrationsQuery.data?.length}>
 					<div class="flex flex-col items-center justify-center py-8 px-6 text-center">
@@ -185,8 +226,109 @@ function AddEntryPointPickerContent(props: { onSelect: (entity: SlackEntity) => 
 				</Show>
 			}
 		>
-			<SlackEntityPicker onSelect={props.onSelect} disabled={props.isAdding()} placeholder="Search users or groups..." emptyMessage="All users and groups have been added." />
+			<div class="p-4">
+				<div class="grid grid-cols-2 gap-3">
+					<button
+						type="button"
+						class="flex flex-col items-center gap-3 p-5 rounded-xl border-2 border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/50 hover:border-emerald-300 transition-all cursor-pointer text-center group"
+						onClick={() => props.setStep("rotation")}
+					>
+						<div class="flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-100 text-emerald-600 group-hover:scale-105 transition-transform">
+							<RefreshCw class="w-6 h-6" />
+						</div>
+						<div class="space-y-1">
+							<div class="flex items-center justify-center gap-1.5">
+								<span class="font-semibold text-foreground">Rotation</span>
+								<Badge variant="secondary" class="text-[9px] px-1.5 py-0 bg-emerald-100 text-emerald-700 border-emerald-200">
+									Recommended
+								</Badge>
+							</div>
+							<p class="text-xs text-muted-foreground">On-call schedule</p>
+						</div>
+					</button>
+
+					<button
+						type="button"
+						class="flex flex-col items-center gap-3 p-5 rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/50 hover:border-muted-foreground/30 transition-all cursor-pointer text-center group"
+						onClick={() => props.setStep("slack-user")}
+					>
+						<div class="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-100 text-blue-600 group-hover:scale-105 transition-transform">
+							<User class="w-6 h-6" />
+						</div>
+						<div class="space-y-1">
+							<span class="font-semibold text-foreground">Slack User</span>
+							<p class="text-xs text-muted-foreground">Specific person</p>
+						</div>
+					</button>
+				</div>
+			</div>
 		</Show>
+	);
+}
+
+function SlackUserPickerContent(props: { onSelect: (user: { id: string; name?: string; avatar?: string }) => void; isAdding: Accessor<boolean> }) {
+	return (
+		<SlackEntityPicker
+			onSelect={(entity) => {
+				if (entity.type === "user") {
+					props.onSelect(entity);
+				}
+			}}
+			disabled={props.isAdding()}
+			placeholder="Search users..."
+			emptyMessage="No users available."
+			mode="users"
+		/>
+	);
+}
+
+function RotationPickerContent(props: { onSelect: (rotation: { id: string; name: string }) => void; isAdding: Accessor<boolean> }) {
+	const getRotationsFn = useServerFn(getRotations);
+	const rotationsQuery = useQuery(() => ({
+		queryKey: ["rotations"],
+		queryFn: getRotationsFn,
+		staleTime: 60_000,
+	}));
+	const rotations = () => rotationsQuery.data ?? [];
+
+	return (
+		<div class="p-2">
+			<Show
+				when={rotations().length > 0}
+				fallback={
+					<div class="flex flex-col items-center justify-center py-8 px-6 text-center">
+						<div class="relative mb-4">
+							<div class="absolute inset-0 bg-amber-400/20 rounded-full blur-xl animate-pulse" />
+							<div class="relative p-3 rounded-full bg-gradient-to-br from-amber-100 to-amber-50 border border-amber-200/60">
+								<RefreshCw class="w-6 h-6 text-amber-600" />
+							</div>
+						</div>
+						<h4 class="text-sm font-medium text-foreground mb-1">No rotations available</h4>
+						<p class="text-sm text-muted-foreground max-w-xs mb-4">Create a rotation with at least one assignee to use it as an entry point.</p>
+						<Button as={Link} to="/config/rotation" variant="outline" size="sm" class="cursor-pointer">
+							Configure Rotations
+						</Button>
+					</div>
+				}
+			>
+				<div class="space-y-1">
+					<For each={rotations()}>
+						{(rotation) => (
+							<button
+								type="button"
+								class="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer text-left disabled:opacity-50 disabled:cursor-not-allowed"
+								onClick={() => props.onSelect(rotation)}
+								disabled={props.isAdding()}
+							>
+								<UserAvatar id={rotation.currentAssignee} />
+								<span class="flex-1 text-sm font-medium">{rotation.name}</span>
+								<Check class="w-4 h-4 text-transparent" />
+							</button>
+						)}
+					</For>
+				</div>
+			</Show>
+		</div>
 	);
 }
 
@@ -232,7 +374,7 @@ function EntryPointsEmptyState() {
 				</div>
 			</div>
 			<h3 class="text-lg font-medium text-foreground mb-1">No entry points yet</h3>
-			<p class="text-sm text-muted-foreground text-center max-w-sm">Add Slack users or user groups to define entry points for incident routing.</p>
+			<p class="text-sm text-muted-foreground text-center max-w-sm">Add rotations or Slack users to define entry points for incident routing.</p>
 		</div>
 	);
 }
@@ -260,7 +402,6 @@ function EntryPointsFooter(props: EntryPointsFooterProps) {
 type GetEntryPointsResponse = Awaited<ReturnType<typeof getEntryPoints>>;
 interface EntryPointCardProps {
 	entryPoint: GetEntryPointsResponse[number];
-	name: string;
 	index: number;
 	onDelete: (id: string) => void;
 	onUpdatePrompt: (id: string, prompt: string) => Promise<void>;
@@ -272,6 +413,8 @@ interface EntryPointCardProps {
 }
 
 function EntryPointCard(props: EntryPointCardProps) {
+	const user = useSlackUser(() => props.entryPoint.assigneeId);
+
 	const [isEditing, setIsEditing] = createSignal(false);
 
 	createEffect(() => {
@@ -280,13 +423,12 @@ function EntryPointCard(props: EntryPointCardProps) {
 		}
 	});
 
-	const handleEditClick = () => {
-		setIsEditing(true);
-	};
-
-	const handleEditComplete = () => {
-		setIsEditing(false);
-		props.onEditComplete();
+	const handleToggle = () => {
+		const wasEditing = isEditing();
+		setIsEditing((prev) => !prev);
+		if (wasEditing) {
+			props.onEditComplete();
+		}
 	};
 
 	const handleSave = async (value: string) => {
@@ -300,36 +442,16 @@ function EntryPointCard(props: EntryPointCardProps) {
 	};
 
 	const hasMissingPrompt = () => !props.entryPoint.prompt.trim();
-	const isGroup = () => props.entryPoint.type === "slack-user-group";
-
 	const incomplete = () => hasMissingPrompt() && !isEditing() && !props.entryPoint.isFallback;
 
 	return (
-		<div class={cn("group border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors", incomplete() ? "border-amber-300 bg-amber-50/50" : "border-border")}>
-			<div class="flex items-center gap-3 p-4 overflow-hidden">
-				<div
-					class={cn(
-						"flex items-center justify-center w-8 h-8 rounded-full font-medium text-sm shrink-0",
-						incomplete() ? "bg-amber-100 text-amber-600" : isGroup() ? "bg-emerald-100 text-emerald-600" : "bg-blue-100 text-blue-600",
-					)}
-				>
-					<Show
-						when={isGroup()}
-						fallback={
-							<span>
-								{props.name
-									.split(" ")
-									.map((n: string) => n[0])
-									.join("")}
-							</span>
-						}
-					>
-						<UsersRound class="w-4 h-4" />
-					</Show>
-				</div>
-				<div class="flex-1 min-w-0">
-					<div class="flex items-center gap-2">
-						<span class="text-sm font-medium shrink-0">{props.name}</span>
+		<ConfigCard hasWarning={incomplete()} isActive={isEditing()}>
+			<ConfigCardRow onClick={handleToggle}>
+				<UserAvatar id={props.entryPoint.assigneeId} />
+
+				<span class="flex-1 min-w-0">
+					<span class="flex items-center gap-2">
+						<ConfigCardTitle class="shrink-0">{user()?.name}</ConfigCardTitle>
 
 						<Show
 							when={!incomplete()}
@@ -344,58 +466,43 @@ function EntryPointCard(props: EntryPointCardProps) {
 								<span class="text-sm text-muted-foreground truncate min-w-0">— {getFirstLine(props.entryPoint.prompt)}</span>
 							</Show>
 						</Show>
+					</span>
+				</span>
 
-						<Show when={!isEditing()}>
-							<Button variant="ghost" size="icon" onClick={handleEditClick} class="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 text-muted-foreground shrink-0">
-								<Pencil class="w-3.5 h-3.5" />
-							</Button>
-						</Show>
-					</div>
-				</div>
-
-				<div class="flex items-center shrink-0">
+				<span class="flex items-center gap-2 shrink-0">
 					<Show when={props.entryPoint.isFallback}>
-						<div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-bold uppercase tracking-wider shrink-0">
+						<span class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-bold uppercase tracking-wider shrink-0">
 							<Star class="w-2.5 h-2.5 fill-current" />
 							Fallback
-						</div>
+						</span>
 					</Show>
 
-					<div
-						class={cn(
-							"flex items-center gap-1 transition-all duration-300 ease-in-out overflow-hidden",
-							isEditing() ? "max-w-[160px] opacity-100 ml-2" : "max-w-0 group-hover:max-w-[160px] opacity-0 group-hover:opacity-100 ml-0 group-hover:ml-2 group-hover:delay-200",
-						)}
-					>
+					<ConfigCardActions animated alwaysVisible={isEditing()}>
 						<Show when={!props.entryPoint.isFallback}>
 							<Button
 								variant="ghost"
 								size="sm"
 								class="h-8 px-2 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 cursor-pointer text-[10px] font-medium whitespace-nowrap"
-								onClick={() => props.onSetFallback(props.entryPoint.id)}
+								onClick={(e) => {
+									e.stopPropagation();
+									props.onSetFallback(props.entryPoint.id);
+								}}
 								disabled={props.isSettingFallback}
 							>
 								<Show when={props.isSettingFallback} fallback={<Star class="w-3 h-3 mr-1" />}>
 									<LoaderCircle class="w-3 h-3 animate-spin mr-1" />
 								</Show>
-								{/* Set as fallback */}
 							</Button>
 						</Show>
 
-						<Button
-							variant="ghost"
-							size="icon"
-							class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer h-8 w-8 shrink-0"
-							onClick={() => props.onDelete(props.entryPoint.id)}
-							disabled={props.isDeleting}
-						>
-							<Show when={props.isDeleting} fallback={<Trash2 class="w-4 h-4" />}>
-								<LoaderCircle class="w-4 h-4 animate-spin" />
-							</Show>
-						</Button>
-					</div>
-				</div>
-			</div>
+						<ConfigCardDeleteButton onDelete={() => props.onDelete(props.entryPoint.id)} isDeleting={props.isDeleting} alwaysVisible />
+					</ConfigCardActions>
+
+					<Show when={isEditing()} fallback={<ChevronDown class="w-4 h-4 text-muted-foreground" />}>
+						<ChevronUp class="w-4 h-4 text-muted-foreground" />
+					</Show>
+				</span>
+			</ConfigCardRow>
 
 			<Show when={isEditing()}>
 				<div class="px-4 pb-4">
@@ -407,12 +514,11 @@ function EntryPointCard(props: EntryPointCardProps) {
 						}
 						value={props.entryPoint.prompt}
 						onSave={handleSave}
-						onBlur={handleEditComplete}
 						rows={3}
 						autoFocus
 					/>
 				</div>
 			</Show>
-		</div>
+		</ConfigCard>
 	);
 }

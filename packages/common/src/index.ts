@@ -70,3 +70,10 @@ export type EntryPoint = {
 	assignee: string;
 	isFallback: boolean;
 };
+
+export type ShiftLength = (typeof SHIFT_LENGTH_OPTIONS)[number]["value"];
+export const SHIFT_LENGTH_OPTIONS = [
+	{ value: "1 day", label: "1 day" },
+	{ value: "1 week", label: "1 week" },
+	{ value: "2 weeks", label: "2 weeks" },
+] as const;

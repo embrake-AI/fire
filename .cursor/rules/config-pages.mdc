@@ -1,0 +1,143 @@
+---
+description: UI consistency rules for config pages under /_authed/config/*
+globs:
+    - services/dashboard/src/routes/_authed.config.*.tsx
+---
+
+# Config Pages UI Consistency
+
+All configuration pages share a consistent card-based UI pattern. Follow these rules when creating or modifying config pages.
+
+## Page Structure
+
+Each config page follows this structure:
+
+```tsx
+function ConfigPage() {
+    return (
+        <Card class="p-6">
+            <Suspense fallback={<ContentSkeleton />}>
+                <Content />
+            </Suspense>
+        </Card>
+    )
+}
+```
+
+The content area contains:
+
+1. An action button (e.g., "Create Rotation", "Add Entry Point")
+2. A list of `ConfigCard` items or an empty state
+3. Any dialogs/modals for creation flows
+
+## ConfigCard Components
+
+Use components from `~/components/ui/config-card`:
+
+| Component                   | Purpose                                           |
+| --------------------------- | ------------------------------------------------- |
+| `ConfigCard`                | Wrapper with `isActive` and `hasWarning` states   |
+| `ConfigCardRow`             | Clickable row with `onClick` for expandable cards |
+| `ConfigCardIcon`            | Colored circular icon (always use `size="sm"`)    |
+| `ConfigCardTitle`           | Item name/title                                   |
+| `ConfigCardActions`         | Action buttons container with `animated` prop     |
+| `ConfigCardDeleteButton`    | Trash button with loading state                   |
+| `ConfigCardExpandedContent` | Content shown when card is expanded               |
+
+## Card Layout Pattern
+
+All cards use a single-line layout with consistent structure:
+
+```tsx
+<ConfigCard isActive={isExpanded()}>
+  <ConfigCardRow onClick={handleToggle}>
+    {/* Left: Icon + Title + Badge */}
+    <ConfigCardIcon variant="violet" size="sm">
+      <Icon class="w-4 h-4" />
+    </ConfigCardIcon>
+    <span class="flex items-center gap-2">
+      <ConfigCardTitle class="shrink-0">{name}</ConfigCardTitle>
+      <Badge variant="outline" class="font-normal text-xs">...</Badge>
+    </span>
+
+    {/* Spacer */}
+    <span class="flex-1" />
+
+    {/* Right: Status + Actions + Chevron */}
+    <span class="flex items-center gap-3 shrink-0">
+      <span class="text-sm text-muted-foreground">Status text</span>
+      <ConfigCardActions animated alwaysVisible={isExpanded()}>
+        <ConfigCardDeleteButton onDelete={...} isDeleting={...} alwaysVisible />
+      </ConfigCardActions>
+      <Show when={isExpanded()} fallback={<ChevronDown class="w-4 h-4 text-muted-foreground" />}>
+        <ChevronUp class="w-4 h-4 text-muted-foreground" />
+      </Show>
+    </span>
+  </ConfigCardRow>
+</ConfigCard>
+```
+
+## Key Patterns
+
+### Expandable Cards
+
+-   Make the entire `ConfigCardRow` clickable via `onClick`
+-   Show chevron indicator (ChevronDown/ChevronUp) on the right
+-   Use `isActive={isExpanded()}` on `ConfigCard` for active state styling
+-   Expanded content goes in `ConfigCardExpandedContent`
+
+### Animated Actions
+
+-   Wrap action buttons in `<ConfigCardActions animated>`
+-   Actions slide in from the right on hover
+-   Use `alwaysVisible={isExpanded()}` to keep visible when expanded
+-   Always add `alwaysVisible` to `ConfigCardDeleteButton` inside animated actions
+
+### Icon Sizes
+
+-   Always use `size="sm"` on `ConfigCardIcon` (w-8 h-8)
+-   Icons inside: `w-4 h-4`
+
+### Status/Warning States
+
+-   Use `hasWarning` on `ConfigCard` for incomplete items (amber styling)
+-   Warning text uses `text-amber-600`
+-   Normal status text uses `text-muted-foreground`
+
+### Button Click Propagation
+
+-   Buttons inside clickable rows must call `e.stopPropagation()` to prevent row toggle
+
+## Empty States
+
+Use a centered layout with animated icon:
+
+```tsx
+<div class="flex flex-col items-center justify-center py-12 border border-dashed border-border rounded-lg">
+    <div class="relative mb-4">
+        <div class="absolute inset-0 bg-{color}-400/20 rounded-full blur-xl animate-pulse" />
+        <div class="relative p-3 rounded-full bg-gradient-to-br from-{color}-100 to-{color}-50 border border-{color}-200/60">
+            <Icon class="w-8 h-8 text-{color}-600" />
+        </div>
+    </div>
+    <h3 class="text-lg font-medium text-foreground mb-1">No items yet</h3>
+    <p class="text-sm text-muted-foreground text-center max-w-sm">Helpful description...</p>
+</div>
+```
+
+## Skeletons
+
+Match the card structure with `Skeleton` components:
+
+```tsx
+function CardSkeleton() {
+    return (
+        <div class="border border-border rounded-lg bg-muted/30 p-4">
+            <div class="flex items-center gap-3">
+                <Skeleton variant="circular" class="w-8 h-8" />
+                <Skeleton variant="text" class="h-4 w-32" />
+            </div>
+        </div>
+    )
+}
+```

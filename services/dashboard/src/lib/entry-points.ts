@@ -1,57 +1,50 @@
-import { entryPoint, integration } from "@fire/db/schema";
+import { entryPoint, integration, rotationWithAssignee } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq } from "drizzle-orm";
 import { authMiddleware } from "./auth-middleware";
 import { db } from "./db";
-import { fetchSlackUserGroups, fetchSlackUsers } from "./slack";
-
-export type { SlackUser, SlackUserGroup } from "./slack";
+import { fetchSlackUsers } from "./slack";
 
 export const getEntryPoints = createServerFn({
 	method: "GET",
 })
 	.middleware([authMiddleware])
 	.handler(async ({ context }) => {
-		const [slackIntegration] = await db.select().from(integration).where(eq(integration.clientId, context.clientId)).limit(1);
-		const slackIntegrationData = slackIntegration?.data;
-		if (!slackIntegrationData) {
-			return [];
-		}
+		const entryPointsWithRotation = await db
+			.select({
+				id: entryPoint.id,
+				type: entryPoint.type,
+				prompt: entryPoint.prompt,
+				assigneeId: entryPoint.assigneeId,
+				rotationId: entryPoint.rotationId,
+				isFallback: entryPoint.isFallback,
+				createdAt: entryPoint.createdAt,
+				rotationName: rotationWithAssignee.name,
+				effectiveAssignee: rotationWithAssignee.effectiveAssignee,
+			})
+			.from(entryPoint)
+			.leftJoin(rotationWithAssignee, eq(entryPoint.rotationId, rotationWithAssignee.id))
+			.where(eq(entryPoint.clientId, context.clientId))
+			.orderBy(desc(entryPoint.createdAt));
 
-		const botToken = slackIntegrationData.botToken;
-		const [slackUsers, slackUserGroups] = await Promise.all([fetchSlackUsers(botToken), fetchSlackUserGroups(botToken)]);
-
-		const entryPoints = await db.select().from(entryPoint).where(eq(entryPoint.clientId, context.clientId)).orderBy(desc(entryPoint.createdAt));
-
-		return entryPoints.map((ep) => {
+		return entryPointsWithRotation.map((ep) => {
 			if (ep.type === "slack-user") {
-				const slackUser = slackUsers.find((u) => u.id === ep.assigneeId);
-				if (!slackUser) {
-					// TODO: Handle this better when someone complains
-					throw new Error("Slack user not found");
-				}
 				return {
 					id: ep.id,
-					type: ep.type,
+					type: ep.type as "slack-user",
 					prompt: ep.prompt,
-					assigneeId: ep.assigneeId,
+					assigneeId: ep.assigneeId!,
 					isFallback: ep.isFallback,
-					name: slackUser.name,
-					avatar: slackUser.avatar,
 				};
-			} else if (ep.type === "slack-user-group") {
-				const slackUserGroup = slackUserGroups.find((g) => g.id === ep.assigneeId);
-				if (!slackUserGroup) {
-					// TODO: Handle this better when someone complains
-					throw new Error("Slack user group not found");
-				}
+			} else if (ep.type === "rotation") {
 				return {
 					id: ep.id,
 					type: ep.type,
 					prompt: ep.prompt,
-					assigneeId: ep.assigneeId,
+					rotationId: ep.rotationId,
 					isFallback: ep.isFallback,
-					name: slackUserGroup.handle,
+					name: ep.rotationName,
+					assigneeId: ep.effectiveAssignee,
 				};
 			} else {
 				throw new Error("Invalid entry point type");
@@ -73,43 +66,40 @@ export const getSlackUsers = createServerFn({
 		return slackUsers;
 	});
 
-export const getSlackUserGroups = createServerFn({
-	method: "GET",
-})
-	.middleware([authMiddleware])
-	.handler(async ({ context }) => {
-		const [slackIntegration] = await db.select().from(integration).where(eq(integration.clientId, context.clientId)).limit(1);
-		const slackIntegrationData = slackIntegration?.data;
-		if (!slackIntegrationData) {
-			return [];
-		}
-		const slackUserGroups = await fetchSlackUserGroups(slackIntegrationData.botToken);
-		return slackUserGroups;
-	});
+export type CreateEntryPointInput = { type: "slack-user"; assigneeId: string } | { type: "rotation"; rotationId: string };
 
 export const createEntryPoint = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
-	.inputValidator((data: { id: string; type: "slack-user" | "slack-user-group" }) => data)
+	.inputValidator((data: CreateEntryPointInput) => data)
 	.handler(async ({ data, context }) => {
 		const existing = await db.select().from(entryPoint).where(eq(entryPoint.clientId, context.clientId)).limit(1);
 		const isFirst = existing.length === 0;
 
-		const [newEntryPoint] = await db
-			.insert(entryPoint)
-			.values({
-				clientId: context.clientId,
-				type: data.type,
-				prompt: "",
-				assigneeId: data.id,
-				isFallback: isFirst,
-			})
-			.returning();
+		const values =
+			data.type === "slack-user"
+				? {
+						clientId: context.clientId,
+						type: data.type,
+						prompt: "",
+						assigneeId: data.assigneeId,
+						isFallback: isFirst,
+					}
+				: {
+						clientId: context.clientId,
+						type: data.type,
+						prompt: "",
+						rotationId: data.rotationId,
+						isFallback: isFirst,
+					};
+
+		const [newEntryPoint] = await db.insert(entryPoint).values(values).returning();
 
 		return {
 			id: newEntryPoint.id,
 			type: newEntryPoint.type,
 			prompt: newEntryPoint.prompt,
 			assigneeId: newEntryPoint.assigneeId,
+			rotationId: newEntryPoint.rotationId,
 			isFallback: newEntryPoint.isFallback,
 		};
 	});
@@ -118,14 +108,29 @@ export const deleteEntryPoint = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { id: string }) => data)
 	.handler(async ({ data, context }) => {
-		const result = await db
-			.delete(entryPoint)
-			.where(and(eq(entryPoint.id, data.id), eq(entryPoint.clientId, context.clientId)))
-			.returning();
+		await db.transaction(async (tx) => {
+			const result = await tx
+				.delete(entryPoint)
+				.where(and(eq(entryPoint.id, data.id), eq(entryPoint.clientId, context.clientId)))
+				.returning();
 
-		if (result.length === 0) {
-			throw new Error("Entry point not found");
-		}
+			if (result.length === 0) {
+				throw new Error("Entry point not found");
+			}
+
+			const deletedEntryPoint = result[0];
+
+			if (deletedEntryPoint.isFallback) {
+				const remaining = await tx.select().from(entryPoint).where(eq(entryPoint.clientId, context.clientId));
+
+				if (remaining.length > 0) {
+					const randomIndex = Math.floor(Math.random() * remaining.length);
+					const newFallback = remaining[randomIndex];
+
+					await tx.update(entryPoint).set({ isFallback: true }).where(eq(entryPoint.id, newFallback.id));
+				}
+			}
+		});
 
 		return { success: true };
 	});
@@ -148,7 +153,8 @@ export const updateEntryPointPrompt = createServerFn({ method: "POST" })
 			id: updated.id,
 			type: updated.type,
 			prompt: updated.prompt,
-			externalId: updated.assigneeId,
+			assigneeId: updated.assigneeId,
+			rotationId: updated.rotationId,
 			isFallback: updated.isFallback,
 		};
 	});
