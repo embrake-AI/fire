@@ -28,7 +28,7 @@
 	"hyperdrive": [
 		{
 			"binding": "db",
-			"id": "7c77b7f308b24603ab22eba0f301cbf0",
+			"id": "985eb1686096409e90e6a42bb600a07e",
 			"localConnectionString": "postgresql://postgres:postgres@localhost:5432/fire",
 		},
 	],
