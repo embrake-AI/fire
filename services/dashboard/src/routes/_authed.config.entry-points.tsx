@@ -14,7 +14,6 @@ import { getEntryPoints } from "~/lib/entry-points";
 import { toCreateInput, toCreateRotationInput, useCreateEntryPoint, useDeleteEntryPoint, useSetFallbackEntryPoint, useUpdateEntryPointPrompt } from "~/lib/entry-points.hooks";
 import { getIntegrations } from "~/lib/integrations";
 import { getRotations } from "~/lib/rotation";
-import { useSlackUser } from "~/lib/useSlackUser";
 
 export const Route = createFileRoute("/_authed/config/entry-points")({
 	component: EntryPointsConfig,
@@ -413,8 +412,6 @@ interface EntryPointCardProps {
 }
 
 function EntryPointCard(props: EntryPointCardProps) {
-	const user = useSlackUser(() => props.entryPoint.assigneeId);
-
 	const [isEditing, setIsEditing] = createSignal(false);
 
 	createEffect(() => {
@@ -451,7 +448,7 @@ function EntryPointCard(props: EntryPointCardProps) {
 
 				<span class="flex-1 min-w-0">
 					<span class="flex items-center gap-2">
-						<ConfigCardTitle class="shrink-0">{user()?.name}</ConfigCardTitle>
+						<ConfigCardTitle class="shrink-0">{props.entryPoint.name}</ConfigCardTitle>
 
 						<Show
 							when={!incomplete()}
