@@ -6,11 +6,11 @@ import { Pool } from "pg";
 
 const pool = new Pool({
 	connectionString: process.env.DATABASE_URL,
-	max: 2,
-	connectionTimeoutMillis: 2_000,
+	max: 1,
+	connectionTimeoutMillis: 10_000,
 	allowExitOnIdle: true,
-	query_timeout: 2_000,
-	statement_timeout: 2_000,
+	query_timeout: 30_000,
+	statement_timeout: 30_000,
 });
 
 attachDatabasePool(pool);
