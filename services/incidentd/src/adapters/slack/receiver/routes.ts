@@ -102,6 +102,7 @@ slackRoutes.post("/events", async (c) => {
 			// hard-coding the type copied from testing. Not sure why types differ.
 			const message = event as {
 				user: string;
+				bot_id?: string;
 				ts: string;
 				text: string;
 				team: string;
@@ -109,6 +110,9 @@ slackRoutes.post("/events", async (c) => {
 				parent_user_id?: string;
 				channel: string;
 			};
+			if (message.bot_id) {
+				return c.text("OK");
+			}
 			const text = message.text;
 			const user = message.user;
 			const thread = message.thread_ts;
