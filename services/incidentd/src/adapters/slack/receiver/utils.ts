@@ -1,7 +1,7 @@
 import type { EntryPoint, IS } from "@fire/common";
-import { integration, type SlackIntegrationData } from "@fire/db/schema";
+import type { SlackIntegrationData } from "@fire/db/schema";
 import type { KnownBlock, SlackEvent } from "@slack/types";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { Context } from "hono";
 import type { BasicContext } from "../../../handler/index";
 import { getDB } from "../../../lib/db";
@@ -271,6 +271,7 @@ export async function getSlackIntegration(opts: {
 							prompt: true,
 							type: true,
 							isFallback: true,
+							assigneeId: true,
 						},
 						with: {
 							rotationWithAssignee: {
@@ -294,7 +295,12 @@ export async function getSlackIntegration(opts: {
 		entryPoints:
 			result.entryPoints
 				.map((ep) => {
-					const assignee = "rotationWithAssignee" in ep && ep.rotationWithAssignee?.effectiveAssignee;
+					let assignee: string | null;
+					if (ep.type === "rotation" && "rotationWithAssignee" in ep) {
+						assignee = ep.rotationWithAssignee?.effectiveAssignee ?? null;
+					} else {
+						assignee = ep.assigneeId ?? null;
+					}
 					if (!assignee) {
 						return null;
 					}
@@ -306,13 +312,6 @@ export async function getSlackIntegration(opts: {
 				})
 				.filter((ep) => !!ep) ?? [],
 	};
-}
-
-export async function getSlackIntegrationByClientId(opts: { hyperdrive: Hyperdrive; clientId: string }): Promise<{ clientId: string; data: SlackIntegrationData } | null> {
-	const { hyperdrive, clientId } = opts;
-	const db = getDB(hyperdrive);
-	const [result] = await db.select({ clientId: integration.clientId, data: integration.data }).from(integration).where(eq(integration.clientId, clientId)).limit(1);
-	return result ?? null;
 }
 
 /**
