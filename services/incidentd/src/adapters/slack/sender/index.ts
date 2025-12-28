@@ -59,7 +59,7 @@ export async function incidentStarted(env: Env, id: string, { severity, status, 
 			return;
 		}
 		const incident = env.INCIDENT.get(env.INCIDENT.idFromString(id));
-		await incident.addMetadata({ postedMessageTs: ts, channel, thread });
+		await incident.addMetadata({ postedMessageTs: ts, channel, thread: thread ?? ts });
 	}
 }
 

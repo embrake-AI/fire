@@ -110,9 +110,7 @@ slackRoutes.post("/events", async (c) => {
 				parent_user_id?: string;
 				channel: string;
 			};
-			if (message.bot_id) {
-				return c.text("OK");
-			}
+
 			const text = message.text;
 			const user = message.user;
 			const thread = message.thread_ts;
@@ -132,6 +130,10 @@ slackRoutes.post("/events", async (c) => {
 			});
 			if (!slackIntegration) {
 				console.error(`No Slack integration found for ${teamId}`);
+				return c.text("OK");
+			}
+
+			if (message.user === slackIntegration.data.botUserId) {
 				return c.text("OK");
 			}
 
