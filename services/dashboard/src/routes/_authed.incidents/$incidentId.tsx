@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, For, Show, Suspense } from "solid-js";
 import { type SlackEntity, SlackEntityPicker, UserAvatar } from "~/components/SlackEntityPicker";
+import { SlackMessageInput } from "~/components/SlackMessageInput";
 import { Timeline } from "~/components/Timeline";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -136,6 +137,9 @@ function IncidentDetail() {
 							<div class="space-y-6">
 								<IncidentHeader incident={state} />
 								<Show when={incident()?.events}>{(events) => <Timeline events={events()} />}</Show>
+								<Show when={incident()?.context?.thread}>
+									{(thread) => <Show when={incident()?.context?.channel}>{(channel) => <SlackMessageInput incidentId={state().id} thread={thread()} channel={channel()} />}</Show>}
+								</Show>
 							</div>
 						)}
 					</Show>

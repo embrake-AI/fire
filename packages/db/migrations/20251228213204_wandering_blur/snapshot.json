@@ -1,8 +1,8 @@
 {
 	"version": "8",
 	"dialect": "postgres",
-	"id": "b129f698-f1d5-4589-b0fc-21dd4b4850fd",
-	"prevIds": ["075dcbb0-6ea5-4c4d-a338-461f0418b243"],
+	"id": "15f827ca-cfde-4e66-ba01-e641a92fd3f8",
+	"prevIds": ["b129f698-f1d5-4589-b0fc-21dd4b4850fd"],
 	"ddl": [
 		{
 			"values": ["slack-user", "rotation"],
@@ -1356,6 +1356,34 @@
 			"entityType": "indexes",
 			"schema": "public",
 			"table": "integration"
+		},
+		{
+			"nameExplicit": true,
+			"columns": [
+				{
+					"value": "user_id",
+					"isExpression": false,
+					"asc": true,
+					"nullsFirst": false,
+					"opclass": null
+				},
+				{
+					"value": "platform",
+					"isExpression": false,
+					"asc": true,
+					"nullsFirst": false,
+					"opclass": null
+				}
+			],
+			"isUnique": true,
+			"where": null,
+			"with": "",
+			"method": "btree",
+			"concurrently": false,
+			"name": "user_integration_user_platform_idx",
+			"entityType": "indexes",
+			"schema": "public",
+			"table": "user_integration"
 		},
 		{
 			"nameExplicit": false,

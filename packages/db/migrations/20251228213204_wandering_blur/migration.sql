@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "user_integration_user_platform_idx" ON "user_integration" ("user_id","platform");

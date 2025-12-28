@@ -11,7 +11,7 @@ import type { Metadata } from "../../../handler";
 export async function incidentStarted(env: Env, id: string, { severity, status, assignee, title }: Incident, metadata: Metadata) {
 	const { botToken, channel, thread } = metadata;
 	if (!botToken || !channel) {
-		// Thread is optional, if we have a channe and no thread, we'll post in the channel directly
+		// Thread is optional, if we have a channel and no thread, we'll post in the channel directly
 		return;
 	}
 	if (metadata.postedMessageTs) {
@@ -59,7 +59,7 @@ export async function incidentStarted(env: Env, id: string, { severity, status, 
 			return;
 		}
 		const incident = env.INCIDENT.get(env.INCIDENT.idFromString(id));
-		await incident.addMetadata({ postedMessageTs: ts });
+		await incident.addMetadata({ postedMessageTs: ts, channel, thread });
 	}
 }
 

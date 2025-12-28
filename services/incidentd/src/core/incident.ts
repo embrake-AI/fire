@@ -336,9 +336,13 @@ export class Incident extends DurableObject<Env> {
 		} else if (!state._initialized) {
 			return { error: "INITIALIZING" };
 		}
-		const { metadata: _, _initialized, ...rest } = state;
+		const {
+			metadata: { channel, thread },
+			_initialized,
+			...rest
+		} = state;
 		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log ORDER BY id ASC").toArray();
-		return { state: rest, events };
+		return { state: rest, events, context: { channel, thread } };
 	}
 
 	async addMetadata(metadata: Record<string, string>) {

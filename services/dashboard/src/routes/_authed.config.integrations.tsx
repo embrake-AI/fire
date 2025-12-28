@@ -18,9 +18,13 @@ type UserIntegrationsData = Awaited<ReturnType<typeof getUserIntegrations>>;
 export const Route = createFileRoute("/_authed/config/integrations")({
 	component: IntegrationsConfig,
 	validateSearch: (search) => {
-		return {
-			installed: search.installed,
-		};
+		if ("installed" in search) {
+			return {
+				installed: search.installed,
+			};
+		} else {
+			return {};
+		}
 	},
 });
 

@@ -1,5 +1,5 @@
 import type { EntryPoint, IS, IS_Event, ListIncidentsElement } from "@fire/common";
-import { entryPoint, incidentAnalysis, rotation } from "@fire/db/schema";
+import { entryPoint, incidentAnalysis, rotation, userIntegration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { authMiddleware } from "./auth-middleware";
@@ -31,12 +31,17 @@ export const getIncidentById = createServerFn({ method: "GET" })
 			throw new Error("Failed to fetch incident");
 		}
 		const incident = (await response.json()) as
-			| { state: IS; events: { id: number; event_type: string; event_data: string; created_at: string; adapter: "slack" | "dashboard" }[] }
+			| {
+					state: IS;
+					events: { id: number; event_type: string; event_data: string; created_at: string; adapter: "slack" | "dashboard" }[];
+					context: { channel?: string; thread?: string };
+			  }
 			| { error: "NOT_FOUND" };
 		if ("error" in incident) {
 			return { error: incident.error };
 		}
 		return {
+			context: incident.context,
 			state: incident.state,
 			events: incident.events.map(
 				(event) =>
@@ -103,6 +108,33 @@ export const updateStatus = createServerFn({ method: "POST" })
 		if (!response.ok) {
 			throw new Error("Failed to update status");
 		}
+	});
+
+export const sendSlackMessage = createServerFn({ method: "POST" })
+	.inputValidator((data: { id: string; message: string; thread_ts: string; channel: string }) => data)
+	.middleware([authMiddleware])
+	.handler(async ({ data, context }) => {
+		const [slackUserIntegration] = await db
+			.select()
+			.from(userIntegration)
+			.where(and(eq(userIntegration.userId, context.userId), eq(userIntegration.platform, "slack")))
+			.limit(1);
+		if (!slackUserIntegration) {
+			throw new Error("Slack user integration not found");
+		}
+		const { userToken } = slackUserIntegration.data;
+		const response = await fetch(`https://slack.com/api/chat.postMessage`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${userToken}`,
+			},
+			body: JSON.stringify({ channel: data.channel, text: data.message, thread_ts: data.thread_ts }),
+		});
+		if (!response.ok) {
+			throw new Error("Failed to send message to Slack");
+		}
+		return { success: true };
 	});
 
 export const startIncident = createServerFn({ method: "POST" })
