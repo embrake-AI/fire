@@ -134,6 +134,10 @@ export const sendSlackMessage = createServerFn({ method: "POST" })
 		if (!response.ok) {
 			throw new Error("Failed to send message to Slack");
 		}
+		const responseData = await response.json();
+		if (!responseData.ok) {
+			return { error: responseData.error };
+		}
 		return { success: true };
 	});
 

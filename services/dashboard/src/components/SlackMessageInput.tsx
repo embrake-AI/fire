@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/solid-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { SendHorizontal } from "lucide-solid";
@@ -8,6 +8,7 @@ import { getUserIntegrations } from "~/lib/integrations";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Textarea } from "./ui/textarea";
+import { showToast } from "./ui/toast";
 
 interface SlackMessageInputProps {
 	incidentId: string;
@@ -17,6 +18,7 @@ interface SlackMessageInputProps {
 
 export function SlackMessageInput(props: SlackMessageInputProps) {
 	const [message, setMessage] = createSignal("");
+	const queryClient = useQueryClient();
 	const getUserIntegrationsFn = useServerFn(getUserIntegrations);
 	const integrationsQuery = useQuery(() => ({
 		queryKey: ["user_integrations"],
@@ -27,8 +29,19 @@ export function SlackMessageInput(props: SlackMessageInputProps) {
 
 	const sendMessageMutation = useMutation(() => ({
 		mutationFn: (message: string) => sendSlackMessage({ data: { id: props.incidentId, message, thread_ts: props.thread, channel: props.channel } }),
-		onSuccess: () => {
-			setMessage("");
+		onSuccess: (data) => {
+			if (data.error) {
+				showToast({
+					title: "Failed to send message",
+					description: data.error,
+					variant: "destructive",
+				});
+			} else {
+				setMessage("");
+				setTimeout(() => {
+					void queryClient.invalidateQueries({ queryKey: ["incidents"] });
+				}, 500);
+			}
 		},
 	}));
 
