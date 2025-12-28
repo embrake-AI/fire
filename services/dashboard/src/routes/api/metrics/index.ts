@@ -76,10 +76,13 @@ export const Route = createFileRoute("/api/metrics/")({
 					id: incident.id,
 					title: incident.title,
 					severity: incident.severity,
+					assignee: incident.assignee,
 					createdAt: incident.createdAt,
 					resolvedAt: incident.resolvedAt,
 					metrics: computeIncidentMetrics(incident),
 					summary: incident.summary,
+					entryPointId: incident.entryPointId,
+					rotationId: incident.rotationId,
 				}));
 
 				return new Response(JSON.stringify({ incidents: results }), {

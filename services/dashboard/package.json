@@ -13,6 +13,7 @@
 		"clean": "rm -rf .output node_modules .vercel"
 	},
 	"dependencies": {
+		"@ark-ui/solid": "^5.30.0",
 		"@fire/common": "workspace:*",
 		"@fire/db": "workspace:*",
 		"@fontsource/inter": "^5.2.8",
@@ -27,6 +28,7 @@
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"cmdk-solid": "^1.1.2",
+		"date-fns": "^4.1.0",
 		"drizzle-orm": "catalog:",
 		"lucide-solid": "^0.562.0",
 		"nanoid": "^5.1.6",

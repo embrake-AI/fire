@@ -134,7 +134,11 @@ export class Incident extends DurableObject<Env> {
 		if (!entryPoints?.length) {
 			throw new Error("No entry points found");
 		}
-		const { assignee, severity, title, description } = await calculateIncidentInfo(prompt, entryPoints, this.env.OPENAI_API_KEY);
+		const { selectedEntryPoint, severity, title, description } = await calculateIncidentInfo(prompt, entryPoints, this.env.OPENAI_API_KEY);
+		const assignee = selectedEntryPoint.assignee;
+		const entryPointId = selectedEntryPoint.id;
+		const rotationId = selectedEntryPoint.rotationId;
+
 		const status = "open";
 		const payload = {
 			id,
@@ -147,6 +151,8 @@ export class Incident extends DurableObject<Env> {
 			description,
 			prompt,
 			source,
+			entryPointId,
+			rotationId,
 			metadata,
 			_initialized: true,
 		} as const;
@@ -163,7 +169,11 @@ export class Incident extends DurableObject<Env> {
 			CREATE INDEX idx_event_log_published_at ON event_log(published_at);`);
 			this.ctx.storage.kv.put(ELV_KEY, "1");
 			await this.commit(
-				{ state: payload, event: { event_type: "INCIDENT_CREATED", event_data: { assignee, createdBy, description, prompt, severity, source, status, title } }, adapter: source },
+				{
+					state: payload,
+					event: { event_type: "INCIDENT_CREATED", event_data: { assignee, createdBy, description, prompt, severity, source, status, title, entryPointId, rotationId } },
+					adapter: source,
+				},
 				{ skipAlarm: true },
 			);
 			this.ctx.storage.kv.delete(EP_KEY);
@@ -226,6 +236,8 @@ export class Incident extends DurableObject<Env> {
 			summary,
 			events: eventsForStorage,
 			createdAt: state.createdAt,
+			entryPointId: state.entryPointId,
+			rotationId: state.rotationId,
 		});
 	}
 
@@ -254,6 +266,7 @@ export class Incident extends DurableObject<Env> {
 					assignee: "",
 					title: "",
 					description: "",
+					entryPointId: "",
 					_initialized: false,
 					// This will be set on `init`
 				});
@@ -323,7 +336,7 @@ export class Incident extends DurableObject<Env> {
 		} else if (!state._initialized) {
 			return { error: "INITIALIZING" };
 		}
-		const { metadata, _initialized, ...rest } = state;
+		const { metadata: _, _initialized, ...rest } = state;
 		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log ORDER BY id ASC").toArray();
 		return { state: rest, events };
 	}

@@ -1,7 +1,7 @@
 import type { EntryPoint, IS, IS_Event, ListIncidentsElement } from "@fire/common";
-import { incidentAnalysis } from "@fire/db/schema";
+import { entryPoint, incidentAnalysis, rotation } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { authMiddleware } from "./auth-middleware";
 import { db } from "./db";
 import type { SlackChannel } from "./slack";
@@ -166,7 +166,7 @@ export const startIncident = createServerFn({ method: "POST" })
 				}
 				return {
 					id: ep.id,
-					rotationId: ep.rotationId,
+					rotationId: ep.rotationId ?? undefined,
 					assignee,
 					prompt: ep.prompt,
 					isFallback: ep.isFallback,
@@ -274,3 +274,47 @@ export function computeIncidentMetrics(analysis: IncidentAnalysis) {
 		totalDuration,
 	};
 }
+
+export const getMetrics = createServerFn({ method: "GET" })
+	.inputValidator((data: { from?: string; to?: string }) => data)
+	.middleware([authMiddleware])
+	.handler(async ({ data, context }) => {
+		const fromDate = data.from ? new Date(data.from) : null;
+		const toDate = data.to ? new Date(data.to) : null;
+
+		const conditions = [eq(incidentAnalysis.clientId, context.clientId)];
+		if (fromDate) {
+			conditions.push(gte(incidentAnalysis.resolvedAt, fromDate));
+		}
+		if (toDate) {
+			conditions.push(lte(incidentAnalysis.resolvedAt, toDate));
+		}
+
+		const incidents = await db
+			.select({
+				incident: incidentAnalysis,
+				entryPointPrompt: entryPoint.prompt,
+				rotationName: rotation.name,
+			})
+			.from(incidentAnalysis)
+			.leftJoin(entryPoint, eq(incidentAnalysis.entryPointId, entryPoint.id))
+			.leftJoin(rotation, eq(incidentAnalysis.rotationId, rotation.id))
+			.where(and(...conditions))
+			.orderBy(desc(incidentAnalysis.resolvedAt))
+			.limit(100);
+
+		return incidents.map(({ incident, entryPointPrompt, rotationName }) => ({
+			id: incident.id,
+			title: incident.title,
+			severity: incident.severity,
+			assignee: incident.assignee,
+			createdAt: incident.createdAt,
+			resolvedAt: incident.resolvedAt,
+			metrics: computeIncidentMetrics(incident),
+			summary: incident.summary,
+			entryPointId: incident.entryPointId,
+			rotationId: incident.rotationId,
+			entryPointPrompt,
+			rotationName,
+		}));
+	});

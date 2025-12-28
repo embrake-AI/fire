@@ -240,9 +240,9 @@ function InsightsCard(props: { analysis: Accessor<IncidentAnalysis> }) {
 	const [tab, setTab] = createSignal<"summary" | "metrics">("summary");
 	const [mounted, setMounted] = createSignal(false);
 
-	let summaryEl!: HTMLDivElement;
-	let metricsEl!: HTMLDivElement;
-	let wrapEl!: HTMLDivElement;
+	let summaryEl: HTMLDivElement | undefined;
+	let metricsEl: HTMLDivElement | undefined;
+	let wrapEl: HTMLDivElement | undefined;
 
 	const MIN_H = 120;
 	const [h, setH] = createSignal<number>(MIN_H);

@@ -2,7 +2,7 @@ import type { EntryPoint, IS, IS_Event } from "@fire/common";
 import { ASSERT } from "../lib/utils";
 
 type IncidentInfo = {
-	assignee: string;
+	selectedEntryPoint: EntryPoint;
 	severity: IS["severity"];
 	title: string;
 	description: string;
@@ -11,7 +11,7 @@ type IncidentInfo = {
 // We could allow users to tune the system prompt (when high, medium, low)
 const SYSTEM_PROMPT = `You are an incident triage assistant. Given an incident report and a list of entry points (each with a prompt describing when to be chosen and an assignee), you must:
 
-1. Select the most appropriate assignee based on which entry point best matches the incident. If no entry point is a clear match, you MUST select the one marked as "FALLBACK".
+1. Select the most appropriate entry point index based on which entry point best matches the incident. If no entry point is a clear match, you MUST select the index of the one marked as "FALLBACK".
 2. Determine the severity (low, medium, or high) based on the impact and urgency
 3. Generate a concise title (max 60 chars) that captures the essence of the incident
 4. Write a brief description explaining the incident and why you chose that entry point
@@ -21,14 +21,14 @@ Guidelines for severity:
 - medium: Degraded performance, partial outage, or significant functionality issues
 - low: Minor issues, questions/missunderstandings, cosmetic problems, or low-impact bugs`;
 
-const RESPONSE_SCHEMA = (assignees: string[]) =>
+const RESPONSE_SCHEMA = (indices: number[]) =>
 	({
 		type: "object",
 		properties: {
-			assignee: {
-				type: "string",
-				enum: assignees,
-				description: "The assignee from the matching entry point",
+			entryPointIndex: {
+				type: "integer",
+				enum: indices,
+				description: "The index of the matching entry point (0-indexed)",
 			},
 			severity: {
 				type: "string",
@@ -44,7 +44,7 @@ const RESPONSE_SCHEMA = (assignees: string[]) =>
 				description: "A brief description explaining the incident and why that entry point was chosen",
 			},
 		},
-		required: ["assignee", "severity", "title", "description"],
+		required: ["entryPointIndex", "severity", "title", "description"],
 		additionalProperties: false,
 	}) as const;
 
@@ -52,7 +52,7 @@ export async function calculateIncidentInfo(prompt: string, entryPoints: EntryPo
 	ASSERT(entryPoints.length > 0, "At least one entry point is required");
 
 	const entryPointsDescription = entryPoints
-		.map((ep, i) => `${i + 1}. Assignee: ${ep.assignee}\n   Choose when: ${ep.prompt}${ep.isFallback ? " (FALLBACK - Choose if no others match)" : ""}`)
+		.map((ep, i) => `Index ${i}: Assignee: ${ep.assignee}\n   Choose when: ${ep.prompt}${ep.isFallback ? " (FALLBACK - Choose if no others match)" : ""}`)
 		.join("\n");
 
 	const userMessage = `Entry Points:
@@ -80,7 +80,7 @@ Select the most appropriate entry point and provide the incident details.`;
 				json_schema: {
 					name: "incident_info",
 					strict: true,
-					schema: RESPONSE_SCHEMA(entryPoints.map((ep) => ep.assignee)),
+					schema: RESPONSE_SCHEMA(entryPoints.map((_, i) => i)),
 				},
 			},
 		}),
@@ -98,7 +98,9 @@ Select the most appropriate entry point and provide the incident details.`;
 	const content = data.choices[0]?.message?.content;
 	ASSERT(content, "No response content from OpenAI");
 
-	return JSON.parse(content) as IncidentInfo;
+	const { entryPointIndex, severity, title, description } = JSON.parse(content);
+	const selectedEntryPoint = entryPoints[entryPointIndex];
+	return { selectedEntryPoint, severity, title, description };
 }
 
 const SUMMARY_SYSTEM_PROMPT = `You are an incident post-mortem analyst. Given an incident's details and its timeline of events, generate a concise summary of what happened, how it was handled, and the resolution.

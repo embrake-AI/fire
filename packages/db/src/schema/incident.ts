@@ -1,6 +1,8 @@
 import type { IS_Event } from "@fire/common";
-import { jsonb, pgEnum, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { client } from "./auth";
+import { entryPoint } from "./entry-point";
+import { rotation } from "./rotation";
 
 export const incidentSeverity = pgEnum("incident_severity", ["low", "medium", "high"]);
 export const incidentSource = pgEnum("incident_source", ["slack", "dashboard"]);
@@ -34,4 +36,6 @@ export const incidentAnalysis = pgTable("incident_analysis", {
 	events: jsonb("events").$type<IncidentEventData[]>().notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 	resolvedAt: timestamp("resolved_at", { withTimezone: true }).defaultNow().notNull(),
+	entryPointId: uuid("entry_point_id").references(() => entryPoint.id, { onDelete: "set null" }),
+	rotationId: uuid("rotation_id").references(() => rotation.id, { onDelete: "set null" }),
 });

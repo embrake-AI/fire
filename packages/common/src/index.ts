@@ -18,6 +18,8 @@ export type IS = {
 	source: IS_SOURCE;
 	title: string;
 	description: string;
+	entryPointId: string;
+	rotationId?: string;
 };
 
 export type ListIncidentsElement = Pick<IS, "id" | "status" | "assignee" | "severity" | "createdAt" | "title" | "description">;
@@ -25,7 +27,7 @@ export type ListIncidentsElement = Pick<IS, "id" | "status" | "assignee" | "seve
 export type IS_Event =
 	| {
 			event_type: "INCIDENT_CREATED";
-			event_data: Pick<IS, "status" | "severity" | "createdBy" | "assignee" | "title" | "description" | "prompt" | "source">;
+			event_data: Pick<IS, "status" | "severity" | "createdBy" | "assignee" | "title" | "description" | "prompt" | "source" | "entryPointId" | "rotationId">;
 	  }
 	| {
 			event_type: "STATUS_UPDATE";
@@ -66,9 +68,11 @@ export type EventLog = {
 };
 
 export type EntryPoint = {
+	id: string;
 	prompt: string;
 	assignee: string;
 	isFallback: boolean;
+	rotationId?: string;
 };
 
 export type ShiftLength = (typeof SHIFT_LENGTH_OPTIONS)[number]["value"];

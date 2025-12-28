@@ -29,21 +29,19 @@ export const effectiveAssignee = sql<string>`
   END
 `;
 
-export const rotationWithAssignee = pgView("rotationWithAssignee").as(
-	(qb) =>
-		qb
-			.select({
-				id: rotation.id,
-				name: rotation.name,
-				clientId: rotation.clientId,
-				shiftStart: shiftStart.as("shift_start"),
-				shiftLength: rotation.shiftLength,
-				assignees: rotation.assignees,
-				effectiveAssignee: effectiveAssignee.as("effective_assignee"),
-				baseAssignee: baseAssignee.as("base_assignee"),
-				createdAt: rotation.createdAt,
-				updatedAt: rotation.updatedAt,
-			})
-			.from(rotation),
-	// .as("rotationWithAssignee"),
+export const rotationWithAssignee = pgView("rotationWithAssignee").as((qb) =>
+	qb
+		.select({
+			id: rotation.id,
+			name: rotation.name,
+			clientId: rotation.clientId,
+			shiftStart: shiftStart.as("shift_start"),
+			shiftLength: rotation.shiftLength,
+			assignees: rotation.assignees,
+			effectiveAssignee: effectiveAssignee.as("effective_assignee"),
+			baseAssignee: baseAssignee.as("base_assignee"),
+			createdAt: rotation.createdAt,
+			updatedAt: rotation.updatedAt,
+		})
+		.from(rotation),
 );
