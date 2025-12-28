@@ -1,4 +1,4 @@
-import type { IS, IS_Event, ListIncidentsElement } from "@fire/common";
+import type { EntryPoint, IS, IS_Event, ListIncidentsElement } from "@fire/common";
 import { incidentAnalysis } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq } from "drizzle-orm";
@@ -123,10 +123,15 @@ export const startIncident = createServerFn({ method: "POST" })
 				},
 				entryPoints: {
 					columns: {
+						id: true,
 						assigneeId: true,
 						prompt: true,
 						type: true,
 						isFallback: true,
+						rotationId: true,
+					},
+					with: {
+						rotationWithAssignee: true,
 					},
 				},
 			},
@@ -148,12 +153,26 @@ export const startIncident = createServerFn({ method: "POST" })
 				metadata.botToken = botToken;
 			}
 		}
-		const entryPoints = client.entryPoints.map((ep) => ({
-			assignee: ep.assigneeId,
-			prompt: ep.prompt,
-			isFallback: ep.isFallback,
-			// type: ep.type, // For now, not needed at the `incidentd` service
-		}));
+		const entryPoints: EntryPoint[] = client.entryPoints
+			.map((ep) => {
+				let assignee: string | null;
+				if (ep.type === "rotation") {
+					assignee = ep.rotationWithAssignee?.effectiveAssignee ?? null;
+				} else {
+					assignee = ep.assigneeId ?? null;
+				}
+				if (!assignee) {
+					return null;
+				}
+				return {
+					id: ep.id,
+					rotationId: ep.rotationId,
+					assignee,
+					prompt: ep.prompt,
+					isFallback: ep.isFallback,
+				};
+			})
+			.filter((ep) => !!ep);
 		const response = await signedFetch(
 			process.env.INCIDENTS_URL!,
 			{ clientId: context.clientId, userId: context.userId },

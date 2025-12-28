@@ -6,7 +6,7 @@ import { db } from "~/lib/db";
 import { computeIncidentMetrics } from "~/lib/incidents";
 import { sha256 } from "~/lib/utils/server";
 
-export const Route = createFileRoute("/api/incidents/metrics")({
+export const Route = createFileRoute("/api/metrics/")({
 	server: {
 		handlers: {
 			GET: async ({ request }) => {
