@@ -31,29 +31,46 @@ export const eventRegistry: EventConfigMap = {
 		iconBg: "bg-red-100",
 		iconColor: "text-red-600",
 		label: "Incident Created",
-		render: ({ data }) => (
-			<Tabs defaultValue="description" orientation="vertical" class="flex gap-0">
-				<div class="flex-1 min-w-0 pr-4">
-					<TabsContent value="description" class="mt-0">
-						<Show when={data.description} fallback={<p class="text-sm text-muted-foreground italic">No description</p>}>
-							<p class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{data.description}</p>
-						</Show>
-					</TabsContent>
-					<TabsContent value="prompt" class="mt-0">
-						<p class="text-sm text-muted-foreground leading-relaxed font-mono bg-muted p-3 rounded-md">{data.prompt}</p>
-					</TabsContent>
+		render: ({ data }) => {
+			const severity = getSeverity(data.severity);
+			return (
+				<div class="space-y-4">
+					<div class="flex items-center gap-3">
+						<div class="flex items-center gap-2">
+							<span class="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Severity</span>
+							<span class={`text-sm font-bold ${severity.color} uppercase`}>{severity.label}</span>
+						</div>
+						<span class="text-muted-foreground/40">·</span>
+						<div class="flex items-center gap-2">
+							<span class="text-sm text-muted-foreground">Assigned to</span>
+							<UserAvatar id={data.assignee} />
+						</div>
+					</div>
+
+					<Tabs defaultValue="description" orientation="vertical" class="flex gap-0">
+						<div class="flex-1 min-w-0 pr-4">
+							<TabsContent value="description" class="mt-0">
+								<Show when={data.description} fallback={<p class="text-sm text-muted-foreground italic">No description</p>}>
+									<p class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{data.description}</p>
+								</Show>
+							</TabsContent>
+							<TabsContent value="prompt" class="mt-0">
+								<p class="text-sm text-muted-foreground leading-relaxed font-mono bg-muted p-3 rounded-md">{data.prompt}</p>
+							</TabsContent>
+						</div>
+						<TabsList class="flex-col items-stretch gap-0">
+							<TabsTrigger value="description" class="text-xs py-1.5 justify-start">
+								Description
+							</TabsTrigger>
+							<TabsTrigger value="prompt" class="text-xs py-1.5 justify-start">
+								Original Prompt
+							</TabsTrigger>
+							<TabsIndicator class="left-0" />
+						</TabsList>
+					</Tabs>
 				</div>
-				<TabsList class="flex-col items-stretch gap-0">
-					<TabsTrigger value="description" class="text-xs py-1.5 justify-start">
-						Description
-					</TabsTrigger>
-					<TabsTrigger value="prompt" class="text-xs py-1.5 justify-start">
-						Original Prompt
-					</TabsTrigger>
-					<TabsIndicator class="left-0" />
-				</TabsList>
-			</Tabs>
-		),
+			);
+		},
 	},
 	STATUS_UPDATE: {
 		icon: ShieldAlert,
@@ -82,9 +99,10 @@ export const eventRegistry: EventConfigMap = {
 		iconColor: "text-blue-600",
 		label: "Assignee Changed",
 		render: ({ data }) => (
-			<p class="text-sm text-muted-foreground">
-				Assigned to <UserAvatar id={data.assignee} />
-			</p>
+			<div class="flex items-center gap-2">
+				<p class="text-sm text-muted-foreground">Assignee changed to</p>
+				<UserAvatar id={data.assignee} />
+			</div>
 		),
 	},
 	SEVERITY_UPDATE: {
@@ -107,7 +125,7 @@ export const eventRegistry: EventConfigMap = {
 		iconColor: "text-blue-600",
 		label: "New Message",
 		render: ({ data }) => (
-			<div class="space-y-1.5">
+			<div class="flex items-center gap-2">
 				<UserAvatar id={data.userId} />
 				<p class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{data.message}</p>
 			</div>

@@ -60,8 +60,11 @@ export function useCreateEntryPoint(options?: { onMutate?: (tempId: string) => v
 			return { previousEntryPoints, tempId };
 		},
 
-		onSuccess: (newEntryPoint) => {
-			if (newEntryPoint?.id) {
+		onSuccess: (newEntryPoint, _, context) => {
+			if (newEntryPoint?.id && context?.tempId) {
+				queryClient.setQueryData<GetEntryPointsResponse>(["entry-points"], (old) => {
+					return old?.map((ep) => (ep.id === context.tempId ? (newEntryPoint as GetEntryPointsResponse[number]) : ep));
+				});
 				options?.onSuccess?.(newEntryPoint.id);
 			}
 			queryClient.invalidateQueries({ queryKey: ["entry-points"] });

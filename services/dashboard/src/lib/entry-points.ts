@@ -1,4 +1,4 @@
-import { entryPoint, integration, rotationWithAssignee } from "@fire/db/schema";
+import { entryPoint, integration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq } from "drizzle-orm";
 import { authMiddleware } from "./auth-middleware";
@@ -19,11 +19,8 @@ export const getEntryPoints = createServerFn({
 				rotationId: entryPoint.rotationId,
 				isFallback: entryPoint.isFallback,
 				createdAt: entryPoint.createdAt,
-				rotationName: rotationWithAssignee.name,
-				effectiveAssignee: rotationWithAssignee.effectiveAssignee,
 			})
 			.from(entryPoint)
-			.leftJoin(rotationWithAssignee, eq(entryPoint.rotationId, rotationWithAssignee.id))
 			.where(eq(entryPoint.clientId, context.clientId))
 			.orderBy(desc(entryPoint.createdAt));
 
@@ -43,8 +40,6 @@ export const getEntryPoints = createServerFn({
 					prompt: ep.prompt,
 					rotationId: ep.rotationId,
 					isFallback: ep.isFallback,
-					name: ep.rotationName,
-					assigneeId: ep.effectiveAssignee,
 				};
 			} else {
 				throw new Error("Invalid entry point type");
@@ -98,8 +93,8 @@ export const createEntryPoint = createServerFn({ method: "POST" })
 			id: newEntryPoint.id,
 			type: newEntryPoint.type,
 			prompt: newEntryPoint.prompt,
-			assigneeId: newEntryPoint.assigneeId,
-			rotationId: newEntryPoint.rotationId,
+			assigneeId: data.type === "slack-user" ? newEntryPoint.assigneeId : undefined,
+			rotationId: data.type === "rotation" ? newEntryPoint.rotationId : undefined,
 			isFallback: newEntryPoint.isFallback,
 		};
 	});

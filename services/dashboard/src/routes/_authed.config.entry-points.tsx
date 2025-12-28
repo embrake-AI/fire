@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { Check, ChevronDown, ChevronUp, Link2, LoaderCircle, Plus, RefreshCw, Star, TriangleAlert, User, Users, X } from "lucide-solid";
-import { type Accessor, createEffect, createMemo, createSignal, For, Index, Show, Suspense } from "solid-js";
+import { type Accessor, createMemo, createSignal, For, Index, Show, Suspense } from "solid-js";
 import { SlackEntityPicker, UserAvatar } from "~/components/SlackEntityPicker";
 import { AutoSaveTextarea } from "~/components/ui/auto-save-textarea";
 import { Badge } from "~/components/ui/badge";
@@ -14,6 +14,7 @@ import { getEntryPoints } from "~/lib/entry-points";
 import { toCreateInput, toCreateRotationInput, useCreateEntryPoint, useDeleteEntryPoint, useSetFallbackEntryPoint, useUpdateEntryPointPrompt } from "~/lib/entry-points.hooks";
 import { getIntegrations } from "~/lib/integrations";
 import { getRotations } from "~/lib/rotation";
+import { useSlackUser } from "~/lib/useSlackUser";
 
 export const Route = createFileRoute("/_authed/config/entry-points")({
 	component: EntryPointsConfig,
@@ -38,18 +39,37 @@ function EntryPointsContent() {
 		queryFn: getEntryPointsFn,
 		staleTime: 60_000,
 	}));
-	const entryPoints = () => entryPointsQuery.data ?? [];
+	const entryPoints = createMemo(
+		() =>
+			entryPointsQuery.data?.map((ep) => {
+				const type = ep.type === "rotation" ? "rotation" : "user";
+				return {
+					id: ep.id,
+					prompt: ep.prompt,
+					isFallback: ep.isFallback,
+					...(type === "rotation"
+						? ({
+								type,
+								rotationId: ep.rotationId!,
+							} as const)
+						: ({ type, assigneeId: ep.assigneeId! } as const)),
+				};
+			}) ?? [],
+	);
 
 	const [pickerStep, setPickerStep] = createSignal<PickerStep>("closed");
-	const [newlyCreatedId, setNewlyCreatedId] = createSignal<string | null>(null);
+	const [expandedId, setExpandedId] = createSignal<string | null>(null);
 
 	let inFlightCreate: ReturnType<typeof createMutation.mutateAsync> | null = null;
 	const createMutation = useCreateEntryPoint({
 		onMutate: (tempId) => {
 			setPickerStep("closed");
-			setNewlyCreatedId(tempId);
+			setExpandedId(tempId);
 		},
-		onSuccess: (realId) => realId,
+		onSuccess: (realId) => {
+			setExpandedId(realId);
+			return realId;
+		},
 		onSettled: () => {
 			inFlightCreate = null;
 		},
@@ -68,7 +88,14 @@ function EntryPointsContent() {
 	};
 
 	const handleDelete = (id: string) => {
+		if (expandedId() === id) {
+			setExpandedId(null);
+		}
 		deleteMutation.mutate(id);
+	};
+
+	const toggleExpanded = (id: string) => {
+		setExpandedId((current) => (current === id ? null : id));
 	};
 
 	const handleUpdatePrompt = async (id: string, prompt: string) => {
@@ -98,19 +125,19 @@ function EntryPointsContent() {
 					<div class="space-y-3">
 						<Index each={entryPoints()}>
 							{(entryPoint, index) => (
-								<EntryPointCard
-									entryPoint={entryPoint()}
-									index={index}
-									onDelete={handleDelete}
-									onUpdatePrompt={handleUpdatePrompt}
-									onSetFallback={handleSetFallback}
-									isDeleting={deleteMutation.isPending && deleteMutation.variables === entryPoint().id}
-									isSettingFallback={setFallbackMutation.isPending}
-									isNewlyCreated={newlyCreatedId() === entryPoint().id}
-									onEditComplete={() => {
-										setNewlyCreatedId(null);
-									}}
-								/>
+								<Suspense fallback={<EntryPointCardSkeleton />}>
+									<EntryPointCard
+										entryPoint={entryPoint()}
+										index={index}
+										onDelete={handleDelete}
+										onUpdatePrompt={(prompt) => handleUpdatePrompt(entryPoint().id, prompt)}
+										onSetFallback={handleSetFallback}
+										isDeleting={deleteMutation.isPending && deleteMutation.variables === entryPoint().id}
+										isSettingFallback={setFallbackMutation.isPending}
+										isExpanded={expandedId() === entryPoint().id}
+										onToggle={() => toggleExpanded(entryPoint().id)}
+									/>
+								</Suspense>
 							)}
 						</Index>
 					</div>
@@ -398,39 +425,53 @@ function EntryPointsFooter(props: EntryPointsFooterProps) {
 }
 
 // --- Entry Point Card ---
-type GetEntryPointsResponse = Awaited<ReturnType<typeof getEntryPoints>>;
 interface EntryPointCardProps {
-	entryPoint: GetEntryPointsResponse[number];
+	entryPoint: {
+		id: string;
+		prompt: string;
+		isFallback: boolean;
+	} & (
+		| {
+				type: "user";
+				assigneeId: string;
+		  }
+		| {
+				type: "rotation";
+				rotationId: string;
+		  }
+	);
 	index: number;
 	onDelete: (id: string) => void;
-	onUpdatePrompt: (id: string, prompt: string) => Promise<void>;
+	onUpdatePrompt: (prompt: string) => Promise<void>;
 	onSetFallback: (id: string) => void;
 	isDeleting: boolean;
 	isSettingFallback: boolean;
-	isNewlyCreated: boolean;
-	onEditComplete: () => void;
+	isExpanded: boolean;
+	onToggle: () => void;
 }
 
 function EntryPointCard(props: EntryPointCardProps) {
-	const [isEditing, setIsEditing] = createSignal(false);
+	const handleSave = async (value: string) => {
+		await props.onUpdatePrompt(value);
+	};
 
-	createEffect(() => {
-		if (props.isNewlyCreated) {
-			setIsEditing(true);
+	const getRotationsFn = useServerFn(getRotations);
+	const rotationsQuery = useQuery(() => ({
+		queryKey: ["rotations"],
+		queryFn: getRotationsFn,
+		staleTime: 60_000,
+	}));
+
+	const assignee = createMemo(() => {
+		if (props.entryPoint.type === "user") {
+			return props.entryPoint.assigneeId;
+		} else if (props.entryPoint.type === "rotation") {
+			const rotationId = props.entryPoint.rotationId;
+			return rotationsQuery.data?.find((r) => r.id === rotationId)?.currentAssignee ?? "N/A";
+		} else {
+			return "N/A";
 		}
 	});
-
-	const handleToggle = () => {
-		const wasEditing = isEditing();
-		setIsEditing((prev) => !prev);
-		if (wasEditing) {
-			props.onEditComplete();
-		}
-	};
-
-	const handleSave = async (value: string) => {
-		await props.onUpdatePrompt(props.entryPoint.id, value);
-	};
 
 	const getFirstLine = (text: string) => {
 		if (!text) return "";
@@ -439,16 +480,26 @@ function EntryPointCard(props: EntryPointCardProps) {
 	};
 
 	const hasMissingPrompt = () => !props.entryPoint.prompt.trim();
-	const incomplete = () => hasMissingPrompt() && !isEditing() && !props.entryPoint.isFallback;
+	const incomplete = () => hasMissingPrompt() && !props.isExpanded && !props.entryPoint.isFallback;
+
+	const user = useSlackUser(assignee);
+
+	const name = createMemo(() => {
+		if (props.entryPoint.type === "rotation") {
+			const rotationId = props.entryPoint.rotationId;
+			return rotationsQuery.data?.find((r) => r.id === rotationId)?.name ?? "N/A";
+		}
+		return user()?.name ?? props.entryPoint.assigneeId;
+	});
 
 	return (
-		<ConfigCard hasWarning={incomplete()} isActive={isEditing()}>
-			<ConfigCardRow onClick={handleToggle}>
-				<UserAvatar id={props.entryPoint.assigneeId} />
+		<ConfigCard hasWarning={incomplete()} isActive={props.isExpanded}>
+			<ConfigCardRow onClick={props.onToggle}>
+				<UserAvatar id={assignee()} />
 
 				<span class="flex-1 min-w-0">
 					<span class="flex items-center gap-2">
-						<ConfigCardTitle class="shrink-0">{props.entryPoint.name}</ConfigCardTitle>
+						<ConfigCardTitle class="shrink-0">{name()}</ConfigCardTitle>
 
 						<Show
 							when={!incomplete()}
@@ -474,7 +525,7 @@ function EntryPointCard(props: EntryPointCardProps) {
 						</span>
 					</Show>
 
-					<ConfigCardActions animated alwaysVisible={isEditing()}>
+					<ConfigCardActions animated alwaysVisible={props.isExpanded}>
 						<Show when={!props.entryPoint.isFallback}>
 							<Button
 								variant="ghost"
@@ -495,13 +546,13 @@ function EntryPointCard(props: EntryPointCardProps) {
 						<ConfigCardDeleteButton onDelete={() => props.onDelete(props.entryPoint.id)} isDeleting={props.isDeleting} alwaysVisible />
 					</ConfigCardActions>
 
-					<Show when={isEditing()} fallback={<ChevronDown class="w-4 h-4 text-muted-foreground" />}>
+					<Show when={props.isExpanded} fallback={<ChevronDown class="w-4 h-4 text-muted-foreground" />}>
 						<ChevronUp class="w-4 h-4 text-muted-foreground" />
 					</Show>
 				</span>
 			</ConfigCardRow>
 
-			<Show when={isEditing()}>
+			<Show when={props.isExpanded}>
 				<div class="px-4 pb-4">
 					<AutoSaveTextarea
 						id={`prompt-${props.entryPoint.id}`}
