@@ -123,6 +123,14 @@ export const sendSlackMessage = createServerFn({ method: "POST" })
 			throw new Error("Slack user integration not found");
 		}
 		const { userToken } = slackUserIntegration.data;
+		console.log("fetching:", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${userToken.slice(0, 5)}...`,
+			},
+			body: JSON.stringify({ channel: data.channel, text: data.message, thread_ts: data.thread_ts }),
+		});
 		const response = await fetch(`https://slack.com/api/chat.postMessage`, {
 			method: "POST",
 			headers: {
@@ -134,6 +142,8 @@ export const sendSlackMessage = createServerFn({ method: "POST" })
 		if (!response.ok) {
 			throw new Error("Failed to send message to Slack");
 		}
+		const responseData = await response.json();
+		console.log("response:", responseData);
 		return { success: true };
 	});
 
