@@ -13,7 +13,7 @@ import { Switch, SwitchControl, SwitchLabel, SwitchThumb } from "~/components/ui
 import { Textarea } from "~/components/ui/textarea";
 import { getEntryPoints } from "~/lib/entry-points";
 import { startIncident } from "~/lib/incidents";
-import { getIntegrations, getSlackBotChannels } from "~/lib/integrations";
+import { getSlackBotChannels, getWorkspaceIntegrations } from "~/lib/integrations";
 import type { SlackChannel } from "~/lib/slack";
 
 export default function StartIncidentButton() {
@@ -61,10 +61,10 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 		staleTime: 60_000,
 	}));
 
-	const getIntegrationsFn = useServerFn(getIntegrations);
+	const getWorkspaceIntegrationsFn = useServerFn(getWorkspaceIntegrations);
 	const integrationsQuery = useQuery(() => ({
 		queryKey: ["integrations"],
-		queryFn: getIntegrationsFn,
+		queryFn: getWorkspaceIntegrationsFn,
 		staleTime: 60_000,
 	}));
 

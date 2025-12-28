@@ -1,4 +1,4 @@
-import { integration } from "@fire/db/schema";
+import { integration, userIntegration } from "@fire/db/schema";
 import { createFileRoute } from "@tanstack/solid-router";
 import { db } from "~/lib/db";
 import { extractSigned, mustGetEnv } from "~/lib/utils/server";
@@ -13,6 +13,12 @@ type SlackOAuthAccessResponse = {
 	app_id?: string;
 	team?: { id: string; name: string };
 	enterprise?: { id: string; name: string } | null;
+	authed_user?: {
+		id?: string;
+		scope?: string;
+		access_token?: string;
+		token_type?: "user";
+	};
 };
 
 export const Route = createFileRoute("/slack/oauth/callback")({
@@ -64,34 +70,25 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 				const teamId = tokenJson.team?.id;
 				const teamName = tokenJson.team?.name;
 				const appId = tokenJson.app_id;
+
 				const botUserId = tokenJson.bot_user_id;
 				const botToken = tokenJson.access_token;
 				const botScopes = tokenJson.scope;
 
-				if (!teamId || !teamName || !appId || !botUserId || !botToken || !botScopes) {
+				const slackUserId = tokenJson.authed_user?.id;
+				const userToken = tokenJson.authed_user?.access_token;
+				const userScopes = tokenJson.authed_user?.scope;
+
+				if (!teamId || !teamName || !appId) {
 					return new Response("Slack response missing required fields", { status: 500 });
 				}
 
-				// TODO: Encrypt botToken at rest for production security
-				await db
-					.insert(integration)
-					.values({
-						clientId: tenantClientId,
-						platform: "slack",
-						data: {
-							teamId,
-							teamName,
-							enterpriseId: tokenJson.enterprise?.id ?? null,
-							appId,
-							botUserId,
-							botToken,
-							botScopes: botScopes.split(","),
-						},
-						createdBy: userId,
-					})
-					.onConflictDoUpdate({
-						target: [integration.clientId, integration.platform],
-						set: {
+				if (botUserId && botToken && botScopes) {
+					await db
+						.insert(integration)
+						.values({
+							clientId: tenantClientId,
+							platform: "slack",
 							data: {
 								teamId,
 								teamName,
@@ -101,9 +98,56 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 								botToken,
 								botScopes: botScopes.split(","),
 							},
-							updatedAt: new Date(),
-						},
-					});
+							createdBy: userId,
+						})
+						.onConflictDoUpdate({
+							target: [integration.clientId, integration.platform],
+							set: {
+								data: {
+									teamId,
+									teamName,
+									enterpriseId: tokenJson.enterprise?.id ?? null,
+									appId,
+									botUserId,
+									botToken,
+									botScopes: botScopes.split(","),
+								},
+								updatedAt: new Date(),
+							},
+						});
+				}
+				if (slackUserId && userToken && userScopes) {
+					await db
+						.insert(userIntegration)
+						.values({
+							userId: userId,
+							platform: "slack",
+							data: {
+								teamId,
+								teamName,
+								enterpriseId: tokenJson.enterprise?.id ?? null,
+								appId,
+								userId: slackUserId,
+								userToken,
+								userScopes: userScopes.split(","),
+							},
+						})
+						.onConflictDoUpdate({
+							target: [userIntegration.userId, userIntegration.platform],
+							set: {
+								data: {
+									teamId,
+									teamName,
+									enterpriseId: tokenJson.enterprise?.id ?? null,
+									appId,
+									userId: slackUserId,
+									userToken,
+									userScopes: userScopes.split(","),
+								},
+								updatedAt: new Date(),
+							},
+						});
+				}
 
 				const redirectTo = new URL("/config/integrations?installed=slack", url.origin);
 

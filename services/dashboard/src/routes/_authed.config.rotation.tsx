@@ -23,7 +23,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
-import { getIntegrations } from "~/lib/integrations";
+import { getWorkspaceIntegrations } from "~/lib/integrations";
 import { getRotations } from "~/lib/rotation";
 import {
 	toAddAssigneeInput,
@@ -570,10 +570,10 @@ interface AddAssigneePickerContentProps {
 }
 
 function AddAssigneePickerContent(props: AddAssigneePickerContentProps) {
-	const getIntegrationsFn = useServerFn(getIntegrations);
+	const getWorkspaceIntegrationsFn = useServerFn(getWorkspaceIntegrations);
 	const integrationsQuery = useQuery(() => ({
 		queryKey: ["integrations"],
-		queryFn: getIntegrationsFn,
+		queryFn: getWorkspaceIntegrationsFn,
 		staleTime: 60_000,
 	}));
 

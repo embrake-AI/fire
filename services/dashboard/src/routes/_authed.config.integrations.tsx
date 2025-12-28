@@ -10,7 +10,10 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { showToast } from "~/components/ui/toast";
-import { disconnectIntegration, getInstallUrl, getIntegrations } from "~/lib/integrations";
+import { disconnectUserIntegration, disconnectWorkspaceIntegration, getInstallUrl, getUserIntegrations, getWorkspaceIntegrations } from "~/lib/integrations";
+
+type WorkspaceIntegrationsData = Awaited<ReturnType<typeof getWorkspaceIntegrations>>;
+type UserIntegrationsData = Awaited<ReturnType<typeof getUserIntegrations>>;
 
 export const Route = createFileRoute("/_authed/config/integrations")({
 	component: IntegrationsConfig,
@@ -23,14 +26,25 @@ export const Route = createFileRoute("/_authed/config/integrations")({
 
 function IntegrationsConfig() {
 	return (
-		<Card>
-			<CardHeader>
-				<CardTitle>Integrations</CardTitle>
-			</CardHeader>
-			<Suspense fallback={<IntegrationsContentSkeleton />}>
-				<IntegrationsContent />
-			</Suspense>
-		</Card>
+		<div class="space-y-6">
+			<Card>
+				<CardHeader>
+					<CardTitle>Workspace Integrations</CardTitle>
+				</CardHeader>
+				<Suspense fallback={<IntegrationsContentSkeleton />}>
+					<WorkspaceIntegrationsContent />
+				</Suspense>
+			</Card>
+
+			<Card>
+				<CardHeader>
+					<CardTitle>My Integrations</CardTitle>
+				</CardHeader>
+				<Suspense fallback={<IntegrationsContentSkeleton />}>
+					<UserIntegrationsContent />
+				</Suspense>
+			</Card>
+		</div>
 	);
 }
 
@@ -48,15 +62,15 @@ function IntegrationsContentSkeleton() {
 	);
 }
 
-function IntegrationsContent() {
+function WorkspaceIntegrationsContent() {
 	const params = Route.useSearch();
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 
-	const getIntegrationsFn = useServerFn(getIntegrations);
+	const getWorkspaceIntegrationsFn = useServerFn(getWorkspaceIntegrations);
 	const integrationsQuery = useQuery(() => ({
-		queryKey: ["integrations"],
-		queryFn: getIntegrationsFn,
+		queryKey: ["workspace_integrations"],
+		queryFn: getWorkspaceIntegrationsFn,
 		staleTime: 60_000,
 	}));
 
@@ -78,7 +92,7 @@ function IntegrationsContent() {
 	const handleConnect = async (platform: "slack") => {
 		setIsConnecting(true);
 		try {
-			const url = await getInstallUrlFn({ data: platform });
+			const url = await getInstallUrlFn({ data: { platform, type: "workspace" } });
 			if (url) {
 				window.location.href = url;
 			}
@@ -87,36 +101,117 @@ function IntegrationsContent() {
 		}
 	};
 
-	const disconnectFn = useServerFn(disconnectIntegration);
+	const disconnectFn = useServerFn(disconnectWorkspaceIntegration);
 	const disconnectMutation = useMutation(() => ({
-		mutationFn: disconnectFn,
-		onMutate: async ({ data }) => {
-			await queryClient.cancelQueries({ queryKey: ["integrations"] });
-			const previousData = queryClient.getQueryData<typeof integrationsQuery.data>(["integrations"]);
-			queryClient.setQueryData(["integrations"], previousData?.filter((i) => i.platform !== data) ?? []);
+		mutationFn: (platform: "slack") => disconnectFn({ data: platform }),
+		onMutate: async (platform) => {
+			await queryClient.cancelQueries({ queryKey: ["workspace_integrations"] });
+			const previousData = queryClient.getQueryData<WorkspaceIntegrationsData>(["workspace_integrations"]);
+			if (previousData) {
+				queryClient.setQueryData(
+					["workspace_integrations"],
+					previousData.filter((i) => i.platform !== platform),
+				);
+			}
 			return { previousData };
 		},
-		onSuccess: async (_, variables) => {
-			await queryClient.invalidateQueries({ queryKey: ["integrations"] });
+		onSuccess: async (_, platform) => {
+			await queryClient.invalidateQueries({ queryKey: ["workspace_integrations"] });
 			showToast({
 				title: "Integration disconnected",
-				description: `${variables.data} has been successfully disconnected from your workspace.`,
+				description: `${platform} has been successfully disconnected from your workspace.`,
 				variant: "success",
 			});
 		},
 		onError: (_err, _variables, context) => {
 			if (context?.previousData) {
-				queryClient.setQueryData(["integrations"], context.previousData);
+				queryClient.setQueryData(["workspace_integrations"], context.previousData);
 			}
 		},
 	}));
 
 	const handleDisconnect = (platform: "slack") => {
-		disconnectMutation.mutate({ data: platform });
+		disconnectMutation.mutate(platform);
 	};
 
 	const isConnected = (platform: "slack") => {
-		return integrationsQuery.data?.some((integration) => integration.platform === platform) ?? false;
+		return integrationsQuery.data?.some((i) => i.platform === platform) ?? false;
+	};
+
+	return (
+		<CardContent>
+			<IntegrationCard
+				name="Slack"
+				icon={<SlackIcon class="size-4" />}
+				connected={() => isConnected("slack")}
+				onConnect={() => handleConnect("slack")}
+				loading={isConnecting() || disconnectMutation.isPending}
+				onDisconnect={() => handleDisconnect("slack")}
+			/>
+		</CardContent>
+	);
+}
+
+function UserIntegrationsContent() {
+	const queryClient = useQueryClient();
+
+	const getUserIntegrationsFn = useServerFn(getUserIntegrations);
+	const integrationsQuery = useQuery(() => ({
+		queryKey: ["user_integrations"],
+		queryFn: getUserIntegrationsFn,
+		staleTime: 60_000,
+	}));
+
+	const getInstallUrlFn = useServerFn(getInstallUrl);
+	const [isConnecting, setIsConnecting] = createSignal(false);
+
+	const handleConnect = async (platform: "slack") => {
+		setIsConnecting(true);
+		try {
+			const url = await getInstallUrlFn({ data: { platform, type: "user" } });
+			if (url) {
+				window.location.href = url;
+			}
+		} finally {
+			setIsConnecting(false);
+		}
+	};
+
+	const disconnectFn = useServerFn(disconnectUserIntegration);
+	const disconnectMutation = useMutation(() => ({
+		mutationFn: (platform: "slack") => disconnectFn({ data: platform }),
+		onMutate: async (platform) => {
+			await queryClient.cancelQueries({ queryKey: ["user_integrations"] });
+			const previousData = queryClient.getQueryData<UserIntegrationsData>(["user_integrations"]);
+			if (previousData) {
+				queryClient.setQueryData(
+					["user_integrations"],
+					previousData.filter((i) => i.platform !== platform),
+				);
+			}
+			return { previousData };
+		},
+		onSuccess: async (_, platform) => {
+			await queryClient.invalidateQueries({ queryKey: ["user_integrations"] });
+			showToast({
+				title: "Integration disconnected",
+				description: `${platform} has been successfully disconnected from your user account.`,
+				variant: "success",
+			});
+		},
+		onError: (_err, _variables, context) => {
+			if (context?.previousData) {
+				queryClient.setQueryData(["user_integrations"], context.previousData);
+			}
+		},
+	}));
+
+	const handleDisconnect = (platform: "slack") => {
+		disconnectMutation.mutate(platform);
+	};
+
+	const isConnected = (platform: "slack") => {
+		return integrationsQuery.data?.some((i) => i.platform === platform) ?? false;
 	};
 
 	return (

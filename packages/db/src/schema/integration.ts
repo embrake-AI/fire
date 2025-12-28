@@ -35,3 +35,18 @@ export const integration = pgTable(
 	},
 	(table) => [uniqueIndex("integration_client_platform_idx").on(table.clientId, table.platform)],
 );
+
+export type UserSlackIntegrationData = Omit<SlackIntegrationData, "botUserId" | "botToken" | "botScopes"> & {
+	userId: string;
+	userToken: string;
+	userScopes: string[];
+};
+
+export const userIntegration = pgTable("user_integration", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+	platform: platformType("platform").notNull(),
+	data: jsonb("data").$type<UserSlackIntegrationData>().notNull(),
+	installedAt: timestamp("installed_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).$onUpdate(() => new Date()),
+});

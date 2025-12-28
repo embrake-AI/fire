@@ -2,11 +2,11 @@ import { useQuery } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import { createMemo } from "solid-js";
 import { getSlackUsers } from "./entry-points";
-import type { getIntegrations } from "./integrations";
+import type { getWorkspaceIntegrations } from "./integrations";
 
-type GetIntegrationsResponse = Awaited<ReturnType<typeof getIntegrations>>;
+type GetWorkspaceIntegrationsResponse = Awaited<ReturnType<typeof getWorkspaceIntegrations>>;
 export function useSlackUsers() {
-	const integrationsQuery = useQuery<GetIntegrationsResponse>(() => ({
+	const integrationsQuery = useQuery<GetWorkspaceIntegrationsResponse>(() => ({
 		queryKey: ["integrations"],
 		staleTime: Infinity,
 		enabled: false,

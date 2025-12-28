@@ -12,7 +12,7 @@ import { ConfigCard, ConfigCardActions, ConfigCardDeleteButton, ConfigCardRow, C
 import { Skeleton } from "~/components/ui/skeleton";
 import { getEntryPoints } from "~/lib/entry-points";
 import { toCreateInput, toCreateRotationInput, useCreateEntryPoint, useDeleteEntryPoint, useSetFallbackEntryPoint, useUpdateEntryPointPrompt } from "~/lib/entry-points.hooks";
-import { getIntegrations } from "~/lib/integrations";
+import { getWorkspaceIntegrations } from "~/lib/integrations";
 import { getRotations } from "~/lib/rotation";
 import { useSlackUser } from "~/lib/useSlackUser";
 
@@ -222,10 +222,10 @@ function AddEntryPointPicker(props: AddEntryPointPickerProps) {
 }
 
 function TypeSelectionContent(props: { setStep: (step: PickerStep) => void }) {
-	const getIntegrationFn = useServerFn(getIntegrations);
+	const getWorkspaceIntegrationsFn = useServerFn(getWorkspaceIntegrations);
 	const integrationsQuery = useQuery(() => ({
 		queryKey: ["integrations"],
-		queryFn: getIntegrationFn,
+		queryFn: getWorkspaceIntegrationsFn,
 		staleTime: 60_000,
 	}));
 

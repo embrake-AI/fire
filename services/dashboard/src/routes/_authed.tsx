@@ -5,7 +5,7 @@ import { createMemo, Show } from "solid-js";
 import Header from "~/components/Header";
 import { getAuth, isAuthReady } from "~/lib/auth-store";
 import { getEntryPoints, getSlackUsers } from "~/lib/entry-points";
-import { getIntegrations } from "~/lib/integrations";
+import { getWorkspaceIntegrations } from "~/lib/integrations";
 
 export const Route = createFileRoute("/_authed")({
 	beforeLoad: ({ location }) => {
@@ -30,7 +30,7 @@ function AuthedLayout() {
 		return !!auth?.userId && !!auth?.clientId;
 	});
 	const getEntryPointsFn = useServerFn(getEntryPoints);
-	const getIntegrationsFn = useServerFn(getIntegrations);
+	const getWorkspaceIntegrationsFn = useServerFn(getWorkspaceIntegrations);
 	const getSlackUsersFn = useServerFn(getSlackUsers);
 
 	// app-wide interesting data. Kept to make things feel more responsive.
@@ -42,7 +42,7 @@ function AuthedLayout() {
 	}));
 	const integrationsQuery = useQuery(() => ({
 		queryKey: ["integrations"],
-		queryFn: getIntegrationsFn,
+		queryFn: getWorkspaceIntegrationsFn,
 		staleTime: 60_000,
 		enabled: authed(),
 	}));
