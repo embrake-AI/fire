@@ -100,7 +100,7 @@ function ContentSkeleton() {
 
 | Use Case                             | Tool         |
 | ------------------------------------ | ------------ |
-| Data fetching with SSR streaming     | `<Suspense>` |
+| Data fetching with tanstack query    | `<Suspense>` |
 | Conditional rendering based on state | `<Show>`     |
 | Toggle visibility based on signals   | `<Show>`     |
 

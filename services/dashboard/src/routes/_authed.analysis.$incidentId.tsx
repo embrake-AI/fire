@@ -193,7 +193,7 @@ function AnalysisHeader(props: { analysis: Accessor<IncidentAnalysis> }) {
 				<span class="text-muted-foreground/40">·</span>
 
 				<div class="flex items-center gap-2">
-					<UserAvatar id={analysis().assignee} />
+					<UserAvatar id={analysis().assignee} withName />
 				</div>
 
 				<span class="text-muted-foreground/40">·</span>

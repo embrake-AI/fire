@@ -112,7 +112,7 @@ function EntityRow(props: { user: SlackUser; onSelect: SlackEntityPickerProps["o
 	);
 }
 
-export function UserAvatar(props: { id: string }) {
+export function UserAvatar(props: { id: string; withName?: boolean }) {
 	const user = useSlackUser(() => props.id);
 
 	const name = () => user()?.name ?? "Unknown";
@@ -128,6 +128,11 @@ export function UserAvatar(props: { id: string }) {
 	return (
 		<Show when={avatar()} fallback={<div class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-medium text-sm">{initials()}</div>}>
 			<img src={avatar()} alt={name()} class="w-8 h-8 rounded-full object-cover shrink-0" />
+			<Show when={props.withName && name()}>
+				<div class="flex flex-col">
+					<span class="truncate">{name()}</span>
+				</div>
+			</Show>
 		</Show>
 	);
 }

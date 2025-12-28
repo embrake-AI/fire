@@ -8,7 +8,7 @@ Fire is a lean incident management system designed around one principle: when th
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                         Slack                               │
 │                    (commands, alerts)                        │
@@ -28,10 +28,10 @@ Fire is a lean incident management system designed around one principle: when th
           ▼                               ▼
 ┌──────────────────┐           ┌──────────────────┐
 │    dashboard     │           │     @fire/db     │
-│   SolidJS + SSR  │           │  Drizzle schema  │
+│   SolidJS (SPA)  │           │  Drizzle schema  │
 │                  │◄─────────►│                  │
 │ • Incident list  │           │ • Assignees      │
-│ • Config UI      │           │ • Ignore rules   │
+│ • Config UI       │           │ • Ignore rules   │
 │ • Status updates │           │ • Migrations     │
 └──────────────────┘           └──────────────────┘
 ```
@@ -47,12 +47,14 @@ The incident runtime. Built on Cloudflare Workers with Durable Objects for per-i
 **Philosophy:** Incidents are long-running, stateful processes—not rows in a database. `incidentd` treats each incident as a first-class runtime with its own lifecycle, enabling atomic state transitions and consistent reads without distributed coordination headaches.
 
 **What it does:**
+
 - Maintains canonical state for each active incident
 - Handles Slack interactions (commands, button clicks, modals)
 - Exposes APIs for the dashboard to read/write incident state
 - Persists state transitions for recovery and audit
 
 **What it is not:**
+
 - A UI
 - An AI reasoning engine
 - A notification dispatcher
@@ -63,16 +65,18 @@ The incident runtime. Built on Cloudflare Workers with Durable Objects for per-i
 
 ### `services/dashboard`
 
-The command center. A SolidJS application with server-side rendering via TanStack Start.
+The command center. A SolidJS application built with TanStack Start, configured as a Single Page Application (SPA).
 
 **Philosophy:** When you're firefighting at 3 AM, you need an interface that respects your cognitive load. The dashboard does three things well: show what's broken, show who's handling it, and get out of your way.
 
 **Key screens:**
+
 - **Incident list** — Active incidents prominently displayed with visual hierarchy by severity
 - **Incident detail** — Full context, timeline, and actions for a single incident
 - **Configuration** — Manage assignees, escalation paths, and routing rules
 
 **Design principles:**
+
 - Slack-first roster (pulls users/groups from your workspace)
 - Configuration as documentation (no tribal knowledge)
 - Less is more (minimal UI for stressed engineers)
@@ -84,6 +88,7 @@ The command center. A SolidJS application with server-side rendering via TanStac
 Shared database schema using Drizzle ORM. Published as `@fire/db` for use across services.
 
 **Contains:**
+
 - `assignee` — Slack users/groups that can be assigned to incidents, with natural language prompts describing their expertise
 
 ---
@@ -131,4 +136,3 @@ Your team lives in Slack. Fire treats it as the communication backbone while the
 ## License
 
 MIT
-
