@@ -309,5 +309,6 @@ function incidentBlocks({
 	return blocks;
 }
 
-// TODO: We could post dashboard messages to slack. Not needed for now.
+// TODO: We could post dashboard messages to slack. Now from dashboard we post directly to slack.
+// (Not done yet because it requires passing userToken, and I need to think how to pass additional context)
 export const messageAdded = undefined;

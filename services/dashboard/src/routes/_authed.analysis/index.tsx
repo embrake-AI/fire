@@ -116,9 +116,9 @@ function AnalysisDashboard() {
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 					<MetricSummaryCard title="Total Incidents" value={incidents().length} icon={<ChartColumn class="w-5 h-5 text-blue-500" />} />
 					<MetricSummaryCard
-						title="Avg. Time to Mitigate"
+						title="Avg. Time to Resolve"
 						value={formatDuration(
-							incidents().reduce((acc, inc) => acc + (inc.metrics.timeToMitigate ?? 0), 0) / (incidents().filter((i) => i.metrics.timeToMitigate !== null).length || 1),
+							incidents().reduce((acc, inc) => acc + (inc.metrics.totalDuration ?? 0), 0) / (incidents().filter((i) => i.metrics.totalDuration !== null).length || 1),
 						)}
 						icon={<Target class="w-5 h-5 text-emerald-500" />}
 					/>
