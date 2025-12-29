@@ -307,7 +307,7 @@ function AddMemberSelector(props: { teamId: string; existingMemberIds: string[] 
 
 	return (
 		<Popover open={open()} onOpenChange={setOpen}>
-			<PopoverTrigger as={Button} disabled={addTeamMemberMutation.isPending}>
+			<PopoverTrigger as={Button}>
 				<Plus class="w-4 h-4 mr-2" />
 				Add Member
 			</PopoverTrigger>
