@@ -5,7 +5,7 @@ import { createEffect, on, onMount, Show } from "solid-js";
 import { HydrationScript } from "solid-js/web";
 import { Button } from "~/components/ui/button";
 import { Toaster } from "~/components/ui/toast";
-import { initializeAuth, isAuthReady } from "~/lib/auth-store";
+import { initializeAuth, isAuthReady } from "~/lib/auth/auth-store";
 import styleCss from "~/styles.css?url";
 
 interface RouterContext {
@@ -24,6 +24,10 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 	shellComponent: RootShell,
 	notFoundComponent: NotFound,
 	errorComponent: ErrorComponent,
+	onError: (error) => {
+		console.error(error);
+		console.error(error.stack);
+	},
 	ssr: false,
 });
 

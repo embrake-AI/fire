@@ -5,6 +5,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import type { SlackUser } from "~/lib/slack";
 import { useSlackUser } from "~/lib/useSlackUser";
 import { useSlackUsers } from "~/lib/useSlackUsers";
+import { UserAvatar } from "./UserAvatar";
 
 export type SlackEntity = { type: "user"; id: string; name?: string; avatar?: string };
 
@@ -99,7 +100,7 @@ function EntityRow(props: { user: SlackUser; onSelect: SlackEntityPickerProps["o
 			disabled={props.disabled}
 		>
 			<div class="flex items-center gap-3 w-full">
-				<UserAvatar id={props.user.id} />
+				<SlackAvatar id={props.user.id} />
 				<div class="flex-1 min-w-0">
 					<div class="text-sm font-medium">{props.user.name}</div>
 					<div class="text-xs text-muted-foreground truncate">{props.user.email}</div>
@@ -112,27 +113,9 @@ function EntityRow(props: { user: SlackUser; onSelect: SlackEntityPickerProps["o
 	);
 }
 
-export function UserAvatar(props: { id: string; withName?: boolean }) {
+// TODO: Remove this export, every `assignee/createdBy...` etc should be fire users
+export function SlackAvatar(props: { id: string; withName?: boolean }) {
 	const user = useSlackUser(() => props.id);
 
-	const name = () => user()?.name ?? "Unknown";
-	const avatar = () => user()?.avatar;
-
-	const initials = () =>
-		name()
-			.split(" ")
-			.map((n) => n[0])
-			.join("")
-			.slice(0, 2);
-
-	return (
-		<Show when={avatar()} fallback={<div class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-medium text-sm">{initials()}</div>}>
-			<img src={avatar()} alt={name()} class="w-8 h-8 rounded-full object-cover shrink-0" />
-			<Show when={props.withName && name()}>
-				<div class="flex flex-col">
-					<span class="truncate">{name()}</span>
-				</div>
-			</Show>
-		</Show>
-	);
+	return <UserAvatar name={() => user()?.name ?? props.id} avatar={() => user()?.avatar} />;
 }

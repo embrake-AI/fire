@@ -1,9 +1,9 @@
 import { apiKey, incidentAnalysis } from "@fire/db/schema";
 import { createFileRoute } from "@tanstack/solid-router";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
-import { auth } from "~/lib/auth";
+import { auth } from "~/lib/auth/auth";
 import { db } from "~/lib/db";
-import { computeIncidentMetrics } from "~/lib/incidents";
+import { computeIncidentMetrics } from "~/lib/incidents/incidents";
 import { sha256 } from "~/lib/utils/server";
 
 export const Route = createFileRoute("/api/metrics/")({

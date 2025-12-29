@@ -26,7 +26,7 @@ function ConfigPage() {
 
 The content area contains:
 
-1. An action button (e.g., "Create Rotation", "Add Entry Point")
+1. An action button (e.g., "Create Rotation", "Create Entry Point")
 2. A list of `ConfigCard` items or an empty state
 3. Any dialogs/modals for creation flows
 

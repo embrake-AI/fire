@@ -2,10 +2,10 @@ import type { EntryPoint, IS, IS_Event, ListIncidentsElement } from "@fire/commo
 import { entryPoint, incidentAnalysis, rotation, userIntegration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
-import { authMiddleware } from "./auth-middleware";
-import { db } from "./db";
-import type { SlackChannel } from "./slack";
-import { signedFetch } from "./utils/server";
+import { authMiddleware } from "../auth/auth-middleware";
+import { db } from "../db";
+import type { SlackChannel } from "../slack";
+import { signedFetch } from "../utils/server";
 
 export const getIncidents = createServerFn({
 	method: "GET",

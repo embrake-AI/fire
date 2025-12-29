@@ -6,7 +6,7 @@ import { createEffect, createSignal, For, on, Show } from "solid-js";
 import { Card } from "~/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { getSeverity } from "~/lib/incident-config";
-import { getResolvedIncidents, type ResolvedIncident } from "~/lib/incidents";
+import { getResolvedIncidents, type ResolvedIncident } from "~/lib/incidents/incidents";
 
 export function ResolvedIncidents() {
 	const getResolvedIncidentsFn = useServerFn(getResolvedIncidents);

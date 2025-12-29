@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/solid-query";
 import { Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { Flame, Settings } from "lucide-solid";
-import { getIncidents } from "~/lib/incidents";
+import { getIncidents } from "~/lib/incidents/incidents";
 import StartIncidentButton from "./StartIncidentButton";
 
 export default function Header() {
@@ -25,7 +25,7 @@ export default function Header() {
 		<header class="px-6 py-4 flex items-center justify-between bg-white border-b border-zinc-200">
 			<Link to="/" class="flex items-center gap-2 text-zinc-900 hover:text-zinc-700 transition-colors" onMouseEnter={prefetchIncidents} onFocusIn={prefetchIncidents}>
 				<Flame class="w-6 h-6 text-orange-500" />
-				<span class="text-lg font-semibold tracking-tight">Incidents</span>
+				<span class="text-lg font-semibold tracking-tight">Fire</span>
 			</Link>
 			<div class="flex items-center gap-3">
 				<StartIncidentButton />

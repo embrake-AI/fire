@@ -1,9 +1,13 @@
+import type { userRole } from "@fire/db/schema";
 import { createSignal } from "solid-js";
-import { getAuthContext } from "~/lib/auth-context";
+import { getAuthContext } from "./auth-context";
 
+type UserRole = (typeof userRole.enumValues)[number];
 export interface AuthState {
 	clientId: string | null;
 	userId: string | null;
+	role: UserRole | null;
+	impersonatedBy: string | null;
 }
 
 const [auth, setAuth] = createSignal<AuthState | null>(null);
@@ -25,11 +29,13 @@ export function initializeAuth() {
 			setAuth({
 				clientId: res.clientId ?? null,
 				userId: res.userId ?? null,
+				role: res.role ?? null,
+				impersonatedBy: res.impersonatedBy ?? null,
 			});
 		})
 		.catch(() => {
 			// On error (network, 500, etc.), set auth to null
-			setAuth({ clientId: null, userId: null });
+			setAuth({ clientId: null, userId: null, role: null, impersonatedBy: null });
 		})
 		.finally(() => {
 			// Always set ready so the app doesn't get stuck
@@ -64,6 +70,12 @@ export function useAuth() {
 		},
 		get userId() {
 			return auth()?.userId ?? null;
+		},
+		get role() {
+			return auth()?.role ?? null;
+		},
+		get isImpersonating() {
+			return !!auth()?.impersonatedBy;
 		},
 	};
 }

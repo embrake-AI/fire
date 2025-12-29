@@ -17,10 +17,23 @@ export const auth = betterAuth({
 			clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
 		},
 	},
-
 	user: {
 		additionalFields: {
 			clientId: {
+				type: "string",
+				required: false,
+				input: false,
+			},
+			role: {
+				type: "string",
+				required: true,
+				fieldName: "role",
+			},
+		},
+	},
+	session: {
+		additionalFields: {
+			impersonatedBy: {
 				type: "string",
 				required: false,
 				input: false,

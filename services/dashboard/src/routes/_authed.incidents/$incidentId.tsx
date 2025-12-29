@@ -1,11 +1,11 @@
 import type { IS } from "@fire/common";
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/solid-router";
+import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft } from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, For, Show, Suspense } from "solid-js";
-import { type SlackEntity, SlackEntityPicker, UserAvatar } from "~/components/SlackEntityPicker";
+import { SlackAvatar, type SlackEntity, SlackEntityPicker } from "~/components/SlackEntityPicker";
 import { SlackMessageInput } from "~/components/SlackMessageInput";
 import { Timeline } from "~/components/Timeline";
 import { Badge } from "~/components/ui/badge";
@@ -17,8 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/u
 import { Skeleton } from "~/components/ui/skeleton";
 import { Textarea } from "~/components/ui/textarea";
 import { getSeverity, getStatus } from "~/lib/incident-config";
-import { getIncidentById, getIncidents } from "~/lib/incidents";
-import { useUpdateIncidentAssignee, useUpdateIncidentSeverity, useUpdateIncidentStatus } from "~/lib/incidents.hooks";
+import { getIncidentById, getIncidents } from "~/lib/incidents/incidents";
+import { useUpdateIncidentAssignee, useUpdateIncidentSeverity, useUpdateIncidentStatus } from "~/lib/incidents/incidents.hooks";
 
 function IncidentSkeleton() {
 	return (
@@ -87,7 +87,7 @@ export const Route = createFileRoute("/_authed/incidents/$incidentId")({
 
 function IncidentDetail() {
 	const params = Route.useParams();
-	const navigate = useNavigate();
+	const navigate = Route.useNavigate();
 	const queryClient = useQueryClient();
 
 	const getIncidentByIdFn = useServerFn(getIncidentById);
@@ -296,7 +296,7 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 
 					<Popover open={open()} onOpenChange={setOpen}>
 						<PopoverTrigger as={Button} variant="ghost" size="sm" class="h-8 gap-2 bg-muted/50 hover:bg-muted font-normal">
-							<UserAvatar id={incident().assignee} withName />
+							<SlackAvatar id={incident().assignee} withName />
 						</PopoverTrigger>
 						<PopoverContent class="p-0 w-[280px]">
 							<SlackEntityPicker

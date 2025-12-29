@@ -1,12 +1,22 @@
-import { useMutation, useQueryClient } from "@tanstack/solid-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
-import type { CreateEntryPointInput, getEntryPoints } from "./entry-points";
-import { createEntryPoint, deleteEntryPoint, setFallbackEntryPoint, updateEntryPointPrompt } from "./entry-points";
+import type { Accessor } from "solid-js";
+import { type CreateEntryPointInput, createEntryPoint, deleteEntryPoint, getEntryPoints, setFallbackEntryPoint, updateEntryPointPrompt } from "./entry-points";
 
 type GetEntryPointsResponse = Awaited<ReturnType<typeof getEntryPoints>>;
 
+export function useEntryPoints(options?: { enabled?: Accessor<boolean> }) {
+	const getEntryPointsFn = useServerFn(getEntryPoints);
+	return useQuery(() => ({
+		queryKey: ["entry-points"],
+		queryFn: () => getEntryPointsFn(),
+		staleTime: 60_000,
+		enabled: options?.enabled?.() ?? true,
+	}));
+}
+
 type CreateEntryPointMutationInput = CreateEntryPointInput & {
-	optimisticData: { name?: string; avatar?: string };
+	optimisticData: { name?: string; avatar?: string; teamId?: string };
 };
 
 export function useCreateEntryPoint(options?: { onMutate?: (tempId: string) => void; onSuccess?: (realId: string) => void; onError?: () => void; onSettled?: () => void }) {
@@ -17,9 +27,9 @@ export function useCreateEntryPoint(options?: { onMutate?: (tempId: string) => v
 	return useMutation(() => ({
 		mutationFn: (data: CreateEntryPointMutationInput) => {
 			if (data.type === "slack-user") {
-				return createEntryPointFn({ data: { type: "slack-user", assigneeId: data.assigneeId } });
+				return createEntryPointFn({ data: { type: "slack-user", assigneeId: data.assigneeId, prompt: data.prompt } });
 			}
-			return createEntryPointFn({ data: { type: "rotation", rotationId: data.rotationId } });
+			return createEntryPointFn({ data: { type: "rotation", rotationId: data.rotationId, prompt: data.prompt } });
 		},
 
 		onMutate: async (newData) => {
@@ -45,11 +55,13 @@ export function useCreateEntryPoint(options?: { onMutate?: (tempId: string) => v
 							assigneeId: newData.assigneeId,
 							avatar: newData.optimisticData.avatar,
 							rotationId: null,
+							teamId: null,
 						}
 					: {
 							...baseOptimistic,
 							type: "rotation" as const,
 							rotationId: newData.rotationId,
+							teamId: newData.optimisticData.teamId,
 						}
 			) as GetEntryPointsResponse[number];
 
@@ -192,10 +204,11 @@ export function toCreateInput(user: { id: string; name?: string; avatar?: string
 	};
 }
 
-export function toCreateRotationInput(rotation: { id: string; name: string }) {
+export function toCreateRotationInput(rotation: { id: string; name: string; teamId?: string }) {
 	return {
 		type: "rotation" as const,
 		rotationId: rotation.id,
-		optimisticData: { name: rotation.name },
+		teamId: rotation.teamId,
+		optimisticData: { name: rotation.name, teamId: rotation.teamId },
 	};
 }

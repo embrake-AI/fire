@@ -3,10 +3,10 @@ import { getAddAssigneeSQL, getRemoveAssigneeSQL, getSetOverrideSQL, getUpdateIn
 import { entryPoint, rotation, rotationWithAssignee } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq, exists, type SQL } from "drizzle-orm";
-import { authMiddleware } from "./auth-middleware";
-import { db } from "./db";
+import { authMiddleware } from "../auth/auth-middleware";
+import { db } from "../db";
 
-export type { SlackUser } from "./slack";
+export type { SlackUser } from "../slack";
 
 export const getRotations = createServerFn({
 	method: "GET",
@@ -25,6 +25,7 @@ export const getRotations = createServerFn({
 				baseAssignee: rotationWithAssignee.baseAssignee,
 				createdAt: rotationWithAssignee.createdAt,
 				isInUse: isInUseSubquery,
+				teamId: rotationWithAssignee.teamId,
 			})
 			.from(rotationWithAssignee)
 			.where(eq(rotationWithAssignee.clientId, context.clientId))
@@ -59,6 +60,7 @@ export const getRotations = createServerFn({
 				createdAt: r.createdAt,
 				isInUse: r.isInUse,
 				currentAssignee: r.effectiveAssignee,
+				teamId: r.teamId,
 			};
 		});
 	});
@@ -67,7 +69,7 @@ type ShiftLength = (typeof SHIFT_LENGTH_OPTIONS)[number]["value"];
 
 export const createRotation = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
-	.inputValidator((data: { name: string; shiftLength: ShiftLength; anchorAt?: Date }) => data)
+	.inputValidator((data: { name: string; shiftLength: ShiftLength; anchorAt?: Date; teamId?: string }) => data)
 	.handler(async ({ data, context }) => {
 		if (!data.anchorAt) {
 			if (data.shiftLength === "1 day") {
@@ -87,6 +89,7 @@ export const createRotation = createServerFn({ method: "POST" })
 				shiftLength: data.shiftLength,
 				anchorAt: data.anchorAt,
 				assignees: [],
+				teamId: data.teamId,
 			})
 			.returning();
 

@@ -1,9 +1,9 @@
-import { entryPoint, integration } from "@fire/db/schema";
+import { entryPoint, integration, rotation } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq } from "drizzle-orm";
-import { authMiddleware } from "./auth-middleware";
-import { db } from "./db";
-import { fetchSlackUsers } from "./slack";
+import { authMiddleware } from "../auth/auth-middleware";
+import { db } from "../db";
+import { fetchSlackUsers } from "../slack";
 
 export const getEntryPoints = createServerFn({
 	method: "GET",
@@ -19,8 +19,10 @@ export const getEntryPoints = createServerFn({
 				rotationId: entryPoint.rotationId,
 				isFallback: entryPoint.isFallback,
 				createdAt: entryPoint.createdAt,
+				teamId: rotation.teamId,
 			})
 			.from(entryPoint)
+			.leftJoin(rotation, eq(entryPoint.rotationId, rotation.id))
 			.where(eq(entryPoint.clientId, context.clientId))
 			.orderBy(desc(entryPoint.createdAt));
 
@@ -32,6 +34,7 @@ export const getEntryPoints = createServerFn({
 					prompt: ep.prompt,
 					assigneeId: ep.assigneeId!,
 					isFallback: ep.isFallback,
+					teamId: ep.teamId,
 				};
 			} else if (ep.type === "rotation") {
 				return {
@@ -40,6 +43,7 @@ export const getEntryPoints = createServerFn({
 					prompt: ep.prompt,
 					rotationId: ep.rotationId,
 					isFallback: ep.isFallback,
+					teamId: ep.teamId,
 				};
 			} else {
 				throw new Error("Invalid entry point type");
@@ -61,7 +65,7 @@ export const getSlackUsers = createServerFn({
 		return slackUsers;
 	});
 
-export type CreateEntryPointInput = { type: "slack-user"; assigneeId: string } | { type: "rotation"; rotationId: string };
+export type CreateEntryPointInput = { type: "slack-user"; assigneeId: string; prompt?: string } | { type: "rotation"; rotationId: string; prompt?: string; teamId?: string };
 
 export const createEntryPoint = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
@@ -74,15 +78,15 @@ export const createEntryPoint = createServerFn({ method: "POST" })
 			data.type === "slack-user"
 				? {
 						clientId: context.clientId,
-						type: data.type,
-						prompt: "",
+						type: "slack-user" as const,
+						prompt: data.prompt || "",
 						assigneeId: data.assigneeId,
 						isFallback: isFirst,
 					}
 				: {
 						clientId: context.clientId,
-						type: data.type,
-						prompt: "",
+						type: "rotation" as const,
+						prompt: data.prompt || "",
 						rotationId: data.rotationId,
 						isFallback: isFirst,
 					};

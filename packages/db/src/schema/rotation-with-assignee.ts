@@ -42,6 +42,7 @@ export const rotationWithAssignee = pgView("rotationWithAssignee").as((qb) =>
 			baseAssignee: baseAssignee.as("base_assignee"),
 			createdAt: rotation.createdAt,
 			updatedAt: rotation.updatedAt,
+			teamId: rotation.teamId,
 		})
 		.from(rotation),
 );

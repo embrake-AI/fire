@@ -6,3 +6,4 @@ export * from "./incident";
 export * from "./integration";
 export * from "./rotation";
 export * from "./rotation-with-assignee";
+export * from "./team";

@@ -1,8 +1,8 @@
 import { useMutation } from "@tanstack/solid-query";
-import { createFileRoute, useSearch } from "@tanstack/solid-router";
+import { createFileRoute } from "@tanstack/solid-router";
 import { Flame } from "lucide-solid";
 import { Button } from "~/components/ui/button";
-import { authClient } from "~/lib/auth-client";
+import { authClient } from "~/lib/auth/auth-client";
 
 export const Route = createFileRoute("/login")({
 	component: LoginPage,
@@ -12,7 +12,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-	const search = useSearch({ from: "/login" });
+	const search = Route.useSearch();
 	const callbackURL = search().redirect || "/";
 
 	const doGoogle = useMutation(() => ({

@@ -17,6 +17,7 @@ function ConfigLayout() {
 
 	const activeTab = createMemo(() => {
 		const path = location().pathname;
+		if (path.includes("teams")) return "teams";
 		if (path.includes("rotation")) return "rotation";
 		if (path.includes("escalation")) return "escalation";
 		if (path.includes("api-keys")) return "api-keys";
@@ -38,6 +39,9 @@ function ConfigLayout() {
 					<TabsList>
 						<TabsTrigger value="entry-points" as={Link} to="/config/entry-points">
 							Entry Points
+						</TabsTrigger>
+						<TabsTrigger value="teams" as={Link} to="/config/teams">
+							Teams
 						</TabsTrigger>
 						<TabsTrigger value="rotation" as={Link} to="/config/rotation">
 							Rotation

@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import { createMemo } from "solid-js";
-import { getSlackUsers } from "./entry-points";
-import type { getWorkspaceIntegrations } from "./integrations";
+import { getSlackUsers } from "./entry-points/entry-points";
+import type { getWorkspaceIntegrations } from "./integrations/integrations";
 
 type GetWorkspaceIntegrationsResponse = Awaited<ReturnType<typeof getWorkspaceIntegrations>>;
 export function useSlackUsers() {

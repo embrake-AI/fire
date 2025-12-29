@@ -2,9 +2,9 @@ import { apiKey } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { authMiddleware } from "./auth-middleware";
-import { db } from "./db";
-import { sha256 } from "./utils/server";
+import { authMiddleware } from "../auth/auth-middleware";
+import { db } from "../db";
+import { sha256 } from "../utils/server";
 
 function generateApiKey(): string {
 	const key = nanoid(32);

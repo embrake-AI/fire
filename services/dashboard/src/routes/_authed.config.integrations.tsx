@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createFileRoute, useNavigate } from "@tanstack/solid-router";
+import { useMutation, useQueryClient } from "@tanstack/solid-query";
+import { createFileRoute } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { LoaderCircle } from "lucide-solid";
 import type { Accessor, JSX } from "solid-js";
@@ -10,7 +10,8 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { showToast } from "~/components/ui/toast";
-import { disconnectUserIntegration, disconnectWorkspaceIntegration, getInstallUrl, getUserIntegrations, getWorkspaceIntegrations } from "~/lib/integrations";
+import { disconnectUserIntegration, disconnectWorkspaceIntegration, getInstallUrl, type getUserIntegrations, type getWorkspaceIntegrations } from "~/lib/integrations/integrations";
+import { useIntegrations } from "~/lib/integrations/integrations.hooks";
 
 type WorkspaceIntegrationsData = Awaited<ReturnType<typeof getWorkspaceIntegrations>>;
 type UserIntegrationsData = Awaited<ReturnType<typeof getUserIntegrations>>;
@@ -68,15 +69,10 @@ function IntegrationsContentSkeleton() {
 
 function WorkspaceIntegrationsContent() {
 	const params = Route.useSearch();
-	const navigate = useNavigate();
+	const navigate = Route.useNavigate();
 	const queryClient = useQueryClient();
 
-	const getWorkspaceIntegrationsFn = useServerFn(getWorkspaceIntegrations);
-	const integrationsQuery = useQuery(() => ({
-		queryKey: ["workspace_integrations"],
-		queryFn: getWorkspaceIntegrationsFn,
-		staleTime: 60_000,
-	}));
+	const integrationsQuery = useIntegrations({ type: "workspace" });
 
 	onMount(() => {
 		const installed = params().installed as string;
@@ -159,12 +155,7 @@ function WorkspaceIntegrationsContent() {
 function UserIntegrationsContent() {
 	const queryClient = useQueryClient();
 
-	const getUserIntegrationsFn = useServerFn(getUserIntegrations);
-	const integrationsQuery = useQuery(() => ({
-		queryKey: ["user_integrations"],
-		queryFn: getUserIntegrationsFn,
-		staleTime: 60_000,
-	}));
+	const integrationsQuery = useIntegrations({ type: "user" });
 
 	const getInstallUrlFn = useServerFn(getInstallUrl);
 	const [isConnecting, setIsConnecting] = createSignal(false);

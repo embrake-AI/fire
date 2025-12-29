@@ -1,20 +1,31 @@
 import type { SHIFT_LENGTH_OPTIONS } from "@fire/common";
-import { useMutation, useQueryClient } from "@tanstack/solid-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
-import type { getRotations } from "./rotation";
+import type { Accessor } from "solid-js";
 import {
 	addRotationAssignee,
 	clearRotationOverride,
 	createRotation,
 	deleteRotation,
+	getRotations,
 	removeRotationAssignee,
 	reorderRotationAssignee,
 	setRotationOverride,
 	updateRotationName,
 	updateRotationShiftLength,
-} from "./rotation";
+} from "./rotations";
 
 type GetRotationsResponse = Awaited<ReturnType<typeof getRotations>>;
+
+export function useRotations(options?: { enabled?: Accessor<boolean> }) {
+	const getRotationsFn = useServerFn(getRotations);
+	return useQuery(() => ({
+		queryKey: ["rotations"],
+		queryFn: getRotationsFn,
+		staleTime: 60_000,
+		enabled: options?.enabled?.() ?? true,
+	}));
+}
 
 type ShiftLength = (typeof SHIFT_LENGTH_OPTIONS)[number]["value"];
 export function useCreateRotation(options?: { onMutate?: (tempId: string) => void; onSuccess?: (realId: string) => void; onError?: () => void }) {
@@ -22,7 +33,7 @@ export function useCreateRotation(options?: { onMutate?: (tempId: string) => voi
 	const createRotationFn = useServerFn(createRotation);
 
 	return useMutation(() => ({
-		mutationFn: (data: { name: string; shiftLength: ShiftLength; anchorAt?: Date }) => createRotationFn({ data }),
+		mutationFn: (data: { name: string; shiftLength: ShiftLength; anchorAt?: Date; teamId?: string }) => createRotationFn({ data }),
 
 		onMutate: async (newData) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
@@ -39,6 +50,7 @@ export function useCreateRotation(options?: { onMutate?: (tempId: string) => voi
 				createdAt: new Date(),
 				isInUse: false,
 				currentAssignee: tempId,
+				teamId: newData.teamId ?? null,
 			};
 
 			queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) => [optimisticRotation, ...(old ?? [])]);

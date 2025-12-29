@@ -4,14 +4,14 @@ import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft, ChartColumn, Clock, FileText, Sparkles } from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, Index, Match, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
-import { UserAvatar } from "~/components/SlackEntityPicker";
+import { SlackAvatar } from "~/components/SlackEntityPicker";
 import { Timeline } from "~/components/Timeline";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { getSeverity, getStatus } from "~/lib/incident-config";
-import { computeIncidentMetrics, getAnalysisById, getIncidents, type IncidentAnalysis } from "~/lib/incidents";
+import { computeIncidentMetrics, getAnalysisById, getIncidents, type IncidentAnalysis } from "~/lib/incidents/incidents";
 
 function AnalysisSkeleton() {
 	return (
@@ -193,7 +193,7 @@ function AnalysisHeader(props: { analysis: Accessor<IncidentAnalysis> }) {
 				<span class="text-muted-foreground/40">·</span>
 
 				<div class="flex items-center gap-2">
-					<UserAvatar id={analysis().assignee} withName />
+					<SlackAvatar id={analysis().assignee} withName />
 				</div>
 
 				<span class="text-muted-foreground/40">·</span>

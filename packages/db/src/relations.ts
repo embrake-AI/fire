@@ -15,11 +15,29 @@ export const relations = defineRelations(schema, (r) => ({
 			from: r.client.id,
 			to: r.apiKey.clientId,
 		}),
+		teams: r.many.team({
+			from: r.client.id,
+			to: r.team.clientId,
+		}),
+	},
+	team: {
+		members: r.many.user({
+			from: r.team.id.through(r.teamMember.teamId),
+			to: r.user.id.through(r.teamMember.userId),
+		}),
+		rotations: r.many.rotation({
+			from: r.team.id,
+			to: r.rotation.teamId,
+		}),
 	},
 	rotation: {
 		rotationWithAssignee: r.one.rotationWithAssignee({
 			from: r.rotation.id,
 			to: r.rotationWithAssignee.id,
+		}),
+		team: r.one.team({
+			from: r.rotation.teamId,
+			to: r.team.id,
 		}),
 	},
 	entryPoint: {
@@ -30,6 +48,12 @@ export const relations = defineRelations(schema, (r) => ({
 		rotation: r.one.rotation({
 			from: r.entryPoint.rotationId,
 			to: r.rotation.id,
+		}),
+	},
+	user: {
+		teams: r.many.team({
+			from: r.user.id.through(r.teamMember.userId),
+			to: r.team.id.through(r.teamMember.teamId),
 		}),
 	},
 }));

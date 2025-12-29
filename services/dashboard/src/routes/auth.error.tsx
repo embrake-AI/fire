@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useSearch } from "@tanstack/solid-router";
+import { createFileRoute, Link } from "@tanstack/solid-router";
 import { ShieldX, TriangleAlert, UserX } from "lucide-solid";
 import { Match, Switch } from "solid-js";
 import { Button } from "~/components/ui/button";
@@ -12,7 +12,7 @@ export const Route = createFileRoute("/auth/error")({
 });
 
 function AuthErrorPage() {
-	const search = useSearch({ from: "/auth/error" });
+	const search = Route.useSearch();
 
 	const isDomainNotAllowed = () => {
 		const msg = search().error;

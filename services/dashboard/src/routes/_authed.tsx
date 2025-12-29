@@ -3,9 +3,10 @@ import { createFileRoute, Outlet, redirect } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { createMemo, Show } from "solid-js";
 import Header from "~/components/Header";
-import { getAuth, isAuthReady } from "~/lib/auth-store";
-import { getEntryPoints, getSlackUsers } from "~/lib/entry-points";
-import { getWorkspaceIntegrations } from "~/lib/integrations";
+import { getAuth, isAuthReady } from "~/lib/auth/auth-store";
+import { getSlackUsers } from "~/lib/entry-points/entry-points";
+import { useEntryPoints } from "~/lib/entry-points/entry-points.hooks";
+import { useIntegrations } from "~/lib/integrations/integrations.hooks";
 
 export const Route = createFileRoute("/_authed")({
 	beforeLoad: ({ location }) => {
@@ -29,23 +30,11 @@ function AuthedLayout() {
 		const auth = getAuth();
 		return !!auth?.userId && !!auth?.clientId;
 	});
-	const getEntryPointsFn = useServerFn(getEntryPoints);
-	const getWorkspaceIntegrationsFn = useServerFn(getWorkspaceIntegrations);
 	const getSlackUsersFn = useServerFn(getSlackUsers);
 
 	// app-wide interesting data. Kept to make things feel more responsive.
-	useQuery(() => ({
-		queryKey: ["entry-points"],
-		queryFn: getEntryPointsFn,
-		staleTime: 60_000,
-		enabled: authed(),
-	}));
-	const integrationsQuery = useQuery(() => ({
-		queryKey: ["integrations"],
-		queryFn: getWorkspaceIntegrationsFn,
-		staleTime: 60_000,
-		enabled: authed(),
-	}));
+	useEntryPoints();
+	const integrationsQuery = useIntegrations({ type: "workspace" });
 
 	const hasSlackIntegration = createMemo(() => integrationsQuery.data?.some((i) => i.platform === "slack" && i.installedAt));
 

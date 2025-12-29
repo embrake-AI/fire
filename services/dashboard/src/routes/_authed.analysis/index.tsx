@@ -5,13 +5,13 @@ import { useServerFn } from "@tanstack/solid-start";
 import { endOfDay, parse, startOfDay } from "date-fns";
 import { Calendar, ChartColumn, Check, Copy, Layers, Target, Users } from "lucide-solid";
 import { createMemo, createSignal, For, Show, Suspense } from "solid-js";
-import { UserAvatar } from "~/components/SlackEntityPicker";
+import { SlackAvatar } from "~/components/SlackEntityPicker";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { DateRangePicker } from "~/components/ui/date-range-picker";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { getMetrics } from "~/lib/incidents";
+import { getMetrics } from "~/lib/incidents/incidents";
 
 export const Route = createFileRoute("/_authed/analysis/")({
 	component: AnalysisDashboard,
@@ -159,7 +159,7 @@ function AnalysisDashboard() {
 														</div>
 													}
 												>
-													<UserAvatar id={item.key} withName />
+													<SlackAvatar id={item.key} withName />
 												</Show>
 												<Show when={grouping() !== "assignee"}>
 													<div>

@@ -2,7 +2,7 @@ import type { IS_Event } from "@fire/common";
 import { CircleCheck, Flame, MessageSquare, ShieldAlert, TriangleAlert, User } from "lucide-solid";
 import type { Component } from "solid-js";
 import { Show } from "solid-js";
-import { UserAvatar } from "~/components/SlackEntityPicker";
+import { SlackAvatar } from "~/components/SlackEntityPicker";
 import { Badge } from "~/components/ui/badge";
 import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { getSeverity, getStatus } from "./incident-config";
@@ -43,7 +43,7 @@ export const eventRegistry: EventConfigMap = {
 						<span class="text-muted-foreground/40">·</span>
 						<div class="flex items-center gap-2">
 							<span class="text-sm text-muted-foreground">Assigned to</span>
-							<UserAvatar id={data.assignee} />
+							<SlackAvatar id={data.assignee} />
 						</div>
 					</div>
 
@@ -101,7 +101,7 @@ export const eventRegistry: EventConfigMap = {
 		render: ({ data }) => (
 			<div class="flex items-center gap-2">
 				<p class="text-sm text-muted-foreground">Assignee changed to</p>
-				<UserAvatar id={data.assignee} />
+				<SlackAvatar id={data.assignee} />
 			</div>
 		),
 	},
@@ -126,7 +126,7 @@ export const eventRegistry: EventConfigMap = {
 		label: "New Message",
 		render: ({ data }) => (
 			<div class="flex items-center gap-2">
-				<UserAvatar id={data.userId} />
+				<SlackAvatar id={data.userId} />
 				<p class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{data.message}</p>
 			</div>
 		),

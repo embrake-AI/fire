@@ -1,7 +1,7 @@
 import { integration, userIntegration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, eq } from "drizzle-orm";
-import { authMiddleware } from "~/lib/auth-middleware";
+import { authMiddleware } from "~/lib/auth/auth-middleware";
 import { db } from "~/lib/db";
 import { fetchSlackBotChannels } from "~/lib/slack";
 import { mustGetEnv, sign } from "~/lib/utils/server";

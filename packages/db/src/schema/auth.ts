@@ -1,9 +1,11 @@
-import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, pgEnum, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 /**
  * Better Auth core tables
  * These tables are required by Better Auth for authentication
  */
+
+export const userRole = pgEnum("user_role", ["VIEWER", "MEMBER", "ADMIN", "SUPER_ADMIN"]);
 
 export const user = pgTable("user", {
 	id: text("id").primaryKey(),
@@ -13,6 +15,7 @@ export const user = pgTable("user", {
 	image: text("image"),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 	updatedAt: timestamp("updated_at").notNull().defaultNow(),
+	role: userRole("role").notNull().default("VIEWER"),
 	// Custom field for client/tenant association
 	clientId: text("client_id"),
 });
@@ -28,6 +31,7 @@ export const session = pgTable("session", {
 	userId: text("user_id")
 		.notNull()
 		.references(() => user.id, { onDelete: "cascade" }),
+	impersonatedBy: text("impersonated_by"),
 });
 
 export const account = pgTable("account", {

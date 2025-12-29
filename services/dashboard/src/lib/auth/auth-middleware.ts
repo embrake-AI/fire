@@ -1,7 +1,10 @@
+import type { userRole } from "@fire/db/schema";
 import { redirect } from "@tanstack/solid-router";
 import { createMiddleware } from "@tanstack/solid-start";
 import { getRequest, getRequestUrl } from "@tanstack/solid-start/server";
-import { auth } from "~/lib/auth";
+import { auth } from "~/lib/auth/auth";
+
+type UserRole = (typeof userRole.enumValues)[number];
 
 /**
  * Auth middleware that retrieves the session and adds it to the server context.
@@ -31,6 +34,8 @@ export const authMiddleware = createMiddleware({ type: "function" }).server(asyn
 			user: session.user,
 			userId: session.user.id,
 			clientId: session.user.clientId,
+			role: session.user.role as UserRole,
+			impersonatedBy: session.session.impersonatedBy,
 		},
 	});
 });

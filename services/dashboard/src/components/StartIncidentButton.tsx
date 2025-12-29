@@ -11,9 +11,10 @@ import { Label } from "~/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Switch, SwitchControl, SwitchLabel, SwitchThumb } from "~/components/ui/switch";
 import { Textarea } from "~/components/ui/textarea";
-import { getEntryPoints } from "~/lib/entry-points";
-import { startIncident } from "~/lib/incidents";
-import { getSlackBotChannels, getWorkspaceIntegrations } from "~/lib/integrations";
+import { useEntryPoints } from "~/lib/entry-points/entry-points.hooks";
+import { startIncident } from "~/lib/incidents/incidents";
+import { getSlackBotChannels } from "~/lib/integrations/integrations";
+import { useIntegrations } from "~/lib/integrations/integrations.hooks";
 import type { SlackChannel } from "~/lib/slack";
 
 export default function StartIncidentButton() {
@@ -54,19 +55,9 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 		},
 	}));
 
-	const getEntryPointsFn = useServerFn(getEntryPoints);
-	const entryPointsQuery = useQuery(() => ({
-		queryKey: ["entry-points"],
-		queryFn: getEntryPointsFn,
-		staleTime: 60_000,
-	}));
+	const entryPointsQuery = useEntryPoints();
 
-	const getWorkspaceIntegrationsFn = useServerFn(getWorkspaceIntegrations);
-	const integrationsQuery = useQuery(() => ({
-		queryKey: ["integrations"],
-		queryFn: getWorkspaceIntegrationsFn,
-		staleTime: 60_000,
-	}));
+	const integrationsQuery = useIntegrations({ type: "workspace" });
 
 	const getSlackBotChannelsFn = useServerFn(getSlackBotChannels);
 	const slackChannelsQuery = useQuery(() => ({
@@ -187,7 +178,7 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 				</DialogHeader>
 				<DialogFooter class="pt-4">
 					<Button as={Link} to="/config/entry-points" onClick={props.onClose}>
-						<Plus class="mr-2 h-4 w-4" /> Add Entry Point
+						<Plus class="mr-2 h-4 w-4" /> Create Entry Point
 					</Button>
 				</DialogFooter>
 			</Show>

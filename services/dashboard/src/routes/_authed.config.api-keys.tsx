@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { Check, Copy, Key, LoaderCircle, Plus } from "lucide-solid";
@@ -12,7 +12,8 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Skeleton } from "~/components/ui/skeleton";
 import { showToast } from "~/components/ui/toast";
-import { createApiKey, getApiKeys, revokeApiKey } from "~/lib/api-keys";
+import { createApiKey, revokeApiKey } from "~/lib/api-keys/api-keys";
+import { useApiKeys } from "~/lib/api-keys/api-keys.hooks";
 
 // --- Name Generator ---
 
@@ -251,12 +252,7 @@ function ApiKeysContent() {
 	const [newKeyName, setNewKeyName] = createSignal("");
 	const [createdKey, setCreatedKey] = createSignal<{ key: string; name: string } | null>(null);
 
-	const getApiKeysFn = useServerFn(getApiKeys);
-	const apiKeysQuery = useQuery(() => ({
-		queryKey: ["api-keys"],
-		queryFn: getApiKeysFn,
-		staleTime: 60_000,
-	}));
+	const apiKeysQuery = useApiKeys();
 
 	const createApiKeyFn = useServerFn(createApiKey);
 	const createMutation = useMutation(() => ({

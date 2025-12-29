@@ -5,7 +5,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { SlackIcon } from "~/components/icons/SlackIcon";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
-import type { IncidentEvent } from "~/lib/incidents";
+import type { IncidentEvent } from "~/lib/incidents/incidents";
 import { getEventConfig } from "~/lib/timeline-events";
 
 const ADAPTER_ICON = {

@@ -1,10 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { Link } from "@tanstack/solid-router";
-import { useServerFn } from "@tanstack/solid-start";
 import { SendHorizontal } from "lucide-solid";
 import { createSignal, Show } from "solid-js";
-import { sendSlackMessage } from "~/lib/incidents";
-import { getUserIntegrations } from "~/lib/integrations";
+import { sendSlackMessage } from "~/lib/incidents/incidents";
+import { useIntegrations } from "~/lib/integrations/integrations.hooks";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Textarea } from "./ui/textarea";
@@ -19,11 +18,7 @@ interface SlackMessageInputProps {
 export function SlackMessageInput(props: SlackMessageInputProps) {
 	const [message, setMessage] = createSignal("");
 	const queryClient = useQueryClient();
-	const getUserIntegrationsFn = useServerFn(getUserIntegrations);
-	const integrationsQuery = useQuery(() => ({
-		queryKey: ["user_integrations"],
-		queryFn: getUserIntegrationsFn,
-	}));
+	const integrationsQuery = useIntegrations({ type: "user" });
 
 	const isConnected = () => integrationsQuery.data?.some((i) => i.platform === "slack") ?? false;
 

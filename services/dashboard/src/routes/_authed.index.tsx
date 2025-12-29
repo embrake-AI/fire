@@ -9,7 +9,7 @@ import { ResolvedIncidents } from "~/components/ResolvedIncidents";
 import { Card } from "~/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { getSeverity } from "~/lib/incident-config";
-import { getIncidents } from "~/lib/incidents";
+import { getIncidents } from "~/lib/incidents/incidents";
 
 export const Route = createFileRoute("/_authed/")({
 	component: IncidentsList,
