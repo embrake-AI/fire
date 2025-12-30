@@ -2,9 +2,10 @@ import { Check } from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createMemo, For, onMount, Show } from "solid-js";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "~/components/ui/command";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { UserAvatar } from "./UserAvatar";
 
-export type Entity = { id: string; name: string; avatar?: string | null };
+export type Entity = { id: string; name: string; avatar?: string | null; disabled?: boolean; disabledReason?: string };
 
 interface EntityPickerProps {
 	/** Called when an entity is selected */
@@ -57,8 +58,15 @@ export function EntityPicker(props: EntityPickerProps) {
 }
 
 function EntityRow(props: { entity: Entity; onSelect: EntityPickerProps["onSelect"]; selected?: boolean; disabled?: boolean }) {
-	return (
-		<CommandItem value={`${props.entity.id} ${props.entity.name}`} onSelect={() => props.onSelect(props.entity)} disabled={props.disabled}>
+	const isDisabled = () => props.disabled || props.entity.disabled;
+
+	const content = (
+		<CommandItem
+			value={`${props.entity.id} ${props.entity.name}`}
+			onSelect={() => !isDisabled() && props.onSelect(props.entity)}
+			disabled={isDisabled()}
+			class={isDisabled() ? "opacity-50" : ""}
+		>
 			<div class="flex items-center gap-3 w-full">
 				<UserAvatar name={() => props.entity.name} avatar={() => props.entity.avatar ?? undefined} />
 				<div class="flex-1 min-w-0">
@@ -69,5 +77,16 @@ function EntityRow(props: { entity: Entity; onSelect: EntityPickerProps["onSelec
 				</Show>
 			</div>
 		</CommandItem>
+	);
+
+	return (
+		<Show when={isDisabled() && props.entity.disabledReason} fallback={content}>
+			<Tooltip>
+				<TooltipTrigger as="div" class="w-full">
+					{content}
+				</TooltipTrigger>
+				<TooltipContent>{props.entity.disabledReason}</TooltipContent>
+			</Tooltip>
+		</Show>
 	);
 }

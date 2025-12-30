@@ -137,3 +137,30 @@ export async function fetchSlackBotChannels(botToken: string): Promise<SlackChan
 
 	return channels;
 }
+
+type SlackEmojiResponse = {
+	ok: boolean;
+	emoji?: Record<string, string>;
+	error?: string;
+};
+
+/**
+ * Fetch custom emojis from Slack workspace.
+ * @see https://docs.slack.dev/reference/methods/emoji.list/
+ */
+export async function fetchSlackEmojis(botToken: string): Promise<Record<string, string>> {
+	const response = await fetch("https://slack.com/api/emoji.list", {
+		headers: {
+			Authorization: `Bearer ${botToken}`,
+			"Content-Type": "application/json",
+		},
+	});
+
+	const data: SlackEmojiResponse = await response.json();
+
+	if (!data.ok) {
+		throw new Error(`Slack API error: ${data.error}`);
+	}
+
+	return data.emoji || {};
+}

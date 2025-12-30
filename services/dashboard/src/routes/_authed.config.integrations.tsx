@@ -77,6 +77,8 @@ function WorkspaceIntegrationsContent() {
 	onMount(() => {
 		const installed = params().installed as string;
 		if (installed) {
+			// Invalidate users query to refresh integration status
+			queryClient.invalidateQueries({ queryKey: ["users"] });
 			showToast({
 				title: "Integration connected",
 				description: `${installed} has been successfully connected to your workspace.`,
@@ -117,6 +119,7 @@ function WorkspaceIntegrationsContent() {
 		},
 		onSuccess: async (_, platform) => {
 			await queryClient.invalidateQueries({ queryKey: ["workspace_integrations"] });
+			await queryClient.invalidateQueries({ queryKey: ["users"] });
 			showToast({
 				title: "Integration disconnected",
 				description: `${platform} has been successfully disconnected from your workspace.`,
@@ -188,6 +191,7 @@ function UserIntegrationsContent() {
 		},
 		onSuccess: async (_, platform) => {
 			await queryClient.invalidateQueries({ queryKey: ["user_integrations"] });
+			await queryClient.invalidateQueries({ queryKey: ["users"] });
 			showToast({
 				title: "Integration disconnected",
 				description: `${platform} has been successfully disconnected from your user account.`,

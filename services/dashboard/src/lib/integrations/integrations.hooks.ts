@@ -1,7 +1,7 @@
-import { useQuery } from "@tanstack/solid-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
-import { getUserIntegrations, getWorkspaceIntegrations } from "./integrations";
+import { disconnectUserIntegration, disconnectWorkspaceIntegration, getSlackEmojis, getUserIntegrations, getWorkspaceIntegrations } from "./integrations";
 
 export function useIntegrations(options?: { type?: "workspace" | "user"; enabled?: Accessor<boolean> }) {
 	const getWorkspaceIntegrationsFn = useServerFn(getWorkspaceIntegrations);
@@ -13,5 +13,42 @@ export function useIntegrations(options?: { type?: "workspace" | "user"; enabled
 		queryFn: () => (type === "workspace" ? getWorkspaceIntegrationsFn() : getUserIntegrationsFn()),
 		staleTime: 60_000,
 		enabled: options?.enabled?.() ?? true,
+	}));
+}
+
+export function useDisconnectWorkspaceIntegration() {
+	const queryClient = useQueryClient();
+	const disconnectWorkspaceIntegrationFn = useServerFn(disconnectWorkspaceIntegration);
+
+	return useMutation(() => ({
+		mutationFn: (platform: "slack") => disconnectWorkspaceIntegrationFn(platform),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["workspace_integrations"] });
+			queryClient.invalidateQueries({ queryKey: ["users"] });
+		},
+	}));
+}
+
+export function useDisconnectUserIntegration() {
+	const queryClient = useQueryClient();
+	const disconnectUserIntegrationFn = useServerFn(disconnectUserIntegration);
+
+	return useMutation(() => ({
+		mutationFn: (platform: "slack") => disconnectUserIntegrationFn(platform),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["user_integrations"] });
+			queryClient.invalidateQueries({ queryKey: ["users"] });
+		},
+	}));
+}
+
+export function useSlackEmojis() {
+	const getSlackEmojisFn = useServerFn(getSlackEmojis);
+
+	return useQuery(() => ({
+		queryKey: ["slack-emojis"],
+		queryFn: () => getSlackEmojisFn(),
+		staleTime: 1000 * 60 * 30, // 30 minutes
+		retry: false,
 	}));
 }

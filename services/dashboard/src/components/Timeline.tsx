@@ -5,7 +5,9 @@ import { createStore, reconcile } from "solid-js/store";
 import { SlackIcon } from "~/components/icons/SlackIcon";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { setCustomEmojis } from "~/lib/emoji/emoji";
 import type { IncidentEvent } from "~/lib/incidents/incidents";
+import { useSlackEmojis } from "~/lib/integrations/integrations.hooks";
 import { getEventConfig } from "~/lib/timeline-events";
 
 const ADAPTER_ICON = {
@@ -25,6 +27,14 @@ function formatTime(timestamp: string) {
 
 export function Timeline(props: { events: IncidentEvent[] }) {
 	const [events, setEvents] = createStore<IncidentEvent[]>([]);
+	const slackEmojisQuery = useSlackEmojis();
+
+	createEffect(() => {
+		const customEmojis = slackEmojisQuery.data;
+		if (customEmojis) {
+			setCustomEmojis(customEmojis);
+		}
+	});
 
 	createEffect(() => {
 		setEvents(reconcile(props.events, { key: "id" }));

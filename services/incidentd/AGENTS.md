@@ -1,15 +1,20 @@
----
-description: Rules for the incidentd service - incident management backend on Cloudflare Workers
-globs:
-    - services/incidentd/**
-alwaysApply: false
----
-
 # incidentd Service
 
-Before making changes to this service, read the architecture documentation:
+Incident management backend on Cloudflare Workers.
 
-@services/incidentd/ARCHITECTURE.md
+Before making changes to this service, read the architecture documentation in `ARCHITECTURE.md`.
+
+## Package Management
+
+This monorepo uses **bun**. Run commands from the monorepo root or this directory:
+
+```bash
+bun run dev        # Start wrangler dev server
+bun run deploy     # Deploy to Cloudflare Workers
+bun run cf-typegen # Generate Cloudflare types
+bun run type-check # TypeScript type checking
+bun run lint       # Run biome linter
+```
 
 ## Key Principles
 
@@ -22,8 +27,8 @@ Before making changes to this service, read the architecture documentation:
 
 The queue-based dispatcher is **bypassed for cost/simplicity**. Currently:
 
--   Handler updates D1 directly after DO response
--   Handler invokes senders directly after DO response
+- Handler updates D1 directly after DO response
+- Handler invokes senders directly after DO response
 
 When implementing new features, follow the existing pattern but keep code structured for future queue migration.
 

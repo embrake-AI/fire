@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/solid-start";
 import { and, eq } from "drizzle-orm";
 import { authMiddleware } from "~/lib/auth/auth-middleware";
 import { db } from "~/lib/db";
-import { fetchSlackBotChannels } from "~/lib/slack";
+import { fetchSlackBotChannels, fetchSlackEmojis } from "~/lib/slack";
 import { mustGetEnv, sign } from "~/lib/utils/server";
 
 /**
@@ -147,4 +147,26 @@ export const getSlackBotChannels = createServerFn({ method: "GET" })
 		}
 
 		return fetchSlackBotChannels(slackIntegration.data.botToken);
+	});
+
+/**
+ * Get custom emojis from the Slack workspace.
+ * Returns an empty object if Slack is not connected.
+ */
+export const getSlackEmojis = createServerFn({ method: "GET" })
+	.middleware([authMiddleware])
+	.handler(async ({ context }) => {
+		const { clientId } = context;
+
+		const [slackIntegration] = await db
+			.select()
+			.from(integration)
+			.where(and(eq(integration.clientId, clientId), eq(integration.platform, "slack")))
+			.limit(1);
+
+		if (!slackIntegration?.data?.botToken) {
+			return {};
+		}
+
+		return fetchSlackEmojis(slackIntegration.data.botToken);
 	});

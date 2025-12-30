@@ -1,12 +1,14 @@
 import { SHIFT_LENGTH_OPTIONS, type ShiftLength } from "@fire/common";
 import { createFileRoute, Link } from "@tanstack/solid-router";
-import { Check, LoaderCircle, Pencil, Plus, Repeat, Users as UsersIcon, X } from "lucide-solid";
-import { createMemo, createSignal, ErrorBoundary, For, Index, onMount, Show, Suspense } from "solid-js";
+import { Check, ImageUp, LoaderCircle, Pencil, Plus, Repeat, Users as UsersIcon, X } from "lucide-solid";
+import { createEffect, createMemo, createSignal, ErrorBoundary, For, Index, onCleanup, onMount, Show, Suspense } from "solid-js";
 import { EntityPicker } from "~/components/EntityPicker";
 import { EntryPointsList } from "~/components/entry-points/EntryPointCard";
+import { SlackIcon } from "~/components/icons/SlackIcon";
 import { RotationCard, RotationEmptyState } from "~/components/rotations/RotationCard";
 import { UserAvatar } from "~/components/UserAvatar";
 import { Button } from "~/components/ui/button";
+import { Card, CardContent } from "~/components/ui/card";
 import { ConfigCard, ConfigCardActions, ConfigCardContent, ConfigCardDeleteButton, ConfigCardRow, ConfigCardTitle } from "~/components/ui/config-card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
@@ -15,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { useAuth } from "~/lib/auth/auth-store";
 import { useCreateEntryPoint, useDeleteEntryPoint, useEntryPoints, useSetFallbackEntryPoint, useUpdateEntryPointPrompt } from "~/lib/entry-points/entry-points.hooks";
 import { useCreateRotation, useDeleteRotation, useRotations } from "~/lib/rotations/rotations.hooks";
 import { useAddTeamMember, useRemoveTeamMember, useTeams, useUpdateTeam } from "~/lib/teams/teams.hooks";
@@ -120,10 +123,122 @@ function TeamHeader(props: { team: { id: string; name: string; imageUrl: string 
 	const [isEditingName, setIsEditingName] = createSignal(false);
 	const [isEditingImage, setIsEditingImage] = createSignal(false);
 	const [name, setName] = createSignal(props.team.name);
-	const [imageUrl, setImageUrl] = createSignal(props.team.imageUrl || "");
+	const [imageFile, setImageFile] = createSignal<File | null>(null);
+	const [droppedImageUrl, setDroppedImageUrl] = createSignal("");
+	const [isUploadingImage, setIsUploadingImage] = createSignal(false);
+	const [isDragActive, setIsDragActive] = createSignal(false);
+	let fileInputRef: HTMLInputElement | undefined;
 
-	const handleUpdate = async () => {
-		updateTeamMutation.mutate({ id: props.team.id, name: name(), imageUrl: imageUrl() });
+	const formatFileSize = (size: number) => {
+		if (size < 1024) return `${size} B`;
+		if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+		return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+	};
+
+	const selectedFileDetails = createMemo(() => {
+		const file = imageFile();
+		return file ? { name: file.name, size: formatFileSize(file.size) } : null;
+	});
+
+	const [previewUrl, setPreviewUrl] = createSignal<string | null>(null);
+
+	createEffect(() => {
+		const file = imageFile();
+		if (!file) {
+			setPreviewUrl(null);
+			return;
+		}
+		const objectUrl = URL.createObjectURL(file);
+		setPreviewUrl(objectUrl);
+		onCleanup(() => URL.revokeObjectURL(objectUrl));
+	});
+
+	const previewSource = createMemo(() => previewUrl() || droppedImageUrl() || props.team.imageUrl || "");
+
+	const handleUpdateName = async () => {
+		updateTeamMutation.mutate({ id: props.team.id, name: name() });
+	};
+
+	const handleUpdateImage = async () => {
+		setIsUploadingImage(true);
+		try {
+			const file = imageFile();
+			const url = droppedImageUrl().trim();
+			let uploadedUrl = props.team.imageUrl || "";
+
+			if (file || url) {
+				const formData = new FormData();
+				if (file) {
+					formData.append("file", file);
+				} else {
+					formData.append("url", url);
+				}
+
+				const response = await fetch("/api/upload/team-image", {
+					method: "POST",
+					body: formData,
+				});
+
+				if (!response.ok) {
+					throw new Error("Upload failed");
+				}
+
+				const data = (await response.json()) as { url: string };
+				uploadedUrl = data.url;
+			}
+
+			setImageFile(null);
+			setDroppedImageUrl("");
+			updateTeamMutation.mutate({ id: props.team.id, imageUrl: uploadedUrl || null });
+		} finally {
+			setIsUploadingImage(false);
+		}
+	};
+
+	const handleSelectedFile = (file: File | null) => {
+		if (!file || !file.type.startsWith("image/")) {
+			return;
+		}
+		setImageFile(file);
+		setDroppedImageUrl("");
+	};
+
+	const normalizeImageUrl = (raw: string) => {
+		const trimmed = raw.trim();
+		if (!trimmed) return "";
+		const directImagePattern = /\.(gif|png|jpe?g|webp)(\?.*)?$/i;
+		if (directImagePattern.test(trimmed)) return trimmed;
+		try {
+			const parsed = new URL(trimmed);
+			if (parsed.hostname.includes("giphy.com")) {
+				const giphyMatch = parsed.pathname.match(/\/gifs\/(?:.+-)?([a-zA-Z0-9]+)$/);
+				const id = giphyMatch?.[1];
+				if (id) {
+					return `https://media.giphy.com/media/${id}/giphy.gif`;
+				}
+			}
+		} catch {
+			// Fall through to regex extraction.
+		}
+		const match = trimmed.match(/https?:\/\/\S+/);
+		return match ? match[0] : "";
+	};
+
+	const extractDroppedUrl = (event: DragEvent) => {
+		const uriList = event.dataTransfer?.getData("text/uri-list") ?? "";
+		const plainText = event.dataTransfer?.getData("text/plain") ?? "";
+		const candidate = uriList
+			.split(/\r?\n/)
+			.map((line) => line.trim())
+			.find((line) => line && !line.startsWith("#"));
+		return candidate || plainText.trim();
+	};
+
+	const handleDroppedUrl = (rawUrl: string) => {
+		const normalized = normalizeImageUrl(rawUrl);
+		if (!normalized) return;
+		setDroppedImageUrl(normalized);
+		setImageFile(null);
 	};
 
 	const isSubmitting = () => updateTeamMutation.isPending;
@@ -155,9 +270,96 @@ function TeamHeader(props: { team: { id: string; name: string; imageUrl: string 
 					</DialogHeader>
 					<div class="space-y-4 py-4">
 						<div class="space-y-2">
-							<Label>Image URL</Label>
-							<Input value={imageUrl()} onInput={(e) => setImageUrl(e.currentTarget.value)} placeholder="https://..." autofocus />
+							<Label>Upload Image</Label>
+							<Card
+								class={cn("border-dashed bg-muted/30 transition-all", isDragActive() && "border-blue-300 bg-blue-50/60 shadow-md")}
+								onDragOver={(event) => {
+									event.preventDefault();
+									setIsDragActive(true);
+								}}
+								onDragLeave={(event) => {
+									event.preventDefault();
+									setIsDragActive(false);
+								}}
+								onDrop={(event) => {
+									event.preventDefault();
+									setIsDragActive(false);
+									const file = event.dataTransfer?.files?.[0] ?? null;
+									if (file) {
+										handleSelectedFile(file);
+										return;
+									}
+									const droppedUrl = extractDroppedUrl(event);
+									if (droppedUrl) {
+										handleDroppedUrl(droppedUrl);
+										return;
+									}
+									const items = event.dataTransfer?.items;
+									if (items?.length) {
+										for (const item of Array.from(items)) {
+											if (item.kind === "string") {
+												item.getAsString((value) => handleDroppedUrl(value));
+											}
+										}
+									}
+								}}
+							>
+								<CardContent class="p-4 space-y-3">
+									<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+										<div class="space-y-1">
+											<div class="flex items-center gap-2 text-sm font-medium text-foreground">
+												<ImageUp class="w-4 h-4 text-blue-600" />
+												<span>Select an image file</span>
+											</div>
+											<p class="text-xs text-muted-foreground">Choose or drop a file to replace the team icon.</p>
+										</div>
+										<div class="flex items-center gap-2">
+											<Input
+												ref={(el) => {
+													fileInputRef = el;
+												}}
+												id="team-image-file"
+												type="file"
+												accept="image/*"
+												class="hidden"
+												onChange={(e) => {
+													const file = e.currentTarget.files?.[0] ?? null;
+													handleSelectedFile(file);
+												}}
+											/>
+											<Button
+												variant="outline"
+												class="cursor-pointer"
+												onClick={(e) => {
+													e.stopPropagation();
+													fileInputRef?.click();
+												}}
+											>
+												<ImageUp class="w-4 h-4 mr-2" />
+												Browse files
+											</Button>
+										</div>
+									</div>
+									<Show when={selectedFileDetails()}>
+										{(details) => (
+											<div class="flex items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-xs">
+												<span class="font-medium text-foreground">{details().name}</span>
+												<span class="text-muted-foreground">{details().size}</span>
+											</div>
+										)}
+									</Show>
+								</CardContent>
+							</Card>
 						</div>
+						<Show when={previewSource()}>
+							{(src) => (
+								<div class="flex justify-center">
+									<div class="h-16 w-16 overflow-hidden rounded-xl border border-blue-200 bg-gradient-to-br from-blue-100 to-blue-50 shadow-sm">
+										<img src={src()} alt="Preview" class="h-full w-full object-cover" />
+									</div>
+								</div>
+							)}
+						</Show>
 						<div class="flex justify-end gap-2">
 							<Button
 								variant="ghost"
@@ -171,11 +373,11 @@ function TeamHeader(props: { team: { id: string; name: string; imageUrl: string 
 							<Button
 								onClick={(e) => {
 									e.stopPropagation();
-									handleUpdate();
+									void handleUpdateImage();
 								}}
-								disabled={isSubmitting()}
+								disabled={isSubmitting() || isUploadingImage() || (!imageFile() && !droppedImageUrl())}
 							>
-								{isSubmitting() ? <LoaderCircle class="w-4 h-4 animate-spin" /> : "Save"}
+								{isSubmitting() || isUploadingImage() ? <LoaderCircle class="w-4 h-4 animate-spin" /> : "Save"}
 							</Button>
 						</div>
 					</div>
@@ -197,7 +399,7 @@ function TeamHeader(props: { team: { id: string; name: string; imageUrl: string 
 							class="flex items-center gap-2"
 							onSubmit={(e) => {
 								e.preventDefault();
-								handleUpdate();
+								handleUpdateName();
 							}}
 							onFocusOut={(e) => {
 								if (!e.currentTarget.contains(e.relatedTarget as Node) && !isSubmitting()) {
@@ -229,6 +431,7 @@ function TeamHeader(props: { team: { id: string; name: string; imageUrl: string 
 // --- Users Tab ---
 
 function TeamUsers(props: { teamId: string }) {
+	const auth = useAuth();
 	const usersQuery = useUsers();
 	const members = createMemo(() => usersQuery.data?.filter((u) => u.teamIds.includes(props.teamId)) ?? []);
 	const removeMemberMutation = useRemoveTeamMember();
@@ -258,22 +461,37 @@ function TeamUsers(props: { teamId: string }) {
 
 			<div class="space-y-3">
 				<For each={members()}>
-					{(member) => (
-						<ConfigCard>
-							<ConfigCardRow>
-								<UserAvatar name={() => member.name} avatar={() => member.image ?? undefined} />
-								<ConfigCardContent>
-									<ConfigCardTitle>{member.name}</ConfigCardTitle>
-								</ConfigCardContent>
-								<ConfigCardActions animated>
-									<ConfigCardDeleteButton
-										onDelete={() => handleRemoveMember(member.id)}
-										isDeleting={removeMemberMutation.isPending && removeMemberMutation.variables?.userId === member.id}
-									/>
-								</ConfigCardActions>
-							</ConfigCardRow>
-						</ConfigCard>
-					)}
+					{(member) => {
+						const isCurrentUser = () => member.id === auth.userId;
+						const hasSlack = () => member.connectedIntegrations?.includes("slack");
+
+						return (
+							<ConfigCard>
+								<ConfigCardRow>
+									<UserAvatar name={() => member.name} avatar={() => member.image ?? undefined} />
+									<ConfigCardContent>
+										<ConfigCardTitle>{member.name}</ConfigCardTitle>
+									</ConfigCardContent>
+									<Show when={hasSlack()}>
+										<div class="flex items-center gap-1.5 shrink-0 pr-2">
+											<SlackIcon class="w-5 h-5" />
+										</div>
+									</Show>
+									<Show when={isCurrentUser() && !hasSlack()}>
+										<Link to="/config/integrations" class="text-sm text-blue-500 hover:text-blue-600 hover:underline shrink-0 pr-8">
+											Connect Slack
+										</Link>
+									</Show>
+									<ConfigCardActions animated>
+										<ConfigCardDeleteButton
+											onDelete={() => handleRemoveMember(member.id)}
+											isDeleting={removeMemberMutation.isPending && removeMemberMutation.variables?.userId === member.id}
+										/>
+									</ConfigCardActions>
+								</ConfigCardRow>
+							</ConfigCard>
+						);
+					}}
 				</For>
 			</div>
 		</div>
@@ -294,12 +512,14 @@ function AddMemberSelector(props: { teamId: string; existingMemberIds: string[] 
 					id: user.id,
 					name: user.name,
 					avatar: user.image,
+					disabled: user.disabled,
+					disabledReason: user.disabled ? "Missing Slack integration" : undefined,
 				})) ?? [],
 	);
 
 	const handleAdd = async (userId: string) => {
 		const user = usersQuery.data?.find((u) => u.id === userId);
-		if (user) {
+		if (user && !user.disabled) {
 			addTeamMemberMutation.mutate({ teamId: props.teamId, userId });
 		}
 		setOpen(false);

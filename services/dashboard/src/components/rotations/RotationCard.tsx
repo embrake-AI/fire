@@ -73,7 +73,8 @@ export function RotationCard(props: RotationCardProps) {
 		return usersQuery.data?.find((u) => u.id === assignee.id);
 	});
 
-	const handleSelectAssignee = (user: { id: string; name: string; avatar?: string | null }) => {
+	const handleSelectAssignee = (user: { id: string; name: string; avatar?: string | null; disabled?: boolean }) => {
+		if (user.disabled) return;
 		addAssigneeMutation.mutate(toAddAssigneeInput(props.rotation.id, { id: user.id, name: user.name, avatar: user.avatar ?? undefined }));
 		setIsAddingAssignee(false);
 	};
@@ -436,6 +437,8 @@ function AddAssigneePickerContent(props: AddAssigneePickerContentProps) {
 			id: u.id,
 			name: u.name,
 			avatar: u.image,
+			disabled: u.disabled,
+			disabledReason: u.disabled ? "Missing Slack integration" : undefined,
 		}));
 	});
 

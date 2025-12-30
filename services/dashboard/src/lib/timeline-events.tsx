@@ -1,11 +1,23 @@
 import type { IS_Event } from "@fire/common";
 import { CircleCheck, Flame, MessageSquare, ShieldAlert, TriangleAlert, User } from "lucide-solid";
 import type { Component } from "solid-js";
-import { Show } from "solid-js";
+import { createMemo, Show } from "solid-js";
 import { SlackAvatar } from "~/components/SlackEntityPicker";
 import { Badge } from "~/components/ui/badge";
 import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { replaceEmojis, useEmojis } from "./emoji/emoji";
 import { getSeverity, getStatus } from "./incident-config";
+
+function EmojiText(props: { text: string; class?: string }) {
+	const loaded = useEmojis();
+
+	const html = createMemo(() => {
+		loaded();
+		return replaceEmojis(props.text);
+	});
+
+	return <span class={props.class} innerHTML={html()} />;
+}
 
 type EventType = IS_Event["event_type"];
 
@@ -51,7 +63,7 @@ export const eventRegistry: EventConfigMap = {
 						<div class="flex-1 min-w-0 pr-4">
 							<TabsContent value="description" class="mt-0">
 								<Show when={data.description} fallback={<p class="text-sm text-muted-foreground italic">No description</p>}>
-									<p class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{data.description}</p>
+									<EmojiText text={data.description!} class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap" />
 								</Show>
 							</TabsContent>
 							<TabsContent value="prompt" class="mt-0">
@@ -87,7 +99,9 @@ export const eventRegistry: EventConfigMap = {
 						<span class="font-semibold">{status.label}</span>
 					</Badge>
 					<Show when={data.message}>
-						<p class="text-sm text-muted-foreground italic">"{data.message}"</p>
+						<p class="text-sm text-muted-foreground italic">
+							"<EmojiText text={data.message!} />"
+						</p>
 					</Show>
 				</div>
 			);
@@ -127,7 +141,7 @@ export const eventRegistry: EventConfigMap = {
 		render: ({ data }) => (
 			<div class="flex items-center gap-2">
 				<SlackAvatar id={data.userId} />
-				<p class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{data.message}</p>
+				<EmojiText text={data.message} class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap" />
 			</div>
 		),
 	},

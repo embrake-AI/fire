@@ -223,3 +223,12 @@ code {
 	animation-duration: 14s;
 	animation-delay: 2.5s;
 }
+
+/* Inline emoji styling for custom Slack emojis */
+.inline-emoji {
+	display: inline-block;
+	height: 1.2em;
+	width: auto;
+	vertical-align: text-bottom;
+	margin: 0 0.05em;
+}

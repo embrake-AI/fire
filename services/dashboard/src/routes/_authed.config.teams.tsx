@@ -138,9 +138,16 @@ function TeamCard(props: TeamCardProps) {
 	return (
 		<ConfigCard>
 			<ConfigCardRow onClick={() => navigate({ to: `/teams/${props.team.id}` })} class="hover:bg-muted/50 transition-colors cursor-pointer">
-				<ConfigCardIcon variant="blue" size="sm">
-					<Users class="w-4 h-4" />
-				</ConfigCardIcon>
+				<Show
+					when={props.team.imageUrl}
+					fallback={
+						<ConfigCardIcon variant="blue" size="sm">
+							<Users class="w-4 h-4" />
+						</ConfigCardIcon>
+					}
+				>
+					{(imageUrl) => <img src={imageUrl()} alt={props.team.name} class="w-8 h-8 rounded-lg object-cover shrink-0" />}
+				</Show>
 
 				<ConfigCardTitle class="flex-1">{props.team.name}</ConfigCardTitle>
 

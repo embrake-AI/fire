@@ -17,6 +17,7 @@ import { Route as AuthedConfigRouteImport } from './routes/_authed.config'
 import { Route as ApiMetricsIndexRouteImport } from './routes/api/metrics/index'
 import { Route as AuthedAnalysisIndexRouteImport } from './routes/_authed.analysis/index'
 import { Route as SlackOauthCallbackRouteImport } from './routes/slack/oauth/callback'
+import { Route as ApiUploadTeamImageRouteImport } from './routes/api/upload/team-image'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedTeamsTeamIdRouteImport } from './routes/_authed.teams/$teamId'
 import { Route as AuthedIncidentsIncidentIdRouteImport } from './routes/_authed.incidents/$incidentId'
@@ -65,6 +66,11 @@ const AuthedAnalysisIndexRoute = AuthedAnalysisIndexRouteImport.update({
 const SlackOauthCallbackRoute = SlackOauthCallbackRouteImport.update({
   id: '/slack/oauth/callback',
   path: '/slack/oauth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUploadTeamImageRoute = ApiUploadTeamImageRouteImport.update({
+  id: '/api/upload/team-image',
+  path: '/api/upload/team-image',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -136,6 +142,7 @@ export interface FileRoutesByFullPath {
   '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/upload/team-image': typeof ApiUploadTeamImageRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/analysis': typeof AuthedAnalysisIndexRoute
   '/api/metrics': typeof ApiMetricsIndexRoute
@@ -155,6 +162,7 @@ export interface FileRoutesByTo {
   '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/upload/team-image': typeof ApiUploadTeamImageRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/analysis': typeof AuthedAnalysisIndexRoute
   '/api/metrics': typeof ApiMetricsIndexRoute
@@ -176,6 +184,7 @@ export interface FileRoutesById {
   '/_authed/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/_authed/teams/$teamId': typeof AuthedTeamsTeamIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/upload/team-image': typeof ApiUploadTeamImageRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/_authed/analysis/': typeof AuthedAnalysisIndexRoute
   '/api/metrics/': typeof ApiMetricsIndexRoute
@@ -197,6 +206,7 @@ export interface FileRouteTypes {
     | '/incidents/$incidentId'
     | '/teams/$teamId'
     | '/api/auth/$'
+    | '/api/upload/team-image'
     | '/slack/oauth/callback'
     | '/analysis'
     | '/api/metrics'
@@ -216,6 +226,7 @@ export interface FileRouteTypes {
     | '/incidents/$incidentId'
     | '/teams/$teamId'
     | '/api/auth/$'
+    | '/api/upload/team-image'
     | '/slack/oauth/callback'
     | '/analysis'
     | '/api/metrics'
@@ -236,6 +247,7 @@ export interface FileRouteTypes {
     | '/_authed/incidents/$incidentId'
     | '/_authed/teams/$teamId'
     | '/api/auth/$'
+    | '/api/upload/team-image'
     | '/slack/oauth/callback'
     | '/_authed/analysis/'
     | '/api/metrics/'
@@ -246,6 +258,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   AuthErrorRoute: typeof AuthErrorRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiUploadTeamImageRoute: typeof ApiUploadTeamImageRoute
   SlackOauthCallbackRoute: typeof SlackOauthCallbackRoute
   ApiMetricsIndexRoute: typeof ApiMetricsIndexRoute
 }
@@ -306,6 +319,13 @@ declare module '@tanstack/solid-router' {
       path: '/slack/oauth/callback'
       fullPath: '/slack/oauth/callback'
       preLoaderRoute: typeof SlackOauthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/upload/team-image': {
+      id: '/api/upload/team-image'
+      path: '/api/upload/team-image'
+      fullPath: '/api/upload/team-image'
+      preLoaderRoute: typeof ApiUploadTeamImageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -429,6 +449,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   AuthErrorRoute: AuthErrorRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiUploadTeamImageRoute: ApiUploadTeamImageRoute,
   SlackOauthCallbackRoute: SlackOauthCallbackRoute,
   ApiMetricsIndexRoute: ApiMetricsIndexRoute,
 }

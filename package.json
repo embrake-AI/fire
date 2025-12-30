@@ -26,7 +26,8 @@
 		"type-check": "turbo run type-check",
 		"lint": "turbo run lint",
 		"lint:fix": "turbo run lint -- --fix",
-		"clean": "turbo run clean && rm -rf node_modules"
+		"clean": "turbo run clean && rm -rf node_modules",
+		"db:generate": "bun --filter @fire/db db:generate"
 	},
 	"devDependencies": {
 		"turbo": "^2.7.2",

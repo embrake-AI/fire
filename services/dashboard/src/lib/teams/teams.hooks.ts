@@ -22,7 +22,7 @@ export function useUpdateTeam(options?: { onMutate?: () => void; onSuccess?: () 
 	const updateTeamFn = useServerFn(updateTeam);
 
 	return useMutation(() => ({
-		mutationFn: (data: { id: string; name?: string; imageUrl?: string }) => updateTeamFn({ data }),
+		mutationFn: (data: { id: string; name?: string; imageUrl?: string | null }) => updateTeamFn({ data }),
 
 		onMutate: async (newData) => {
 			await queryClient.cancelQueries({ queryKey: ["teams"] });

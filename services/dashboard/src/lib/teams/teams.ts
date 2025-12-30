@@ -106,14 +106,19 @@ export const removeTeamMember = createServerFn({ method: "POST" })
 
 export const updateTeam = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
-	.inputValidator((data: { id: string; name?: string; imageUrl?: string }) => data)
+	.inputValidator((data: { id: string; name?: string; imageUrl?: string | null }) => data)
 	.handler(async ({ data, context }) => {
+		const updateFields: { name?: string; imageUrl?: string | null } = {};
+		if (data.name !== undefined) {
+			updateFields.name = data.name;
+		}
+		if (data.imageUrl !== undefined && data.imageUrl !== null) {
+			updateFields.imageUrl = data.imageUrl || null;
+		}
+
 		const [updatedTeam] = await db
 			.update(team)
-			.set({
-				name: data.name,
-				imageUrl: data.imageUrl,
-			})
+			.set(updateFields)
 			.where(and(eq(team.id, data.id), eq(team.clientId, context.clientId)))
 			.returning();
 
@@ -143,14 +148,26 @@ export const getUsers = createServerFn({
 						id: true,
 					},
 				},
+				userIntegrations: {
+					columns: {
+						platform: true,
+					},
+				},
 			},
 		});
 
-		return users.map((user) => ({
-			id: user.id,
-			name: user.name,
-			email: user.email,
-			image: user.image,
-			teamIds: user.teams.map((team) => team.id),
-		}));
+		return users.map((user) => {
+			const connectedIntegrations = user.userIntegrations.map((integration) => integration.platform);
+			const hasSlack = connectedIntegrations.includes("slack");
+
+			return {
+				id: user.id,
+				name: user.name,
+				email: user.email,
+				image: user.image,
+				teamIds: user.teams.map((team) => team.id),
+				connectedIntegrations,
+				disabled: !hasSlack,
+			};
+		});
 	});

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { pgView } from "drizzle-orm/pg-core";
+import { userIntegration } from "./integration";
 import { rotation } from "./rotation";
 
 export const shiftStart = sql`date_bin(${rotation.shiftLength}, now(), ${rotation.anchorAt})`;
@@ -43,6 +44,31 @@ export const rotationWithAssignee = pgView("rotationWithAssignee").as((qb) =>
 			createdAt: rotation.createdAt,
 			updatedAt: rotation.updatedAt,
 			teamId: rotation.teamId,
+			userIntegrations: sql<Array<{ platform: string; userId: string }>>`
+				COALESCE(
+					json_agg(
+						json_build_object(
+							'platform', ${userIntegration.platform},
+							'userId', ${userIntegration.data}->>'userId'
+						)
+					) FILTER (WHERE ${userIntegration.platform} IS NOT NULL),
+					'[]'::json
+				)
+			`.as("user_integrations"),
 		})
-		.from(rotation),
+		.from(rotation)
+		.leftJoin(userIntegration, sql`${effectiveAssignee} = ${userIntegration.userId}`)
+		.groupBy(
+			rotation.id,
+			rotation.name,
+			rotation.clientId,
+			rotation.shiftLength,
+			rotation.assignees,
+			rotation.anchorAt,
+			rotation.assigneeOverwrite,
+			rotation.overrideForShiftStart,
+			rotation.createdAt,
+			rotation.updatedAt,
+			rotation.teamId,
+		),
 );

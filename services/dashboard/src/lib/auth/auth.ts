@@ -1,8 +1,8 @@
 import { client } from "@fire/db/schema";
 import { APIError, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { arrayContains } from "drizzle-orm";
+import { uploadImageFromUrl } from "~/lib/blob";
 import { db } from "~/lib/db";
 
 export const auth = betterAuth({
@@ -92,9 +92,13 @@ export const auth = betterAuth({
 						});
 					}
 
+					const userKey = user.id ?? user.email?.replace(/[^a-z0-9_-]/gi, "_") ?? "unknown";
+					const uploadedImageUrl = user.image ? await uploadImageFromUrl(user.image, `users/${foundClient.id}/${userKey}`) : null;
+
 					return {
 						data: {
 							...user,
+							image: uploadedImageUrl ?? user.image,
 							clientId: foundClient.id,
 						},
 					};
@@ -106,8 +110,4 @@ export const auth = betterAuth({
 	onAPIError: {
 		errorURL: "/auth/error",
 	},
-
-	// REQUIRED for TanStack Start cookie setting behavior.
-	// Keep it LAST.
-	plugins: [tanstackStartCookies()],
 });
