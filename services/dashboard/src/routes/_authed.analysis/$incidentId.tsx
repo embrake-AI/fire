@@ -193,7 +193,7 @@ function AnalysisHeader(props: { analysis: Accessor<IncidentAnalysis> }) {
 				<span class="text-muted-foreground/40">·</span>
 
 				<div class="flex items-center gap-2">
-					<SlackAvatar id={analysis().assignee} withName />
+					<SlackAvatar id={analysis().assignee.userIntegrations.find((ui) => ui.platform === "slack")?.userId} withName />
 				</div>
 
 				<span class="text-muted-foreground/40">·</span>

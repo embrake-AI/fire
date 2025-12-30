@@ -15,21 +15,23 @@ export function useEntryPoints(options?: { enabled?: Accessor<boolean> }) {
 	}));
 }
 
-type CreateEntryPointMutationInput = CreateEntryPointInput & {
-	optimisticData: { name?: string; avatar?: string; teamId?: string };
-};
-
-export function useCreateEntryPoint(options?: { onMutate?: (tempId: string) => void; onSuccess?: (realId: string) => void; onError?: () => void; onSettled?: () => void }) {
+export function useCreateEntryPoint(options?: {
+	onMutate?: (tempId: string) => void;
+	onSuccess?: (result: { id: string; tempId: string }) => void;
+	onError?: () => void;
+	onSettled?: () => void;
+}) {
 	const queryClient = useQueryClient();
 
 	const createEntryPointFn = useServerFn(createEntryPoint);
 
 	return useMutation(() => ({
-		mutationFn: (data: CreateEntryPointMutationInput) => {
-			if (data.type === "slack-user") {
-				return createEntryPointFn({ data: { type: "slack-user", assigneeId: data.assigneeId, prompt: data.prompt } });
+		mutationFn: (data: CreateEntryPointInput) => {
+			if (data.type === "user") {
+				return createEntryPointFn({ data: { type: "user", userId: data.userId, prompt: data.prompt } });
+			} else {
+				return createEntryPointFn({ data: { type: "rotation", rotationId: data.rotationId, prompt: data.prompt } });
 			}
-			return createEntryPointFn({ data: { type: "rotation", rotationId: data.rotationId, prompt: data.prompt } });
 		},
 
 		onMutate: async (newData) => {
@@ -44,26 +46,22 @@ export function useCreateEntryPoint(options?: { onMutate?: (tempId: string) => v
 				id: tempId,
 				prompt: "",
 				isFallback: isFirst,
-				name: newData.optimisticData.name,
 			};
 
-			const optimisticEntryPoint = (
-				newData.type === "slack-user"
+			const optimisticEntryPoint: GetEntryPointsResponse[number] =
+				newData.type === "user"
 					? {
 							...baseOptimistic,
-							type: "slack-user" as const,
-							assigneeId: newData.assigneeId,
-							avatar: newData.optimisticData.avatar,
-							rotationId: null,
-							teamId: null,
+							type: "user" as const,
+							assigneeId: newData.userId,
+							teamId: undefined,
 						}
 					: {
 							...baseOptimistic,
 							type: "rotation" as const,
 							rotationId: newData.rotationId,
-							teamId: newData.optimisticData.teamId,
-						}
-			) as GetEntryPointsResponse[number];
+							teamId: newData.teamId ?? null,
+						};
 
 			queryClient.setQueryData<GetEntryPointsResponse>(["entry-points"], (old) => [optimisticEntryPoint, ...(old ?? [])]);
 
@@ -75,14 +73,11 @@ export function useCreateEntryPoint(options?: { onMutate?: (tempId: string) => v
 		onSuccess: (newEntryPoint, _, context) => {
 			if (newEntryPoint?.id && context?.tempId) {
 				queryClient.setQueryData<GetEntryPointsResponse>(["entry-points"], (old) => {
-					return old?.map((ep) => (ep.id === context.tempId ? (newEntryPoint as GetEntryPointsResponse[number]) : ep));
+					return old?.map((ep) => (ep.id === context.tempId ? { ...ep, id: newEntryPoint.id } : ep));
 				});
-				options?.onSuccess?.(newEntryPoint.id);
+				options?.onSuccess?.({ id: newEntryPoint.id, tempId: context.tempId });
 			}
 			queryClient.invalidateQueries({ queryKey: ["entry-points"] });
-			queryClient.invalidateQueries({ queryKey: ["slack-users"] });
-			queryClient.invalidateQueries({ queryKey: ["rotations-for-entry-points"] });
-			queryClient.invalidateQueries({ queryKey: ["rotations"] });
 		},
 
 		onError: (_err, _variables, context) => {
@@ -118,9 +113,6 @@ export function useDeleteEntryPoint(options?: { onSuccess?: () => void; onError?
 		onSuccess: () => {
 			options?.onSuccess?.();
 			queryClient.invalidateQueries({ queryKey: ["entry-points"] });
-			queryClient.invalidateQueries({ queryKey: ["slack-users"] });
-			queryClient.invalidateQueries({ queryKey: ["rotations-for-entry-points"] });
-			queryClient.invalidateQueries({ queryKey: ["rotations"] });
 		},
 
 		onError: (_err, _variables, context) => {
@@ -194,21 +186,4 @@ export function useSetFallbackEntryPoint(options?: { onSuccess?: () => void; onE
 			options?.onError?.();
 		},
 	}));
-}
-
-export function toCreateInput(user: { id: string; name?: string; avatar?: string }) {
-	return {
-		type: "slack-user" as const,
-		assigneeId: user.id,
-		optimisticData: { name: user.name, avatar: user.avatar },
-	};
-}
-
-export function toCreateRotationInput(rotation: { id: string; name: string; teamId?: string }) {
-	return {
-		type: "rotation" as const,
-		rotationId: rotation.id,
-		teamId: rotation.teamId,
-		optimisticData: { name: rotation.name, teamId: rotation.teamId },
-	};
 }

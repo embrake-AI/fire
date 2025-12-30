@@ -14,7 +14,10 @@ export type IS = {
 	prompt: string;
 	severity: IS_SEVERITY;
 	createdBy: string;
-	assignee: string;
+	assignee: {
+		id: string;
+		userIntegrations: Array<{ platform: string; userId: string }>;
+	};
 	source: IS_SOURCE;
 	title: string;
 	description: string;
@@ -22,12 +25,14 @@ export type IS = {
 	rotationId?: string;
 };
 
-export type ListIncidentsElement = Pick<IS, "id" | "status" | "assignee" | "severity" | "createdAt" | "title" | "description">;
+export type ListIncidentsElement = Pick<IS, "id" | "status" | "severity" | "createdAt" | "title" | "description"> & {
+	assignee: string;
+};
 
 export type IS_Event =
 	| {
 			event_type: "INCIDENT_CREATED";
-			event_data: Pick<IS, "status" | "severity" | "createdBy" | "assignee" | "title" | "description" | "prompt" | "source" | "entryPointId" | "rotationId">;
+			event_data: Pick<IS, "status" | "severity" | "createdBy" | "title" | "description" | "prompt" | "source" | "entryPointId" | "rotationId"> & { assignee: string };
 	  }
 	| {
 			event_type: "STATUS_UPDATE";
@@ -70,7 +75,10 @@ export type EventLog = {
 export type EntryPoint = {
 	id: string;
 	prompt: string;
-	assignee: string;
+	assignee: {
+		id: string;
+		userIntegrations: Array<{ platform: string; userId: string }>;
+	};
 	isFallback: boolean;
 	rotationId?: string;
 };

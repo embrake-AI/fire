@@ -1,45 +1,37 @@
-import { ChevronDown, ChevronUp, LoaderCircle, Plus, Star, TriangleAlert, Users } from "lucide-solid";
-import { createMemo, createSignal, Index, type JSX, Show } from "solid-js";
-import { SlackAvatar } from "~/components/SlackEntityPicker";
+import { ChevronDown, ChevronUp, Star, TriangleAlert, Users } from "lucide-solid";
+import { createMemo, Show } from "solid-js";
+import { UserAvatar } from "~/components/UserAvatar";
 import { AutoSaveTextarea } from "~/components/ui/auto-save-textarea";
 import { Button } from "~/components/ui/button";
 import { ConfigCard, ConfigCardActions, ConfigCardDeleteButton, ConfigCardRow, ConfigCardTitle } from "~/components/ui/config-card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { useSlackUser } from "~/lib/useSlackUser";
+import type { getEntryPoints } from "~/lib/entry-points/entry-points";
+import { useSetFallbackEntryPoint, useUpdateEntryPointPrompt } from "~/lib/entry-points/entry-points.hooks";
+import { useRotations } from "~/lib/rotations/rotations.hooks";
+import { useUsers } from "~/lib/users/users.hooks";
 
-export type EntryPoint = {
-	id: string;
-	prompt: string;
-	isFallback: boolean;
-} & ({ type: "user"; assigneeId: string } | { type: "rotation"; rotationId: string });
+type EntryPoint = Awaited<ReturnType<typeof getEntryPoints>>[number];
 
 export interface EntryPointCardProps {
 	entryPoint: EntryPoint;
-	rotation?: { id: string; name: string; currentAssignee: string };
-	index?: number;
-	onDelete: (id: string) => void;
-	onUpdatePrompt: (prompt: string) => Promise<void>;
-	onSetFallback: (id: string) => void;
-	isDeleting: boolean;
-	isSettingFallback: boolean;
 	isExpanded: boolean;
 	onToggle: () => void;
+	onDelete: () => void;
 }
 
 export function EntryPointCard(props: EntryPointCardProps) {
+	const usersQuery = useUsers();
+	const rotations = useRotations();
+	const updatePromptMutation = useUpdateEntryPointPrompt();
+	const setFallbackMutation = useSetFallbackEntryPoint();
+
 	const handleSave = async (value: string) => {
-		await props.onUpdatePrompt(value);
+		await updatePromptMutation.mutateAsync({ id: props.entryPoint.id, prompt: value });
 	};
 
-	const assignee = createMemo(() => {
-		if (props.entryPoint.type === "user") {
-			return props.entryPoint.assigneeId;
-		} else if (props.entryPoint.type === "rotation") {
-			return props.rotation?.currentAssignee ?? "N/A";
-		} else {
-			return "N/A";
-		}
-	});
+	const handleSetFallback = () => {
+		setFallbackMutation.mutate(props.entryPoint.id);
+	};
 
 	const getFirstLine = (text: string) => {
 		if (!text) return "";
@@ -50,19 +42,27 @@ export function EntryPointCard(props: EntryPointCardProps) {
 	const hasMissingPrompt = () => !props.entryPoint.prompt.trim();
 	const incomplete = () => hasMissingPrompt() && !props.isExpanded && !props.entryPoint.isFallback;
 
-	const user = useSlackUser(assignee);
+	const userData = createMemo(() => {
+		if (props.entryPoint.type === "user") {
+			return usersQuery.data?.find((u) => u.id === props.entryPoint.assigneeId);
+		}
+		const rotation = rotations.data?.find((r) => r.id === props.entryPoint.rotationId);
+		if (rotation?.currentAssignee) {
+			return usersQuery.data?.find((u) => u.id === rotation.currentAssignee);
+		}
+	});
 
 	const name = createMemo(() => {
-		if (props.entryPoint.type === "rotation") {
-			return props.rotation?.name ?? "N/A";
+		if (props.entryPoint.type === "user") {
+			return userData()?.name ?? "Unknown User";
 		}
-		return user()?.name ?? props.entryPoint.assigneeId;
+		return rotations.data?.find((r) => r.id === props.entryPoint.rotationId)?.name ?? "Unknown Rotation";
 	});
 
 	return (
 		<ConfigCard hasWarning={incomplete()} isActive={props.isExpanded}>
 			<ConfigCardRow onClick={props.onToggle}>
-				<SlackAvatar id={assignee()} />
+				<Show when={userData()}>{(user) => <UserAvatar name={() => user().name} avatar={() => user().image ?? undefined} />}</Show>
 
 				<span class="flex-1 min-w-0">
 					<span class="flex items-center gap-2">
@@ -100,17 +100,14 @@ export function EntryPointCard(props: EntryPointCardProps) {
 								class="h-8 px-2 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 cursor-pointer text-[10px] font-medium whitespace-nowrap"
 								onClick={(e) => {
 									e.stopPropagation();
-									props.onSetFallback(props.entryPoint.id);
+									handleSetFallback();
 								}}
-								disabled={props.isSettingFallback}
 							>
-								<Show when={props.isSettingFallback} fallback={<Star class="w-3 h-3 mr-1" />}>
-									<LoaderCircle class="w-3 h-3 animate-spin mr-1" />
-								</Show>
+								<span class="text-xs font-medium whitespace-nowrap">Set as fallback</span>
 							</Button>
 						</Show>
 
-						<ConfigCardDeleteButton onDelete={() => props.onDelete(props.entryPoint.id)} isDeleting={props.isDeleting} alwaysVisible />
+						<ConfigCardDeleteButton onDelete={props.onDelete} alwaysVisible />
 					</ConfigCardActions>
 
 					<Show when={props.isExpanded} fallback={<ChevronDown class="w-4 h-4 text-muted-foreground" />}>
@@ -163,92 +160,6 @@ export function EntryPointsEmptyState() {
 			</div>
 			<h3 class="text-lg font-medium text-foreground mb-1">No entry points yet</h3>
 			<p class="text-sm text-muted-foreground text-center max-w-sm">Add rotations or Slack users to define entry points for incident routing.</p>
-		</div>
-	);
-}
-
-// --- List Component ---
-
-export interface EntryPointsListProps {
-	entryPoints: EntryPoint[];
-	rotations: { id: string; name: string; currentAssignee: string }[];
-	onDelete: (id: string) => void;
-	onUpdatePrompt: (id: string, prompt: string) => Promise<void>;
-	onSetFallback: (id: string) => void;
-	isDeletingId: string | null;
-	isSettingFallbackId: string | null;
-	createContent: (props: { onCancel: () => void; onSuccess: (id: string) => void }) => JSX.Element;
-	createButtonText?: string;
-	createButtonPosition?: "left" | "right";
-	initiallyExpandedId?: string | null;
-	onExpand?: (id: string | null) => void;
-}
-
-export function EntryPointsList(props: EntryPointsListProps) {
-	const [expandedId, setExpandedId] = createSignal<string | null>(props.initiallyExpandedId ?? null);
-	const [isCreating, setIsCreating] = createSignal(false);
-
-	const toggleExpanded = (id: string) => {
-		const newId = expandedId() === id ? null : id;
-		setExpandedId(newId);
-		props.onExpand?.(newId);
-	};
-
-	const handleCreateSuccess = (id: string) => {
-		setIsCreating(false);
-		setExpandedId(id);
-		props.onExpand?.(id);
-	};
-
-	const handleDelete = (id: string) => {
-		if (expandedId() === id) {
-			setExpandedId(null);
-			props.onExpand?.(null);
-		}
-		props.onDelete(id);
-	};
-
-	return (
-		<div class="space-y-6">
-			<Show when={!isCreating()}>
-				<div class={`flex ${props.createButtonPosition === "right" ? "justify-end" : "justify-start"}`}>
-					<Button onClick={() => setIsCreating(true)}>
-						<Plus class="w-4 h-4 mr-2" />
-						{props.createButtonText ?? "New Entry Point"}
-					</Button>
-				</div>
-			</Show>
-
-			<Show when={isCreating()}>
-				{props.createContent({
-					onCancel: () => setIsCreating(false),
-					onSuccess: handleCreateSuccess,
-				})}
-			</Show>
-
-			<Show when={props.entryPoints.length > 0} fallback={!isCreating() && <EntryPointsEmptyState />}>
-				<div class="space-y-3">
-					<Index each={props.entryPoints}>
-						{(entryPoint, index) => {
-							const ep = entryPoint();
-							return (
-								<EntryPointCard
-									entryPoint={ep}
-									rotation={ep.type === "rotation" ? props.rotations.find((r) => r.id === ep.rotationId) : undefined}
-									index={index}
-									onDelete={handleDelete}
-									onUpdatePrompt={(prompt) => props.onUpdatePrompt(ep.id, prompt)}
-									onSetFallback={props.onSetFallback}
-									isDeleting={props.isDeletingId === ep.id}
-									isSettingFallback={props.isSettingFallbackId === ep.id}
-									isExpanded={expandedId() === ep.id}
-									onToggle={() => toggleExpanded(ep.id)}
-								/>
-							);
-						}}
-					</Index>
-				</div>
-			</Show>
 		</div>
 	);
 }

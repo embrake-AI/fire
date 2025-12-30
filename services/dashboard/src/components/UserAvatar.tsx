@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js";
-import { Show } from "solid-js";
+import { createMemo, Show } from "solid-js";
 
 export function UserAvatar(props: { name: Accessor<string>; withName?: boolean; avatar?: Accessor<string | undefined> }) {
 	const initials = () =>
@@ -10,7 +10,7 @@ export function UserAvatar(props: { name: Accessor<string>; withName?: boolean; 
 			.join("")
 			.slice(0, 2);
 
-	const avatarUrl = () => props.avatar?.();
+	const avatarUrl = createMemo(() => props.avatar?.());
 
 	return (
 		<Show when={avatarUrl()} fallback={<div class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-medium text-sm">{initials()}</div>}>

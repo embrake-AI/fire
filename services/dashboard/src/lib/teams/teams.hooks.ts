@@ -153,10 +153,10 @@ export function useAddTeamMember(options?: { onSuccess?: () => void; onError?: (
 
 			return { previousUsers, previousTeams };
 		},
-		onSuccess: () => {
+		onSuccess: async () => {
 			options?.onSuccess?.();
-			queryClient.invalidateQueries({ queryKey: ["users"] });
-			queryClient.invalidateQueries({ queryKey: ["teams"] });
+			await queryClient.invalidateQueries({ queryKey: ["users"] });
+			await queryClient.invalidateQueries({ queryKey: ["teams"] });
 		},
 		onError: (_err, _variables, context) => {
 			if (context?.previousUsers) {

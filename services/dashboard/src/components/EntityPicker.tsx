@@ -61,12 +61,7 @@ function EntityRow(props: { entity: Entity; onSelect: EntityPickerProps["onSelec
 	const isDisabled = () => props.disabled || props.entity.disabled;
 
 	const content = (
-		<CommandItem
-			value={`${props.entity.id} ${props.entity.name}`}
-			onSelect={() => !isDisabled() && props.onSelect(props.entity)}
-			disabled={isDisabled()}
-			class={isDisabled() ? "opacity-50" : ""}
-		>
+		<CommandItem value={props.entity.name} onSelect={() => !isDisabled() && props.onSelect(props.entity)} disabled={isDisabled()}>
 			<div class="flex items-center gap-3 w-full">
 				<UserAvatar name={() => props.entity.name} avatar={() => props.entity.avatar ?? undefined} />
 				<div class="flex-1 min-w-0">

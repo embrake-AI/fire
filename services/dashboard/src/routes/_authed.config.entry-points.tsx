@@ -1,23 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/solid-router";
-import { Check, ChevronDown, Link2, LoaderCircle, RefreshCw, User, X } from "lucide-solid";
-import { type Accessor, createMemo, createSignal, For, Show, Suspense } from "solid-js";
-import { EntryPointCardSkeleton, EntryPointsList } from "~/components/entry-points/EntryPointCard";
-import { SlackAvatar, SlackEntityPicker } from "~/components/SlackEntityPicker";
+import { Check, ChevronDown, Link2, LoaderCircle, Plus, RefreshCw, User, X } from "lucide-solid";
+import { type Accessor, createEffect, createMemo, createSignal, For, Show, Suspense } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
+import { EntityPicker } from "~/components/EntityPicker";
+import { EntryPointCard, EntryPointCardSkeleton, EntryPointsEmptyState } from "~/components/entry-points/EntryPointCard";
+import { SlackAvatar } from "~/components/SlackEntityPicker";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
-import {
-	toCreateInput,
-	toCreateRotationInput,
-	useCreateEntryPoint,
-	useDeleteEntryPoint,
-	useEntryPoints,
-	useSetFallbackEntryPoint,
-	useUpdateEntryPointPrompt,
-} from "~/lib/entry-points/entry-points.hooks";
+import { useCreateEntryPoint, useDeleteEntryPoint, useEntryPoints } from "~/lib/entry-points/entry-points.hooks";
 import { useIntegrations } from "~/lib/integrations/integrations.hooks";
 import { useRotations } from "~/lib/rotations/rotations.hooks";
+import { useUsers } from "~/lib/users/users.hooks";
 
 export const Route = createFileRoute("/_authed/config/entry-points")({
 	component: EntryPointsConfig,
@@ -33,101 +28,93 @@ function EntryPointsConfig() {
 	);
 }
 
-type PickerStep = "closed" | "type-selection" | "slack-user" | "rotation";
+type PickerStep = "type-selection" | "user" | "rotation";
 
 function EntryPointsContent() {
 	const entryPointsQuery = useEntryPoints();
-	const entryPoints = createMemo(
-		() =>
-			entryPointsQuery.data?.map((ep) => {
-				const type = ep.type === "rotation" ? "rotation" : "user";
-				return {
-					id: ep.id,
-					prompt: ep.prompt,
-					isFallback: ep.isFallback,
-					...(type === "rotation"
-						? ({
-								type,
-								rotationId: ep.rotationId!,
-							} as const)
-						: ({ type, assigneeId: ep.assigneeId! } as const)),
-				};
-			}) ?? [],
-	);
+	const [entryPoints, setEntryPoints] = createStore<NonNullable<typeof entryPointsQuery.data>>([]);
 
-	const rotationsQuery = useRotations();
-	const rotations = () => rotationsQuery.data ?? [];
+	const [isCreating, setIsCreating] = createSignal(false);
+	const [expandedId, setExpandedId] = createSignal<string | null>(null);
 
-	let inFlightCreate: ReturnType<typeof createMutation.mutateAsync> | null = null;
-	const createMutation = useCreateEntryPoint({
-		onMutate: () => {
-			// No-op here, handled by local state in List
-		},
-		onSuccess: (realId) => {
-			return realId;
-		},
-		onSettled: () => {
-			inFlightCreate = null;
-		},
+	createEffect(() => {
+		setEntryPoints(reconcile(entryPointsQuery.data ?? [], { key: "id" }));
 	});
 
+	const createMutation = useCreateEntryPoint({
+		onMutate: (tempId) => {
+			setIsCreating(false);
+			setExpandedId(tempId);
+		},
+		onSuccess: ({ id }) => {
+			setExpandedId(id);
+		},
+	});
 	const deleteMutation = useDeleteEntryPoint();
-	const updateMutation = useUpdateEntryPointPrompt();
-	const setFallbackMutation = useSetFallbackEntryPoint();
 
-	const handleSelectSlackUser = (user: { id: string; name?: string; avatar?: string }) => {
-		return createMutation.mutateAsync(toCreateInput(user));
+	const handleSelectUser = (user: { id: string; name?: string; avatar?: string }) => {
+		createMutation.mutate({ type: "user", userId: user.id, prompt: "" });
 	};
 
-	const handleSelectRotation = (rotation: { id: string; name: string }) => {
-		return createMutation.mutateAsync(toCreateRotationInput(rotation));
+	const handleSelectRotation = async (rotation: { id: string; name: string }) => {
+		createMutation.mutate({ type: "rotation", rotationId: rotation.id, prompt: "" });
 	};
 
 	const handleDelete = (id: string) => {
+		if (expandedId() === id) {
+			setExpandedId(null);
+		}
 		deleteMutation.mutate(id);
 	};
 
-	const handleUpdatePrompt = async (id: string, prompt: string) => {
-		if (inFlightCreate) {
-			const { id: newId } = await inFlightCreate;
-			id = newId;
-		}
-		await updateMutation.mutateAsync({ id, prompt });
-	};
-
-	const handleSetFallback = (id: string) => {
-		setFallbackMutation.mutate(id);
+	const handleCreateSuccess = (id: string) => {
+		setIsCreating(false);
+		setExpandedId(id);
 	};
 
 	return (
 		<div class="space-y-6">
-			<EntryPointsList
-				entryPoints={entryPoints()}
-				rotations={rotations()}
-				onDelete={handleDelete}
-				onUpdatePrompt={handleUpdatePrompt}
-				onSetFallback={handleSetFallback}
-				isDeletingId={deleteMutation.variables ?? null}
-				isSettingFallbackId={setFallbackMutation.variables ?? null}
-				createButtonText="Create Entry Point"
-				createButtonPosition="left"
-				createContent={(props) => (
-					<AddEntryPointPicker
-						onCancel={props.onCancel}
-						onSuccess={props.onSuccess}
-						onSelectSlackUser={async (user) => {
-							const { id } = await handleSelectSlackUser(user);
-							props.onSuccess(id);
-						}}
-						onSelectRotation={async (rotation) => {
-							const { id } = await handleSelectRotation(rotation);
-							props.onSuccess(id);
-						}}
-						isAdding={() => createMutation.isPending}
-					/>
-				)}
-			/>
-			<EntryPointsFooter count={entryPoints().filter((ep) => !!ep.prompt || ep.isFallback).length} />
+			<Show when={!isCreating()}>
+				<div class="flex justify-start">
+					<Button onClick={() => setIsCreating(true)}>
+						<Plus class="w-4 h-4 mr-2" />
+						Create Entry Point
+					</Button>
+				</div>
+			</Show>
+
+			<Show when={isCreating()}>
+				<AddEntryPointPicker
+					onCancel={() => setIsCreating(false)}
+					onSuccess={handleCreateSuccess}
+					onSelectUser={async (user) => {
+						handleSelectUser(user);
+						handleCreateSuccess(user.id);
+					}}
+					onSelectRotation={async (rotation) => {
+						handleSelectRotation(rotation);
+						handleCreateSuccess(rotation.id);
+					}}
+					isAdding={() => createMutation.isPending}
+				/>
+			</Show>
+
+			<Show when={entryPoints.length > 0} fallback={!isCreating() && <EntryPointsEmptyState />}>
+				<div class="space-y-3">
+					<For each={entryPoints}>
+						{(ep) => (
+							<EntryPointCard
+								entryPoint={ep}
+								onDelete={() => handleDelete(ep.id)}
+								isExpanded={expandedId() === ep.id}
+								onToggle={() => setExpandedId(expandedId() === ep.id ? null : ep.id)}
+							/>
+						)}
+					</For>
+				</div>
+			</Show>
+
+			<EntryPointsFooter count={entryPoints.filter((ep) => !!ep.prompt || ep.isFallback).length} />
 		</div>
 	);
 }
@@ -138,7 +125,7 @@ interface AddEntryPointPickerProps {
 	onCancel: () => void;
 	onSuccess: (id: string) => void;
 	isAdding: Accessor<boolean>;
-	onSelectSlackUser: (user: { id: string; name?: string; avatar?: string }) => Promise<void>;
+	onSelectUser: (user: { id: string; name?: string; avatar?: string }) => Promise<void>;
 	onSelectRotation: (rotation: { id: string; name: string }) => Promise<void>;
 }
 
@@ -151,8 +138,8 @@ function AddEntryPointPicker(props: AddEntryPointPickerProps) {
 		switch (step()) {
 			case "type-selection":
 				return "Create entry point";
-			case "slack-user":
-				return "Select Slack user";
+			case "user":
+				return "Select user";
 			case "rotation":
 				return "Select rotation";
 			default:
@@ -185,11 +172,21 @@ function AddEntryPointPicker(props: AddEntryPointPickerProps) {
 				<Show when={step() === "type-selection"}>
 					<TypeSelectionContent setStep={setStep} />
 				</Show>
-				<Show when={step() === "slack-user"}>
-					<SlackUserPickerContent onSelect={props.onSelectSlackUser} isAdding={props.isAdding} />
+				<Show when={step() === "user"}>
+					<UserPickerContent
+						onSelect={(user) => {
+							props.onSelectUser(user);
+						}}
+						isAdding={props.isAdding}
+					/>
 				</Show>
 				<Show when={step() === "rotation"}>
-					<RotationPickerContent onSelect={props.onSelectRotation} isAdding={props.isAdding} />
+					<RotationPickerContent
+						onSelect={(rotation) => {
+							props.onSelectRotation(rotation);
+						}}
+						isAdding={props.isAdding}
+					/>
 				</Show>
 			</Suspense>
 		</div>
@@ -246,13 +243,13 @@ function TypeSelectionContent(props: { setStep: (step: PickerStep) => void }) {
 					<Button
 						variant="ghost"
 						class="flex flex-col items-center gap-3 p-5 h-auto rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/50 hover:border-muted-foreground/30 transition-all text-center group"
-						onClick={() => props.setStep("slack-user")}
+						onClick={() => props.setStep("user")}
 					>
 						<div class="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-100 text-blue-600 group-hover:scale-105 transition-transform">
 							<User class="w-6 h-6" />
 						</div>
 						<div class="space-y-1">
-							<span class="font-semibold text-foreground">Slack User</span>
+							<span class="font-semibold text-foreground">User</span>
 							<p class="text-xs text-muted-foreground">Specific person</p>
 						</div>
 					</Button>
@@ -262,19 +259,31 @@ function TypeSelectionContent(props: { setStep: (step: PickerStep) => void }) {
 	);
 }
 
-function SlackUserPickerContent(props: { onSelect: (user: { id: string; name?: string; avatar?: string }) => void; isAdding: Accessor<boolean> }) {
+function UserPickerContent(props: { onSelect: (user: { id: string; name?: string; avatar?: string }) => void; isAdding: Accessor<boolean> }) {
+	const usersQuery = useUsers();
+	const users = createMemo(
+		() =>
+			usersQuery.data?.map((user) => ({
+				id: user.id,
+				name: user.name,
+				avatar: user.image,
+				disabled: !user.connectedIntegrations?.includes("slack"),
+				disabledReason: !user.connectedIntegrations?.includes("slack") ? "User must connect Slack to be assigned to incidents" : undefined,
+			})) ?? [],
+	);
+
 	return (
-		<SlackEntityPicker
-			onSelect={(entity) => {
-				if (entity.type === "user") {
-					props.onSelect(entity);
-				}
-			}}
-			disabled={props.isAdding()}
-			placeholder="Search users..."
-			emptyMessage="No users available."
-			mode="users"
-		/>
+		<div class="p-2">
+			<EntityPicker
+				onSelect={(entity) => {
+					props.onSelect({ id: entity.id, name: entity.name, avatar: entity.avatar ?? undefined });
+				}}
+				entities={users}
+				placeholder="Search users..."
+				emptyMessage="No users available."
+				disabled={props.isAdding()}
+			/>
+		</div>
 	);
 }
 

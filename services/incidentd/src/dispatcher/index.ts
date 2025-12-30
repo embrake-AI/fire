@@ -43,10 +43,10 @@ export async function dispatchIncidentSeverityUpdatedEvent(env: Env, id: string,
 	await Promise.all([...senders.map((sender) => sender.incidentSeverityUpdated?.(env, id, incident, metadata))]);
 }
 
-export async function dispatchIncidentAssigneeUpdatedEvent(env: Env, id: string, assignee: string, metadata: Metadata) {
+export async function dispatchIncidentAssigneeUpdatedEvent(env: Env, id: string, assignee: IS["assignee"], metadata: Metadata) {
 	const incident = await env.incidents
 		.prepare("UPDATE incident SET assignee = ? WHERE id = ? RETURNING status, assignee, severity, title, description")
-		.bind(assignee, id)
+		.bind(assignee.id, id)
 		.first<Incident>();
 	if (!incident) {
 		return;
@@ -69,7 +69,10 @@ export async function dispatchIncidentStatusUpdatedEvent(env: Env, id: string, s
 }
 
 export async function dispatchMessageAddedEvent(env: Env, id: string, message: string, userId: string, messageId: string, metadata: Metadata) {
-	const incident = await env.incidents.prepare("SELECT status, assignee, severity, title, description FROM incident WHERE id = ?").bind(id).first<Incident>();
+	const incident = await env.incidents
+		.prepare("SELECT status, assignee, severity, title, description FROM incident WHERE id = ?")
+		.bind(id)
+		.first<{ status: IS["status"]; assignee: string; severity: IS["severity"]; title: string; description: string }>();
 	if (!incident) {
 		return;
 	}

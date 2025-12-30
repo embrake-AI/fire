@@ -66,7 +66,6 @@ export function useCreateRotation(options?: { onMutate?: (tempId: string) => voi
 				options?.onSuccess?.(newRotation.id);
 			}
 			queryClient.invalidateQueries({ queryKey: ["rotations"] });
-			queryClient.invalidateQueries({ queryKey: ["rotations-for-entry-points"] });
 		},
 
 		onError: (_err, _variables, context) => {
@@ -98,7 +97,6 @@ export function useDeleteRotation(options?: { onSuccess?: () => void; onError?: 
 		onSuccess: () => {
 			options?.onSuccess?.();
 			queryClient.invalidateQueries({ queryKey: ["rotations"] });
-			queryClient.invalidateQueries({ queryKey: ["rotations-for-entry-points"] });
 			queryClient.invalidateQueries({ queryKey: ["entry-points"] });
 		},
 
@@ -131,7 +129,6 @@ export function useUpdateRotationName(options?: { onSuccess?: () => void; onErro
 		onSuccess: () => {
 			options?.onSuccess?.();
 			queryClient.invalidateQueries({ queryKey: ["rotations"] });
-			queryClient.invalidateQueries({ queryKey: ["rotations-for-entry-points"] });
 		},
 
 		onError: (_err, _variables, context) => {
@@ -204,8 +201,7 @@ export function useAddRotationAssignee(options?: { onSuccess?: () => void; onErr
 		onSuccess: () => {
 			options?.onSuccess?.();
 			queryClient.invalidateQueries({ queryKey: ["rotations"] });
-			queryClient.invalidateQueries({ queryKey: ["rotations-for-entry-points"] });
-			queryClient.invalidateQueries({ queryKey: ["slack-users"] });
+			queryClient.invalidateQueries({ queryKey: ["users"] });
 		},
 
 		onError: (_err, _variables, context) => {
@@ -245,8 +241,7 @@ export function useRemoveRotationAssignee(options?: { onSuccess?: () => void; on
 		onSuccess: () => {
 			options?.onSuccess?.();
 			queryClient.invalidateQueries({ queryKey: ["rotations"] });
-			queryClient.invalidateQueries({ queryKey: ["rotations-for-entry-points"] });
-			queryClient.invalidateQueries({ queryKey: ["slack-users"] });
+			queryClient.invalidateQueries({ queryKey: ["users"] });
 		},
 
 		onError: (_err, _variables, context) => {

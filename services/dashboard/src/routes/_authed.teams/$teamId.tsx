@@ -3,8 +3,7 @@ import { createFileRoute, Link } from "@tanstack/solid-router";
 import { Check, ImageUp, LoaderCircle, Pencil, Plus, Repeat, Users as UsersIcon, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, ErrorBoundary, For, Index, onCleanup, onMount, Show, Suspense } from "solid-js";
 import { EntityPicker } from "~/components/EntityPicker";
-import { EntryPointsList } from "~/components/entry-points/EntryPointCard";
-import { SlackIcon } from "~/components/icons/SlackIcon";
+import { EntryPointCard, EntryPointsEmptyState } from "~/components/entry-points/EntryPointCard";
 import { RotationCard, RotationEmptyState } from "~/components/rotations/RotationCard";
 import { UserAvatar } from "~/components/UserAvatar";
 import { Button } from "~/components/ui/button";
@@ -17,8 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { useAuth } from "~/lib/auth/auth-store";
-import { useCreateEntryPoint, useDeleteEntryPoint, useEntryPoints, useSetFallbackEntryPoint, useUpdateEntryPointPrompt } from "~/lib/entry-points/entry-points.hooks";
+import { useCreateEntryPoint, useDeleteEntryPoint, useEntryPoints } from "~/lib/entry-points/entry-points.hooks";
 import { useCreateRotation, useDeleteRotation, useRotations } from "~/lib/rotations/rotations.hooks";
 import { useAddTeamMember, useRemoveTeamMember, useTeams, useUpdateTeam } from "~/lib/teams/teams.hooks";
 import { useUsers } from "~/lib/users/users.hooks";
@@ -270,7 +268,6 @@ function TeamHeader(props: { team: { id: string; name: string; imageUrl: string 
 					</DialogHeader>
 					<div class="space-y-4 py-4">
 						<div class="space-y-2">
-							<Label>Upload Image</Label>
 							<Card
 								class={cn("border-dashed bg-muted/30 transition-all", isDragActive() && "border-blue-300 bg-blue-50/60 shadow-md")}
 								onDragOver={(event) => {
@@ -431,7 +428,6 @@ function TeamHeader(props: { team: { id: string; name: string; imageUrl: string 
 // --- Users Tab ---
 
 function TeamUsers(props: { teamId: string }) {
-	const auth = useAuth();
 	const usersQuery = useUsers();
 	const members = createMemo(() => usersQuery.data?.filter((u) => u.teamIds.includes(props.teamId)) ?? []);
 	const removeMemberMutation = useRemoveTeamMember();
@@ -462,9 +458,6 @@ function TeamUsers(props: { teamId: string }) {
 			<div class="space-y-3">
 				<For each={members()}>
 					{(member) => {
-						const isCurrentUser = () => member.id === auth.userId;
-						const hasSlack = () => member.connectedIntegrations?.includes("slack");
-
 						return (
 							<ConfigCard>
 								<ConfigCardRow>
@@ -472,16 +465,6 @@ function TeamUsers(props: { teamId: string }) {
 									<ConfigCardContent>
 										<ConfigCardTitle>{member.name}</ConfigCardTitle>
 									</ConfigCardContent>
-									<Show when={hasSlack()}>
-										<div class="flex items-center gap-1.5 shrink-0 pr-2">
-											<SlackIcon class="w-5 h-5" />
-										</div>
-									</Show>
-									<Show when={isCurrentUser() && !hasSlack()}>
-										<Link to="/config/integrations" class="text-sm text-blue-500 hover:text-blue-600 hover:underline shrink-0 pr-8">
-											Connect Slack
-										</Link>
-									</Show>
 									<ConfigCardActions animated>
 										<ConfigCardDeleteButton
 											onDelete={() => handleRemoveMember(member.id)}
@@ -512,16 +495,11 @@ function AddMemberSelector(props: { teamId: string; existingMemberIds: string[] 
 					id: user.id,
 					name: user.name,
 					avatar: user.image,
-					disabled: user.disabled,
-					disabledReason: user.disabled ? "Missing Slack integration" : undefined,
 				})) ?? [],
 	);
 
 	const handleAdd = async (userId: string) => {
-		const user = usersQuery.data?.find((u) => u.id === userId);
-		if (user && !user.disabled) {
-			addTeamMemberMutation.mutate({ teamId: props.teamId, userId });
-		}
+		addTeamMemberMutation.mutate({ teamId: props.teamId, userId });
 		setOpen(false);
 	};
 
@@ -599,7 +577,6 @@ function TeamRotations(props: { teamId: string }) {
 							isExpanded={expandedId() === rotation().id}
 							onToggle={() => toggleExpanded(rotation().id)}
 							onDelete={() => handleDelete(rotation().id)}
-							isDeleting={deleteMutation.isPending && deleteMutation.variables === rotation().id}
 						/>
 					)}
 				</Index>
@@ -666,6 +643,7 @@ function CreateRotationForm(props: { onSubmit: (name: string, shiftLength: Shift
 
 function TeamEntryPoints(props: { teamId: string }) {
 	const entryPointsQuery = useEntryPoints();
+	const rotationsQuery = useRotations();
 
 	// For an entrypoint to have a teamId it means that it has a rotation with that teamId
 	const entryPoints = createMemo(
@@ -679,71 +657,84 @@ function TeamEntryPoints(props: { teamId: string }) {
 						isFallback: ep.isFallback,
 						type: "rotation" as const,
 						rotationId: ep.rotationId!,
+						teamId: ep.teamId ?? null,
 					};
 				}) ?? [],
 	);
 
-	const rotationsQuery = useRotations();
-	const rotations = () => rotationsQuery.data ?? [];
-
-	let inFlightCreate: ReturnType<typeof createMutation.mutateAsync> | null = null;
 	const createMutation = useCreateEntryPoint({
-		onSuccess: (id) => {
-			return id;
+		onMutate: (tempId) => {
+			setIsCreating(false);
+			setExpandedId(tempId);
 		},
-		onSettled: () => {
-			inFlightCreate = null;
+		onSuccess: ({ id }) => {
+			setExpandedId(id);
 		},
 	});
 
 	const deleteMutation = useDeleteEntryPoint();
-	const updateMutation = useUpdateEntryPointPrompt();
-	const setFallbackMutation = useSetFallbackEntryPoint();
 
 	const handleDelete = (id: string) => {
 		deleteMutation.mutate(id);
 	};
 
-	const handleUpdatePrompt = async (id: string, prompt: string) => {
-		if (inFlightCreate) {
-			const { id: newId } = await inFlightCreate;
-			id = newId;
-		}
-		await updateMutation.mutateAsync({ id, prompt });
-	};
-
-	const handleSetFallback = (id: string) => {
-		setFallbackMutation.mutate(id);
-	};
-
 	const handleCreate = (rotationId: string) => {
-		const rotationName = rotationsQuery.data?.find((r) => r.id === rotationId)?.name;
-		return createMutation.mutateAsync({ type: "rotation", rotationId, prompt: "", optimisticData: { name: rotationName } });
+		return createMutation.mutateAsync({ type: "rotation", rotationId, prompt: "", teamId: props.teamId });
+	};
+
+	const [isCreating, setIsCreating] = createSignal(false);
+	const [expandedId, setExpandedId] = createSignal<string | null>(null);
+
+	const handleCreateSuccess = (id: string) => {
+		setIsCreating(false);
+		setExpandedId(id);
+	};
+
+	const handleDeleteWithCollapse = (id: string) => {
+		if (expandedId() === id) {
+			setExpandedId(null);
+		}
+		handleDelete(id);
 	};
 
 	return (
-		<EntryPointsList
-			entryPoints={entryPoints()}
-			rotations={rotations()}
-			onDelete={handleDelete}
-			onUpdatePrompt={handleUpdatePrompt}
-			onSetFallback={handleSetFallback}
-			isDeletingId={deleteMutation.variables ?? null}
-			isSettingFallbackId={setFallbackMutation.variables ?? null}
-			createButtonText="New Entry Point"
-			createButtonPosition="right"
-			createContent={(createProps) => (
+		<div class="space-y-6">
+			<Show when={!isCreating()}>
+				<div class="flex justify-end">
+					<Button onClick={() => setIsCreating(true)}>
+						<Plus class="w-4 h-4 mr-2" />
+						New Entry Point
+					</Button>
+				</div>
+			</Show>
+
+			<Show when={isCreating()}>
 				<CreateTeamEntryPointForm
 					rotations={rotationsQuery.data?.filter((r) => r.teamId === props.teamId) ?? []}
-					onCancel={createProps.onCancel}
+					onCancel={() => setIsCreating(false)}
 					onSubmit={async (rotationId) => {
 						const { id } = await handleCreate(rotationId);
-						createProps.onSuccess(id);
+						handleCreateSuccess(id);
 					}}
 					isSubmitting={createMutation.isPending}
 				/>
-			)}
-		/>
+			</Show>
+
+			<Show when={entryPoints().length > 0} fallback={!isCreating() && <EntryPointsEmptyState />}>
+				<div class="space-y-3">
+					<For each={entryPoints()}>
+						{(ep) => (
+							<EntryPointCard
+								entryPoint={ep}
+								onDelete={() => handleDeleteWithCollapse(ep.id)}
+								isExpanded={expandedId() === ep.id}
+								onToggle={() => setExpandedId(expandedId() === ep.id ? null : ep.id)}
+							/>
+						)}
+					</For>
+				</div>
+			</Show>
+		</div>
 	);
 }
 

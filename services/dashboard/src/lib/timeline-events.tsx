@@ -3,6 +3,7 @@ import { CircleCheck, Flame, MessageSquare, ShieldAlert, TriangleAlert, User } f
 import type { Component } from "solid-js";
 import { createMemo, Show } from "solid-js";
 import { SlackAvatar } from "~/components/SlackEntityPicker";
+import { UserAvatar } from "~/components/UserAvatar";
 import { Badge } from "~/components/ui/badge";
 import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { replaceEmojis, useEmojis } from "./emoji/emoji";
@@ -55,7 +56,7 @@ export const eventRegistry: EventConfigMap = {
 						<span class="text-muted-foreground/40">·</span>
 						<div class="flex items-center gap-2">
 							<span class="text-sm text-muted-foreground">Assigned to</span>
-							<SlackAvatar id={data.assignee} />
+							<UserAvatar name={() => data.assignee.id} />
 						</div>
 					</div>
 
@@ -115,7 +116,7 @@ export const eventRegistry: EventConfigMap = {
 		render: ({ data }) => (
 			<div class="flex items-center gap-2">
 				<p class="text-sm text-muted-foreground">Assignee changed to</p>
-				<SlackAvatar id={data.assignee} />
+				<UserAvatar name={() => data.assignee.id} />
 			</div>
 		),
 	},

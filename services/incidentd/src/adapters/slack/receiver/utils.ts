@@ -279,6 +279,19 @@ export async function getSlackIntegration(opts: {
 							rotationWithAssignee: {
 								columns: {
 									effectiveAssignee: true,
+									userIntegrations: true,
+								},
+							},
+							assignee: {
+								with: {
+									userIntegrations: {
+										columns: {
+											platform: true,
+										},
+										extras: {
+											userId: (userIntegration, { sql }) => sql<string>`${userIntegration.data}->>'userId'`,
+										},
+									},
 								},
 							},
 						},
@@ -297,18 +310,29 @@ export async function getSlackIntegration(opts: {
 		entryPoints:
 			result.entryPoints
 				.map((ep) => {
-					let assignee: string | null;
+					let assigneeId: string | null;
+					let userIntegrations: Array<{ platform: string; userId: string }> = [];
+
 					if (ep.type === "rotation" && "rotationWithAssignee" in ep) {
-						assignee = ep.rotationWithAssignee?.effectiveAssignee ?? null;
+						assigneeId = ep.rotationWithAssignee?.effectiveAssignee ?? null;
+						userIntegrations = ep.rotationWithAssignee?.userIntegrations ?? [];
+					} else if (ep.type === "user" && "assignee" in ep) {
+						assigneeId = ep.assigneeId ?? null;
+						userIntegrations = ep.assignee?.userIntegrations ?? [];
 					} else {
-						assignee = ep.assigneeId ?? null;
-					}
-					if (!assignee) {
 						return null;
 					}
+
+					if (!assigneeId) {
+						return null;
+					}
+
 					return {
 						id: ep.id,
-						assignee,
+						assignee: {
+							id: assigneeId,
+							userIntegrations,
+						},
 						prompt: ep.prompt,
 						isFallback: ep.isFallback,
 						rotationId: ep.rotationId ?? undefined,

@@ -296,15 +296,18 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 
 					<Popover open={open()} onOpenChange={setOpen}>
 						<PopoverTrigger as={Button} variant="ghost" size="sm" class="h-8 gap-2 bg-muted/50 hover:bg-muted font-normal">
-							<SlackAvatar id={incident().assignee} withName />
+							<SlackAvatar id={incident().assignee.userIntegrations.find((ui) => ui.platform === "slack")?.userId} withName />
 						</PopoverTrigger>
 						<PopoverContent class="p-0 w-[280px]">
 							<SlackEntityPicker
 								onSelect={(entity: SlackEntity) => {
-									updateAssigneeMutation.mutate(entity.id);
+									updateAssigneeMutation.mutate({
+										id: entity.id,
+										userIntegrations: [{ platform: "slack", userId: entity.id }],
+									});
 									setOpen(false);
 								}}
-								selectedId={incident().assignee ?? undefined}
+								selectedId={incident().assignee.userIntegrations.find((ui) => ui.platform === "slack")?.userId ?? undefined}
 								placeholder="Change assignee..."
 								emptyMessage="No users or groups found."
 							/>

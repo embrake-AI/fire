@@ -52,7 +52,7 @@ export async function calculateIncidentInfo(prompt: string, entryPoints: EntryPo
 	ASSERT(entryPoints.length > 0, "At least one entry point is required");
 
 	const entryPointsDescription = entryPoints
-		.map((ep, i) => `Index ${i}: Assignee: ${ep.assignee}\n   Choose when: ${ep.prompt}${ep.isFallback ? " (FALLBACK - Choose if no others match)" : ""}`)
+		.map((ep, i) => `Index ${i}: Assignee: ${ep.assignee.id}\n   Choose when: ${ep.prompt}${ep.isFallback ? " (FALLBACK - Choose if no others match)" : ""}`)
 		.join("\n");
 
 	const userMessage = `Entry Points:

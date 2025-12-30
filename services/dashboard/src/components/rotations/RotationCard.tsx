@@ -52,7 +52,6 @@ export interface RotationCardProps {
 	isExpanded: boolean;
 	onToggle: () => void;
 	onDelete: () => void;
-	isDeleting: boolean;
 }
 
 export function RotationCard(props: RotationCardProps) {
@@ -126,12 +125,7 @@ export function RotationCard(props: RotationCardProps) {
 						</span>
 					</Show>
 					<ConfigCardActions animated alwaysVisible={props.isExpanded}>
-						<ConfigCardDeleteButton
-							onDelete={props.onDelete}
-							isDeleting={props.isDeleting}
-							alwaysVisible
-							disabledReason={props.rotation.isInUse ? "Used in an entry point" : undefined}
-						/>
+						<ConfigCardDeleteButton onDelete={props.onDelete} alwaysVisible disabledReason={props.rotation.isInUse ? "Used in an entry point" : undefined} />
 					</ConfigCardActions>
 					<Show when={props.isExpanded} fallback={<ChevronDown class="w-4 h-4 text-muted-foreground" />}>
 						<ChevronUp class="w-4 h-4 text-muted-foreground" />
@@ -257,7 +251,14 @@ function RotationAssigneesSection(props: {
 				</Card>
 			</Show>
 
-			<Show when={assignees.length > 0} fallback={<AssigneesEmptyState />}>
+			<Show
+				when={assignees.length > 0}
+				fallback={
+					<Show when={!props.isAddingAssignee}>
+						<AssigneesEmptyState />
+					</Show>
+				}
+			>
 				<div class="space-y-2">
 					<For each={assignees}>
 						{(assignee, index) => (

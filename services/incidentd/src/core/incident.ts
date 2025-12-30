@@ -135,7 +135,10 @@ export class Incident extends DurableObject<Env> {
 			throw new Error("No entry points found");
 		}
 		const { selectedEntryPoint, severity, title, description } = await calculateIncidentInfo(prompt, entryPoints, this.env.OPENAI_API_KEY);
-		const assignee = selectedEntryPoint.assignee;
+		const assignee = {
+			id: selectedEntryPoint.assignee.id,
+			userIntegrations: selectedEntryPoint.assignee.userIntegrations,
+		};
 		const entryPointId = selectedEntryPoint.id;
 		const rotationId = selectedEntryPoint.rotationId;
 
@@ -171,7 +174,10 @@ export class Incident extends DurableObject<Env> {
 			await this.commit(
 				{
 					state: payload,
-					event: { event_type: "INCIDENT_CREATED", event_data: { assignee, createdBy, description, prompt, severity, source, status, title, entryPointId, rotationId } },
+					event: {
+						event_type: "INCIDENT_CREATED",
+						event_data: { assignee: assignee.id, createdBy, description, prompt, severity, source, status, title, entryPointId, rotationId },
+					},
 					adapter: source,
 				},
 				{ skipAlarm: true },
@@ -229,7 +235,7 @@ export class Incident extends DurableObject<Env> {
 			title: state.title,
 			description: state.description,
 			severity: state.severity,
-			assignee: state.assignee,
+			assignee: state.assignee.id,
 			createdBy: state.createdBy,
 			source: state.source,
 			prompt: state.prompt,
@@ -263,7 +269,7 @@ export class Incident extends DurableObject<Env> {
 					status: "open",
 					// This will be set on `init`
 					severity: "medium",
-					assignee: "",
+					assignee: { id: "", userIntegrations: [] },
 					title: "",
 					description: "",
 					entryPointId: "",

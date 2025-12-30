@@ -53,8 +53,9 @@ function AnalysisDashboard() {
 			let groupKey = "unknown";
 			let groupLabel = "Unknown";
 			if (grouping() === "assignee") {
-				groupKey = incident.assignee;
-				groupLabel = incident.assignee;
+				const slackUserId = incident.assignee.userIntegrations.find((ui) => ui.platform === "slack")?.userId ?? "unknown";
+				groupKey = slackUserId;
+				groupLabel = slackUserId;
 			} else if (grouping() === "entryPoint") {
 				groupKey = incident.entryPointId ?? "unknown";
 				groupLabel = incident.entryPointPrompt ?? "Generic/Unknown";

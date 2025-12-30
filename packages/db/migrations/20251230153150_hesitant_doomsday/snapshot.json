@@ -1,8 +1,8 @@
 {
 	"version": "8",
 	"dialect": "postgres",
-	"id": "f284147a-36fa-4dbc-a601-17344e65a90b",
-	"prevIds": ["ff7b0616-ead0-4489-8e75-37edad3a8783"],
+	"id": "305a8837-835d-4ad8-84a7-3c3e54965403",
+	"prevIds": ["f284147a-36fa-4dbc-a601-17344e65a90b"],
 	"ddl": [
 		{
 			"values": ["VIEWER", "MEMBER", "ADMIN", "SUPER_ADMIN"],
@@ -11,7 +11,7 @@
 			"schema": "public"
 		},
 		{
-			"values": ["slack-user", "rotation"],
+			"values": ["user", "rotation"],
 			"name": "assignee_type",
 			"entityType": "enums",
 			"schema": "public"

@@ -27,14 +27,14 @@ export const getEntryPoints = createServerFn({
 			.orderBy(desc(entryPoint.createdAt));
 
 		return entryPointsWithRotation.map((ep) => {
-			if (ep.type === "slack-user") {
+			if (ep.type === "user") {
 				return {
 					id: ep.id,
-					type: ep.type as "slack-user",
+					type: ep.type as "user",
 					prompt: ep.prompt,
 					assigneeId: ep.assigneeId!,
 					isFallback: ep.isFallback,
-					teamId: ep.teamId,
+					teamId: undefined,
 				};
 			} else if (ep.type === "rotation") {
 				return {
@@ -65,7 +65,7 @@ export const getSlackUsers = createServerFn({
 		return slackUsers;
 	});
 
-export type CreateEntryPointInput = { type: "slack-user"; assigneeId: string; prompt?: string } | { type: "rotation"; rotationId: string; prompt?: string; teamId?: string };
+export type CreateEntryPointInput = { type: "user"; userId: string; prompt?: string } | { type: "rotation"; rotationId: string; prompt?: string; teamId?: string };
 
 export const createEntryPoint = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
@@ -75,12 +75,12 @@ export const createEntryPoint = createServerFn({ method: "POST" })
 		const isFirst = existing.length === 0;
 
 		const values =
-			data.type === "slack-user"
+			data.type === "user"
 				? {
 						clientId: context.clientId,
-						type: "slack-user" as const,
+						type: "user" as const,
 						prompt: data.prompt || "",
-						assigneeId: data.assigneeId,
+						assigneeId: data.userId,
 						isFallback: isFirst,
 					}
 				: {
@@ -97,7 +97,7 @@ export const createEntryPoint = createServerFn({ method: "POST" })
 			id: newEntryPoint.id,
 			type: newEntryPoint.type,
 			prompt: newEntryPoint.prompt,
-			assigneeId: data.type === "slack-user" ? newEntryPoint.assigneeId : undefined,
+			assigneeId: data.type === "user" ? newEntryPoint.assigneeId : undefined,
 			rotationId: data.type === "rotation" ? newEntryPoint.rotationId : undefined,
 			isFallback: newEntryPoint.isFallback,
 		};

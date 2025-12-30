@@ -27,7 +27,8 @@
 		"lint": "turbo run lint",
 		"lint:fix": "turbo run lint -- --fix",
 		"clean": "turbo run clean && rm -rf node_modules",
-		"db:generate": "bun --filter @fire/db db:generate"
+		"db:generate": "bun --filter @fire/db db:generate",
+		"db:migrate": "bun --filter @fire/db db:migrate"
 	},
 	"devDependencies": {
 		"turbo": "^2.7.2",
