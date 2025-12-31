@@ -16,6 +16,16 @@ export const auth = betterAuth({
 			clientId: process.env.GOOGLE_CLIENT_ID!,
 			clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
 		},
+		slack: {
+			clientId: process.env.SLACK_CLIENT_ID!,
+			clientSecret: process.env.SLACK_CLIENT_SECRET!,
+		},
+	},
+	account: {
+		accountLinking: {
+			enabled: true,
+			trustedProviders: ["google", "slack"],
+		},
 	},
 	user: {
 		additionalFields: {
