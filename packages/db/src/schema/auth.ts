@@ -18,6 +18,8 @@ export const user = pgTable("user", {
 	role: userRole("role").notNull().default("VIEWER"),
 	// Custom field for client/tenant association
 	clientId: text("client_id"),
+	// Slack user ID for direct Slack integration
+	slackId: text("slack_id"),
 });
 
 export const session = pgTable("session", {

@@ -1,9 +1,10 @@
-import { client } from "@fire/db/schema";
+import { client, integration, user as userTable } from "@fire/db/schema";
 import { APIError, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { arrayContains } from "drizzle-orm";
+import { and, arrayContains, count, eq } from "drizzle-orm";
 import { uploadImageFromUrl } from "~/lib/blob";
 import { db } from "~/lib/db";
+import { lookupSlackUserIdByEmail } from "../slack";
 
 export const auth = betterAuth({
 	baseURL: process.env.VITE_APP_URL,
@@ -39,6 +40,11 @@ export const auth = betterAuth({
 				required: true,
 				fieldName: "role",
 			},
+			slackId: {
+				type: "string",
+				required: false,
+				input: false,
+			},
 		},
 	},
 	session: {
@@ -51,6 +57,63 @@ export const auth = betterAuth({
 		},
 	},
 	databaseHooks: {
+		account: {
+			create: {
+				before: async (account, ctx) => {
+					if (!ctx) return;
+
+					const userId = account.userId;
+
+					if (account.providerId === "slack") {
+						await ctx.context.internalAdapter.updateUser(userId, {
+							slackId: account.accountId,
+						});
+						return;
+					}
+
+					const user = (await ctx.context.internalAdapter.findUserById(userId)) as unknown as { id: string; email?: string; clientId?: string };
+					if (!user?.email) {
+						throw new APIError("BAD_REQUEST", { message: "User has no email" });
+					}
+					if (!user?.clientId) {
+						throw new APIError("BAD_REQUEST", { message: "User has no client" });
+					}
+
+					const userCount = await ctx.context.internalAdapter.countTotalUsers([
+						{
+							operator: "eq",
+							value: user.clientId,
+							field: "clientId",
+						},
+					]);
+					const isFirstUser = userCount === 1;
+
+					const [slackIntegration] = await db
+						.select()
+						.from(integration)
+						.where(and(eq(integration.clientId, user.clientId), eq(integration.platform, "slack")))
+						.limit(1);
+
+					if (!slackIntegration) {
+						if (isFirstUser) {
+							return;
+						}
+						throw new APIError("BAD_REQUEST", {
+							message: "Organization has no Slack integration. Please contact your administrator.",
+						});
+					}
+
+					const slackId = await lookupSlackUserIdByEmail(slackIntegration.data.botToken, user.email);
+					if (!slackId) {
+						throw new APIError("BAD_REQUEST", {
+							message: "User not found in Slack workspace. Please ensure you're using the same email as your Slack account.",
+						});
+					}
+
+					await ctx.context.internalAdapter.updateUser(userId, { slackId });
+				},
+			},
+		},
 		user: {
 			create: {
 				before: async (user) => {
@@ -102,6 +165,9 @@ export const auth = betterAuth({
 						});
 					}
 
+					const userCountResult = await db.select({ count: count() }).from(userTable).where(eq(userTable.clientId, foundClient.id));
+					const isFirstUser = userCountResult[0].count === 0;
+
 					const userKey = user.id ?? user.email?.replace(/[^a-z0-9_-]/gi, "_") ?? "unknown";
 					const uploadedImageUrl = user.image ? await uploadImageFromUrl(user.image, `users/${foundClient.id}/${userKey}`) : null;
 
@@ -110,6 +176,7 @@ export const auth = betterAuth({
 							...user,
 							image: uploadedImageUrl ?? user.image,
 							clientId: foundClient.id,
+							...(isFirstUser && { role: "ADMIN" }),
 						},
 					};
 				},

@@ -1,0 +1,2 @@
+ALTER TABLE "user" ADD COLUMN "slack_id" text;--> statement-breakpoint
+ALTER TABLE "entry_point" ADD CONSTRAINT "entry_point_assignee_id_user_id_fkey" FOREIGN KEY ("assignee_id") REFERENCES "user"("id") ON DELETE CASCADE;

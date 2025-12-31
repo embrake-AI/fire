@@ -164,3 +164,36 @@ export async function fetchSlackEmojis(botToken: string): Promise<Record<string,
 
 	return data.emoji || {};
 }
+
+type SlackLookupByEmailResponse = {
+	ok: boolean;
+	user?: {
+		id: string;
+		name: string;
+		profile?: {
+			email?: string;
+		};
+	};
+	error?: string;
+};
+
+/**
+ * Look up a Slack user by their email address.
+ * @see https://docs.slack.dev/reference/methods/users.lookupByEmail/
+ */
+export async function lookupSlackUserIdByEmail(botToken: string, email: string) {
+	const response = await fetch(`https://slack.com/api/users.lookupByEmail?email=${encodeURIComponent(email)}`, {
+		headers: {
+			Authorization: `Bearer ${botToken}`,
+			"Content-Type": "application/json",
+		},
+	});
+
+	const data: SlackLookupByEmailResponse = await response.json();
+
+	if (!data.ok || !data.user) {
+		return null;
+	}
+
+	return data.user.id;
+}
