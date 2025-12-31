@@ -40,7 +40,7 @@ function TeamUsers(props: { teamId: string }) {
 	return (
 		<div class="space-y-6">
 			<div class="flex justify-end">
-				<AddMemberSelector teamId={props.teamId} existingMemberIds={members.map((m) => m.id) ?? []} />
+				<AddMemberSelector teamId={props.teamId} />
 			</div>
 
 			<Show when={members.length === 0}>
@@ -82,7 +82,7 @@ function TeamUsers(props: { teamId: string }) {
 	);
 }
 
-function AddMemberSelector(props: { teamId: string; existingMemberIds: string[] }) {
+function AddMemberSelector(props: { teamId: string }) {
 	const [open, setOpen] = createSignal(false);
 	const addTeamMemberMutation = useAddTeamMember();
 	const addSlackUserMutation = useAddSlackUserAsTeamMember();
@@ -91,14 +91,13 @@ function AddMemberSelector(props: { teamId: string; existingMemberIds: string[] 
 	const combinedEntities = createMemo(() => {
 		return possibleSlackUsers().filter((user) => {
 			if (user.type === "user") {
-				return user.teamIds.includes(props.teamId) && !props.existingMemberIds.includes(user.id);
+				return !user.teamIds.includes(props.teamId);
 			}
 			return true;
 		});
 	});
 
 	const handleAdd = async (entity: { id: string; name: string; avatar?: string | null; type: "user" | "slack" }) => {
-		console.log(entity);
 		if (entity.type === "user") {
 			addTeamMemberMutation.mutate({ teamId: props.teamId, userId: entity.id });
 		} else {
@@ -119,7 +118,7 @@ function AddMemberSelector(props: { teamId: string; existingMemberIds: string[] 
 				Add Member
 			</PopoverTrigger>
 			<PopoverContent class="p-0" style={{ width: "200px" }}>
-				<EntityPicker onSelect={(entity) => handleAdd(entity)} entities={combinedEntities} placeholder="Select a user" />
+				<EntityPicker onSelect={handleAdd} entities={combinedEntities} placeholder="Select a user" />
 			</PopoverContent>
 		</Popover>
 	);

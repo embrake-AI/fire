@@ -12,7 +12,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { useCreateEntryPoint, useDeleteEntryPoint, useEntryPoints } from "~/lib/entry-points/entry-points.hooks";
 import { useIntegrations } from "~/lib/integrations/integrations.hooks";
 import { useRotations } from "~/lib/rotations/rotations.hooks";
-import { useUsers } from "~/lib/users/users.hooks";
+import { usePossibleSlackUsers, useUsers } from "~/lib/users/users.hooks";
 
 export const Route = createFileRoute("/_authed/config/entry-points")({
 	component: EntryPointsConfig,
@@ -52,8 +52,12 @@ function EntryPointsContent() {
 	});
 	const deleteMutation = useDeleteEntryPoint();
 
-	const handleSelectUser = (user: { id: string; name?: string; avatar?: string }) => {
-		createMutation.mutate({ type: "user", userId: user.id, prompt: "" });
+	const handleSelectUser = (user: { id: string; name?: string; avatar?: string; type: "user" | "slack" }) => {
+		if (user.type === "user") {
+			createMutation.mutate({ type: "user", userId: user.id, prompt: "" });
+		} else if (user.type === "slack") {
+			createMutation.mutate({ type: "slack-user", slackUserId: user.id, name: user.name, avatar: user.avatar, prompt: "" });
+		}
 	};
 
 	const handleSelectRotation = async (rotation: { id: string; name: string }) => {
@@ -65,11 +69,6 @@ function EntryPointsContent() {
 			setExpandedId(null);
 		}
 		deleteMutation.mutate(id);
-	};
-
-	const handleCreateSuccess = (id: string) => {
-		setIsCreating(false);
-		setExpandedId(id);
 	};
 
 	return (
@@ -86,14 +85,11 @@ function EntryPointsContent() {
 			<Show when={isCreating()}>
 				<AddEntryPointPicker
 					onCancel={() => setIsCreating(false)}
-					onSuccess={handleCreateSuccess}
 					onSelectUser={async (user) => {
 						handleSelectUser(user);
-						handleCreateSuccess(user.id);
 					}}
 					onSelectRotation={async (rotation) => {
 						handleSelectRotation(rotation);
-						handleCreateSuccess(rotation.id);
 					}}
 					isAdding={() => createMutation.isPending}
 				/>
@@ -123,9 +119,8 @@ function EntryPointsContent() {
 
 interface AddEntryPointPickerProps {
 	onCancel: () => void;
-	onSuccess: (id: string) => void;
 	isAdding: Accessor<boolean>;
-	onSelectUser: (user: { id: string; name?: string; avatar?: string }) => Promise<void>;
+	onSelectUser: (user: { id: string; name?: string; avatar?: string; type: "user" | "slack" }) => Promise<void>;
 	onSelectRotation: (rotation: { id: string; name: string }) => Promise<void>;
 }
 
@@ -259,25 +254,24 @@ function TypeSelectionContent(props: { setStep: (step: PickerStep) => void }) {
 	);
 }
 
-function UserPickerContent(props: { onSelect: (user: { id: string; name?: string; avatar?: string }) => void; isAdding: Accessor<boolean> }) {
-	const usersQuery = useUsers();
-	const users = createMemo(
-		() =>
-			usersQuery.data?.map((user) => ({
-				id: user.id,
-				name: user.name,
-				avatar: user.image,
-				disabled: !user.slackId,
-			})) ?? [],
+function UserPickerContent(props: { onSelect: (user: { id: string; name?: string; avatar?: string; type: "user" | "slack" }) => void; isAdding: Accessor<boolean> }) {
+	const users = usePossibleSlackUsers();
+	const entities = createMemo(() =>
+		users().map((user) => ({
+			id: user.id,
+			name: user.name,
+			avatar: user.avatar,
+			type: user.type,
+		})),
 	);
 
 	return (
 		<div class="p-2">
 			<EntityPicker
 				onSelect={(entity) => {
-					props.onSelect({ id: entity.id, name: entity.name, avatar: entity.avatar ?? undefined });
+					props.onSelect({ id: entity.id, name: entity.name, avatar: entity.avatar ?? undefined, type: entity.type });
 				}}
-				entities={users}
+				entities={entities}
 				placeholder="Search users..."
 				emptyMessage="No users available."
 				disabled={props.isAdding()}

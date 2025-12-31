@@ -2,8 +2,10 @@ import type { SHIFT_LENGTH_OPTIONS } from "@fire/common";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
+import type { getUsers } from "../teams/teams";
 import {
 	addRotationAssignee,
+	addSlackUserAsRotationAssignee,
 	clearRotationOverride,
 	createRotation,
 	deleteRotation,
@@ -16,6 +18,7 @@ import {
 } from "./rotations";
 
 type GetRotationsResponse = Awaited<ReturnType<typeof getRotations>>;
+type GetUsersResponse = Awaited<ReturnType<typeof getUsers>>;
 
 export function useRotations(options?: { enabled?: Accessor<boolean> }) {
 	const getRotationsFn = useServerFn(getRotations);
@@ -213,6 +216,83 @@ export function useAddRotationAssignee(options?: { onSuccess?: () => void; onErr
 	}));
 }
 
+export function useAddSlackUserAsRotationAssignee(options?: { onSuccess?: () => void; onError?: () => void }) {
+	const queryClient = useQueryClient();
+	const addSlackUserAsRotationAssigneeFn = useServerFn(addSlackUserAsRotationAssignee);
+
+	return useMutation(() => ({
+		mutationFn: (data: { rotationId: string; slackUserId: string; optimisticData: { name?: string; avatar?: string } }) =>
+			addSlackUserAsRotationAssigneeFn({ data: { rotationId: data.rotationId, slackUserId: data.slackUserId } }),
+
+		onMutate: async ({ rotationId, slackUserId, optimisticData }) => {
+			await queryClient.cancelQueries({ queryKey: ["rotations"] });
+			await queryClient.cancelQueries({ queryKey: ["users"] });
+
+			const previousRotations = queryClient.getQueryData<GetRotationsResponse>(["rotations"]);
+			const previousUsers = queryClient.getQueryData<GetUsersResponse>(["users"]);
+
+			const tempUserId = `temp-slack-${slackUserId}`;
+
+			queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) =>
+				old?.map((r) => {
+					if (r.id !== rotationId) return r;
+					if (r.assignees.some((a) => a.id === tempUserId)) return r;
+					return {
+						...r,
+						assignees: [...r.assignees, { id: tempUserId, name: optimisticData.name, avatar: optimisticData.avatar, isBaseAssignee: false, isOverride: false }],
+					};
+				}),
+			);
+
+			queryClient.setQueryData<GetUsersResponse>(["users"], (prev) => {
+				if (prev?.some((user) => user.id === tempUserId)) return prev;
+				return [
+					...(prev ?? []),
+					{
+						id: tempUserId,
+						name: optimisticData.name ?? "Slack user",
+						email: "",
+						image: optimisticData.avatar ?? null,
+						teamIds: [],
+						slackId: slackUserId,
+					},
+				];
+			});
+
+			return { previousRotations, previousUsers, tempUserId };
+		},
+
+		onSuccess: (newUser, variables) => {
+			const tempUserId = `temp-slack-${variables.slackUserId}`;
+			if (newUser?.userId) {
+				queryClient.setQueryData<GetUsersResponse>(["users"], (prev) => prev?.map((user) => (user.id === tempUserId ? { ...user, id: newUser.userId } : user)));
+				queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) =>
+					old?.map((r) => {
+						if (r.id !== variables.rotationId) return r;
+						return {
+							...r,
+							assignees: r.assignees.map((a) => (a.id === tempUserId ? { ...a, id: newUser.userId } : a)),
+						};
+					}),
+				);
+			}
+			options?.onSuccess?.();
+			queryClient.invalidateQueries({ queryKey: ["rotations"] });
+			queryClient.invalidateQueries({ queryKey: ["users"] });
+		},
+
+		onError: (_err, _variables, context) => {
+			if (context?.previousRotations) {
+				queryClient.setQueryData(["rotations"], context.previousRotations);
+			}
+			if (context?.previousUsers) {
+				queryClient.setQueryData(["users"], context.previousUsers);
+			}
+			options?.onError?.();
+		},
+	}));
+}
+
 export function useRemoveRotationAssignee(options?: { onSuccess?: () => void; onError?: () => void }) {
 	const queryClient = useQueryClient();
 	const removeRotationAssigneeFn = useServerFn(removeRotationAssignee);
@@ -395,6 +475,14 @@ export function toAddAssigneeInput(rotationId: string, user: { id: string; name?
 	return {
 		rotationId,
 		assigneeId: user.id,
+		optimisticData: { name: user.name, avatar: user.avatar },
+	};
+}
+
+export function toAddSlackUserAssigneeInput(rotationId: string, user: { id: string; name?: string; avatar?: string }) {
+	return {
+		rotationId,
+		slackUserId: user.id,
 		optimisticData: { name: user.name, avatar: user.avatar },
 	};
 }

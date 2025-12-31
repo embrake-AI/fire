@@ -20,13 +20,15 @@ import { Skeleton } from "~/components/ui/skeleton";
 import type { getRotations } from "~/lib/rotations/rotations";
 import {
 	toAddAssigneeInput,
+	toAddSlackUserAssigneeInput,
 	useAddRotationAssignee,
+	useAddSlackUserAsRotationAssignee,
 	useClearRotationOverride,
 	useRemoveRotationAssignee,
 	useReorderRotationAssignee,
 	useSetRotationOverride,
 } from "~/lib/rotations/rotations.hooks";
-import { useUsers } from "~/lib/users/users.hooks";
+import { usePossibleSlackUsers, useUsers } from "~/lib/users/users.hooks";
 
 // --- Types ---
 
@@ -56,6 +58,7 @@ export interface RotationCardProps {
 
 export function RotationCard(props: RotationCardProps) {
 	const addAssigneeMutation = useAddRotationAssignee();
+	const addSlackUserAsAssigneeMutation = useAddSlackUserAsRotationAssignee();
 	const removeAssigneeMutation = useRemoveRotationAssignee();
 	const reorderMutation = useReorderRotationAssignee();
 	const overrideMutation = useSetRotationOverride();
@@ -72,9 +75,12 @@ export function RotationCard(props: RotationCardProps) {
 		return usersQuery.data?.find((u) => u.id === assignee.id);
 	});
 
-	const handleSelectAssignee = (user: { id: string; name: string; avatar?: string | null; disabled?: boolean }) => {
-		if (user.disabled) return;
-		addAssigneeMutation.mutate(toAddAssigneeInput(props.rotation.id, { id: user.id, name: user.name, avatar: user.avatar ?? undefined }));
+	const handleSelectAssignee = (user: { id: string; name: string; avatar?: string | null; type: "user" | "slack" }) => {
+		if (user.type === "user") {
+			addAssigneeMutation.mutate(toAddAssigneeInput(props.rotation.id, { id: user.id, name: user.name, avatar: user.avatar ?? undefined }));
+		} else {
+			addSlackUserAsAssigneeMutation.mutate(toAddSlackUserAssigneeInput(props.rotation.id, { id: user.id, name: user.name, avatar: user.avatar ?? undefined }));
+		}
 		setIsAddingAssignee(false);
 	};
 
@@ -167,7 +173,7 @@ function RotationAssigneesSection(props: {
 	isAddingAssignee: boolean;
 	onStartAdding: () => void;
 	onCancelAdding: () => void;
-	onSelectAssignee: (entity: { id: string; name: string; avatar?: string | null }) => void;
+	onSelectAssignee: (entity: { id: string; name: string; avatar?: string | null; type: "user" | "slack" }) => void;
 	onRemoveAssignee: (id: string) => void;
 	onReorderAssignee: (id: string, newPosition: number) => void;
 	onOverrideAssignee: (id: string) => void;
@@ -421,24 +427,32 @@ function AssigneesEmptyState() {
 // --- Pickers ---
 
 interface AddAssigneePickerContentProps {
-	onSelect: (entity: { id: string; name: string; avatar?: string | null }) => void;
+	onSelect: (entity: { id: string; name: string; avatar?: string | null; type: "user" | "slack" }) => void;
 	isAdding: Accessor<boolean>;
 	existingAssigneeIds: string[];
 	teamId?: string | null;
 }
 
 function AddAssigneePickerContent(props: AddAssigneePickerContentProps) {
-	const usersQuery = useUsers();
+	const users = usePossibleSlackUsers();
 
 	const entities = createMemo(() => {
-		const users = usersQuery.data ?? [];
-		const filteredUsers = props.teamId ? users.filter((u) => u.teamIds.includes(props.teamId!)) : users;
+		const filteredUsers = props.teamId
+			? users().filter((u) => {
+					if (u.type === "user") {
+						return u.teamIds.includes(props.teamId!);
+					} else {
+						// If a teamId is provided, we only allow existent users of that team
+						return false;
+					}
+				})
+			: users();
 
 		return filteredUsers.map((u) => ({
 			id: u.id,
 			name: u.name,
-			avatar: u.image,
-			disabled: !u.slackId,
+			avatar: u.avatar,
+			type: u.type,
 		}));
 	});
 
