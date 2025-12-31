@@ -1,7 +1,7 @@
 import type { userRole } from "@fire/db/schema";
 import { redirect } from "@tanstack/solid-router";
 import { createMiddleware } from "@tanstack/solid-start";
-import { getRequest, getRequestUrl } from "@tanstack/solid-start/server";
+import { getRequest } from "@tanstack/solid-start/server";
 import { auth } from "~/lib/auth/auth";
 
 type UserRole = (typeof userRole.enumValues)[number];
@@ -25,7 +25,9 @@ export const authMiddleware = createMiddleware({ type: "function" }).server(asyn
 	const session = await auth.api.getSession({ headers: request.headers });
 
 	if (!session?.user || !session.user.clientId) {
-		throw redirect({ to: "/login", search: { redirect: getRequestUrl().toString() } });
+		const referer = request.headers.get("referer");
+		const redirectTo = referer ? new URL(referer).pathname : "/";
+		throw redirect({ to: "/login", search: { redirect: redirectTo } });
 	}
 
 	return next({

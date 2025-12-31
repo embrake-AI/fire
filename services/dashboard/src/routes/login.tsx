@@ -4,10 +4,15 @@ import { Flame } from "lucide-solid";
 import { Button } from "~/components/ui/button";
 import { authClient } from "~/lib/auth/auth-client";
 
+function sanitizeRedirect(redirect: string | undefined): string {
+	if (!redirect || redirect.startsWith("/_")) return "/";
+	return redirect;
+}
+
 export const Route = createFileRoute("/login")({
 	component: LoginPage,
 	validateSearch: (search: Record<string, unknown>) => ({
-		redirect: (search.redirect as string) || "/",
+		redirect: sanitizeRedirect(search.redirect as string),
 	}),
 });
 
