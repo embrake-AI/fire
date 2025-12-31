@@ -386,7 +386,9 @@ function TeamHeader(props: { team: { id: string; name: string; imageUrl: string 
 				</div>
 				<p class="text-muted-foreground flex items-center gap-2 mt-1">
 					<UsersIcon class="w-4 h-4" />
-					<span>{props.team.memberCount} members</span>
+					<span>
+						{props.team.memberCount} {props.team.memberCount === 1 ? "member" : "members"}
+					</span>
 				</p>
 			</div>
 		</div>
