@@ -46,8 +46,8 @@ dashboardRoutes.post("/:id/assignee", async (c) => {
 	if (!id) {
 		return c.json({ error: "ID is required" }, 400);
 	}
-	const body = await c.req.json<{ assignee: { id: string; userIntegrations: Array<{ platform: string; userId: string }> } }>();
-	const incident = await updateAssignee({ c, id, assignee: body.assignee, adapter: "dashboard" });
+	const body = await c.req.json<{ slackId: string }>();
+	const incident = await updateAssignee({ c, id, assignee: { slackId: body.slackId }, adapter: "dashboard" });
 	return c.json({ incident });
 });
 

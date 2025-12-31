@@ -46,7 +46,7 @@ export async function dispatchIncidentSeverityUpdatedEvent(env: Env, id: string,
 export async function dispatchIncidentAssigneeUpdatedEvent(env: Env, id: string, assignee: IS["assignee"], metadata: Metadata) {
 	const incident = await env.incidents
 		.prepare("UPDATE incident SET assignee = ? WHERE id = ? RETURNING status, assignee, severity, title, description")
-		.bind(assignee.id, id)
+		.bind(assignee.slackId, id)
 		.first<Incident>();
 	if (!incident) {
 		return;

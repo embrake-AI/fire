@@ -7,11 +7,11 @@ import { UserAvatar } from "./UserAvatar";
 
 export type Entity = { id: string; name: string; avatar?: string | null; disabled?: boolean; disabledReason?: string };
 
-interface EntityPickerProps {
+interface EntityPickerProps<T extends Entity> {
 	/** Called when an entity is selected */
-	onSelect: (entity: Entity) => void;
+	onSelect: (entity: T) => void;
 	/** List of entities to choose from */
-	entities: Accessor<Entity[]>;
+	entities: Accessor<T[]>;
 	/** IDs of entities to exclude from the list */
 	excludeId?: (id: string) => boolean;
 	/** Currently selected entity ID (shows checkmark) */
@@ -24,7 +24,7 @@ interface EntityPickerProps {
 	disabled?: boolean;
 }
 
-export function EntityPicker(props: EntityPickerProps) {
+export function EntityPicker<T extends Entity>(props: EntityPickerProps<T>) {
 	const placeholder = () => props.placeholder;
 	let containerRef: HTMLDivElement | undefined;
 
@@ -57,7 +57,7 @@ export function EntityPicker(props: EntityPickerProps) {
 	);
 }
 
-function EntityRow(props: { entity: Entity; onSelect: EntityPickerProps["onSelect"]; selected?: boolean; disabled?: boolean }) {
+function EntityRow<T extends Entity>(props: { entity: T; onSelect: (entity: T) => void; selected?: boolean; disabled?: boolean }) {
 	const isDisabled = () => props.disabled || props.entity.disabled;
 
 	const content = (

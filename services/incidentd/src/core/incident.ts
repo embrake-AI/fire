@@ -10,9 +10,9 @@ export type DOState = IS & {
 	_initialized: boolean;
 };
 
-const S_KEY = "S";
-const ELV_KEY = "ELV";
-const EP_KEY = "EP";
+const STATE_KEY = "S";
+const EVENTLOGVERSION_KEY = "ELV";
+const ENTRYPOINT_KEY = "EP";
 const ALARM_INTERVAL_MS = 200;
 const MAX_ATTEMPTS = 3;
 
@@ -48,7 +48,7 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	private getState() {
-		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
+		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY);
 		if (!state) {
 			return { error: "NOT_FOUND" };
 		} else if (!state._initialized) {
@@ -72,7 +72,7 @@ export class Incident extends DurableObject<Env> {
 	 * or fails throwing an error (and retries)
 	 */
 	async alarm() {
-		let state = this.ctx.storage.kv.get<DOState>(S_KEY);
+		let state = this.ctx.storage.kv.get<DOState>(STATE_KEY);
 		if (!state) {
 			return;
 		}
@@ -87,7 +87,7 @@ export class Incident extends DurableObject<Env> {
 					metadata: uninitializedState.metadata,
 				}),
 			);
-			state = this.ctx.storage.kv.get<DOState>(S_KEY)!;
+			state = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
 		}
 		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log WHERE published_at IS NULL AND attempts < ? ORDER BY id ASC LIMIT 100", MAX_ATTEMPTS).toArray();
 		if (events.length > 0) {
@@ -130,17 +130,15 @@ export class Incident extends DurableObject<Env> {
 	 * Initialize the incident. ALWAYS check if it's already initialized before calling this.
 	 */
 	private async init({ id, prompt, createdBy, source, metadata }: Pick<DOState, "id" | "prompt" | "createdBy" | "source" | "metadata">) {
-		const entryPoints = this.ctx.storage.kv.get<EntryPoint[]>(EP_KEY);
+		const entryPoints = this.ctx.storage.kv.get<EntryPoint[]>(ENTRYPOINT_KEY);
 		if (!entryPoints?.length) {
 			throw new Error("No entry points found");
 		}
 		const { selectedEntryPoint, severity, title, description } = await calculateIncidentInfo(prompt, entryPoints, this.env.OPENAI_API_KEY);
-		const assignee = {
-			id: selectedEntryPoint.assignee.id,
-			userIntegrations: selectedEntryPoint.assignee.userIntegrations,
-		};
+		const assignee = selectedEntryPoint.assignee;
 		const entryPointId = selectedEntryPoint.id;
 		const rotationId = selectedEntryPoint.rotationId;
+		const teamId = selectedEntryPoint.teamId;
 
 		const status = "open";
 		const payload = {
@@ -156,6 +154,7 @@ export class Incident extends DurableObject<Env> {
 			source,
 			entryPointId,
 			rotationId,
+			teamId,
 			metadata,
 			_initialized: true,
 		} as const;
@@ -170,19 +169,19 @@ export class Incident extends DurableObject<Env> {
 				adapter TEXT NOT NULL
 			);
 			CREATE INDEX idx_event_log_published_at ON event_log(published_at);`);
-			this.ctx.storage.kv.put(ELV_KEY, "1");
+			this.ctx.storage.kv.put(EVENTLOGVERSION_KEY, "1");
 			await this.commit(
 				{
 					state: payload,
 					event: {
 						event_type: "INCIDENT_CREATED",
-						event_data: { assignee: assignee.id, createdBy, description, prompt, severity, source, status, title, entryPointId, rotationId },
+						event_data: { assignee: assignee.slackId, createdBy, description, prompt, severity, source, status, title, entryPointId, rotationId },
 					},
 					adapter: source,
 				},
 				{ skipAlarm: true },
 			);
-			this.ctx.storage.kv.delete(EP_KEY);
+			this.ctx.storage.kv.delete(ENTRYPOINT_KEY);
 		});
 		return payload;
 	}
@@ -194,7 +193,7 @@ export class Incident extends DurableObject<Env> {
 	 */
 	private async commit({ state, event, adapter }: { state: DOState; event?: IS_Event; adapter?: "slack" | "dashboard" }, { skipAlarm = false }: { skipAlarm?: boolean } = {}) {
 		await this.ctx.storage.transaction(async () => {
-			this.ctx.storage.kv.put<DOState>(S_KEY, state);
+			this.ctx.storage.kv.put<DOState>(STATE_KEY, state);
 			if (event) {
 				this.ctx.storage.sql.exec("INSERT INTO event_log (event_type, event_data, adapter) VALUES (?, ?, ?)", event.event_type, JSON.stringify(event.event_data), adapter);
 				if (!skipAlarm) {
@@ -205,7 +204,7 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	private async persistAnalysis() {
-		const state = this.ctx.storage.kv.get<DOState>(S_KEY)!;
+		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
 		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log ORDER BY id ASC").toArray();
 
 		const eventsForStorage = events.map((e) => ({
@@ -235,7 +234,7 @@ export class Incident extends DurableObject<Env> {
 			title: state.title,
 			description: state.description,
 			severity: state.severity,
-			assignee: state.assignee.id,
+			assignee: state.assignee.slackId,
 			createdBy: state.createdBy,
 			source: state.source,
 			prompt: state.prompt,
@@ -256,10 +255,10 @@ export class Incident extends DurableObject<Env> {
 	 * Entry point to start a new incident. Must be called before any other method.
 	 */
 	async start({ id, prompt, createdBy, source, metadata }: Pick<DOState, "id" | "prompt" | "createdBy" | "source" | "metadata">, entryPoints: EntryPoint[]) {
-		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
+		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY);
 		if (!state) {
 			await this.ctx.storage.transaction(async () => {
-				this.ctx.storage.kv.put<DOState>(S_KEY, {
+				this.ctx.storage.kv.put<DOState>(STATE_KEY, {
 					id,
 					prompt,
 					createdBy,
@@ -269,14 +268,16 @@ export class Incident extends DurableObject<Env> {
 					status: "open",
 					// This will be set on `init`
 					severity: "medium",
-					assignee: { id: "", userIntegrations: [] },
+					assignee: { slackId: "" },
 					title: "",
 					description: "",
 					entryPointId: "",
 					_initialized: false,
+					rotationId: undefined,
+					teamId: undefined,
 					// This will be set on `init`
 				});
-				this.ctx.storage.kv.put(EP_KEY, entryPoints);
+				this.ctx.storage.kv.put(ENTRYPOINT_KEY, entryPoints);
 				await this.ctx.storage.setAlarm(Date.now());
 			});
 		}
@@ -336,7 +337,7 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	async get() {
-		const state = this.ctx.storage.kv.get<DOState>(S_KEY);
+		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY);
 		if (!state) {
 			return { error: "NOT_FOUND" };
 		} else if (!state._initialized) {

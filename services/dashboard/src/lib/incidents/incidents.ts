@@ -57,7 +57,7 @@ export const getIncidentById = createServerFn({ method: "GET" })
 	});
 
 export const updateAssignee = createServerFn({ method: "POST" })
-	.inputValidator((data: { id: string; assignee: string }) => data)
+	.inputValidator((data: { id: string; slackId: string }) => data)
 	.middleware([authMiddleware])
 	.handler(async ({ data, context }) => {
 		const response = await signedFetch(
@@ -66,7 +66,7 @@ export const updateAssignee = createServerFn({ method: "POST" })
 			{
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ assignee: data.assignee }),
+				body: JSON.stringify({ slackId: data.slackId }),
 			},
 		);
 		if (!response.ok) {
@@ -160,14 +160,28 @@ export const startIncident = createServerFn({ method: "POST" })
 				entryPoints: {
 					columns: {
 						id: true,
-						assigneeId: true,
 						prompt: true,
 						type: true,
 						isFallback: true,
 						rotationId: true,
 					},
 					with: {
-						rotationWithAssignee: true,
+						rotationWithAssignee: {
+							with: {
+								assignee: {
+									columns: {
+										id: true,
+										slackId: true,
+									},
+								},
+							},
+						},
+						assignee: {
+							columns: {
+								id: true,
+								slackId: true,
+							},
+						},
 					},
 				},
 			},
@@ -180,8 +194,6 @@ export const startIncident = createServerFn({ method: "POST" })
 			clientId: context.clientId,
 			botToken: undefined as string | undefined,
 		};
-		// TODO: likely it's better to pass integrations to the incidentd service instead of the bot token
-		// Now that we only have slack, it's ok
 		if (data.channel) {
 			const slackIntegration = client.integrations.find((i) => i.platform === "slack");
 			const botToken = slackIntegration?.data?.botToken;
@@ -191,17 +203,29 @@ export const startIncident = createServerFn({ method: "POST" })
 		}
 		const entryPoints: EntryPoint[] = client.entryPoints
 			.map((ep) => {
-				let assignee: string | null;
+				let assignee: { id: string; slackId: string } | undefined;
 				if (ep.type === "rotation") {
-					assignee = ep.rotationWithAssignee?.effectiveAssignee ?? null;
-				} else {
-					assignee = ep.assigneeId ?? null;
+					if (ep.rotationWithAssignee?.assignee?.slackId) {
+						const slackId = ep.rotationWithAssignee.assignee.slackId;
+						assignee = {
+							slackId,
+							id: ep.rotationWithAssignee.assignee.id,
+						};
+					}
+				} else if (ep.assignee) {
+					if (ep.assignee.slackId) {
+						assignee = {
+							slackId: ep.assignee.slackId,
+							id: ep.assignee.id,
+						};
+					}
 				}
 				if (!assignee) {
 					return null;
 				}
 				return {
 					id: ep.id,
+					teamId: ep.rotationWithAssignee?.teamId ?? undefined,
 					rotationId: ep.rotationId ?? undefined,
 					assignee,
 					prompt: ep.prompt,
@@ -299,7 +323,7 @@ export function computeIncidentMetrics(analysis: IncidentAnalysis) {
 				totalDuration = new Date(event.created_at).getTime() - startedAt;
 			}
 		} else if (event.event_type === "ASSIGNEE_UPDATE") {
-			assignees.add(event.event_data.assignee);
+			assignees.add(event.event_data.assignee.slackId);
 		}
 	}
 

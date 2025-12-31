@@ -197,3 +197,54 @@ export async function lookupSlackUserIdByEmail(botToken: string, email: string) 
 
 	return data.user.id;
 }
+
+type SlackUserInfoResponse = {
+	ok: boolean;
+	user?: {
+		id: string;
+		name: string;
+		deleted: boolean;
+		is_bot: boolean;
+		is_app_user: boolean;
+		profile: {
+			real_name?: string;
+			display_name?: string;
+			email?: string;
+			image_48?: string;
+			image_72?: string;
+			image_192?: string;
+		};
+	};
+	error?: string;
+};
+
+/**
+ * Fetch a single Slack user by their ID.
+ * @see https://docs.slack.dev/reference/methods/users.info/
+ */
+export async function fetchSlackUserById(botToken: string, userId: string): Promise<SlackUser | null> {
+	const response = await fetch(`https://slack.com/api/users.info?user=${encodeURIComponent(userId)}`, {
+		headers: {
+			Authorization: `Bearer ${botToken}`,
+			"Content-Type": "application/json",
+		},
+	});
+
+	const data: SlackUserInfoResponse = await response.json();
+
+	if (!data.ok || !data.user) {
+		return null;
+	}
+
+	const member = data.user;
+	if (member.deleted || member.is_bot || member.is_app_user) {
+		return null;
+	}
+
+	return {
+		id: member.id,
+		name: member.profile.real_name || member.profile.display_name || member.name,
+		email: member.profile.email || "",
+		avatar: member.profile.image_192 || member.profile.image_72 || member.profile.image_48,
+	};
+}

@@ -2,12 +2,12 @@ import type { IS_Event } from "@fire/common";
 import { CircleCheck, Flame, MessageSquare, ShieldAlert, TriangleAlert, User } from "lucide-solid";
 import type { Component } from "solid-js";
 import { createMemo, Show } from "solid-js";
-import { SlackAvatar } from "~/components/SlackEntityPicker";
-import { UserAvatar } from "~/components/UserAvatar";
+import { UserDisplay } from "~/components/MaybeUser";
 import { Badge } from "~/components/ui/badge";
 import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { replaceEmojis, useEmojis } from "./emoji/emoji";
 import { getSeverity, getStatus } from "./incident-config";
+import { useUserBySlackId } from "./users/users.hooks";
 
 function EmojiText(props: { text: string; class?: string }) {
 	const loaded = useEmojis();
@@ -46,6 +46,7 @@ export const eventRegistry: EventConfigMap = {
 		label: "Incident Created",
 		render: ({ data }) => {
 			const severity = getSeverity(data.severity);
+			const user = useUserBySlackId(() => data.assignee);
 			return (
 				<div class="space-y-4">
 					<div class="flex items-center gap-3">
@@ -56,7 +57,7 @@ export const eventRegistry: EventConfigMap = {
 						<span class="text-muted-foreground/40">·</span>
 						<div class="flex items-center gap-2">
 							<span class="text-sm text-muted-foreground">Assigned to</span>
-							<UserAvatar name={() => data.assignee.id} />
+							<UserDisplay user={user} />
 						</div>
 					</div>
 
@@ -113,12 +114,15 @@ export const eventRegistry: EventConfigMap = {
 		iconBg: "bg-blue-100",
 		iconColor: "text-blue-600",
 		label: "Assignee Changed",
-		render: ({ data }) => (
-			<div class="flex items-center gap-2">
-				<p class="text-sm text-muted-foreground">Assignee changed to</p>
-				<UserAvatar name={() => data.assignee.id} />
-			</div>
-		),
+		render: ({ data }) => {
+			const user = useUserBySlackId(() => data.assignee.slackId);
+			return (
+				<div class="flex items-center gap-2">
+					<p class="text-sm text-muted-foreground">Assignee changed to</p>
+					<UserDisplay user={user} />
+				</div>
+			);
+		},
 	},
 	SEVERITY_UPDATE: {
 		icon: TriangleAlert,
@@ -139,11 +143,14 @@ export const eventRegistry: EventConfigMap = {
 		iconBg: "bg-blue-100",
 		iconColor: "text-blue-600",
 		label: "New Message",
-		render: ({ data }) => (
-			<div class="flex items-center gap-2">
-				<SlackAvatar id={data.userId} />
-				<EmojiText text={data.message} class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap" />
-			</div>
-		),
+		render: ({ data }) => {
+			const user = useUserBySlackId(() => data.userId);
+			return (
+				<div class="flex items-center gap-2">
+					<UserDisplay user={user} />
+					<EmojiText text={data.message} class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap" />
+				</div>
+			);
+		},
 	},
 } satisfies EventConfigMap;

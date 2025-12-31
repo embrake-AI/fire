@@ -21,7 +21,7 @@ export function useDisconnectWorkspaceIntegration() {
 	const disconnectWorkspaceIntegrationFn = useServerFn(disconnectWorkspaceIntegration);
 
 	return useMutation(() => ({
-		mutationFn: (platform: "slack") => disconnectWorkspaceIntegrationFn(platform),
+		mutationFn: (platform: "slack") => disconnectWorkspaceIntegrationFn({ data: platform }),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["workspace_integrations"] });
 			queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -34,7 +34,7 @@ export function useDisconnectUserIntegration() {
 	const disconnectUserIntegrationFn = useServerFn(disconnectUserIntegration);
 
 	return useMutation(() => ({
-		mutationFn: (platform: "slack") => disconnectUserIntegrationFn(platform),
+		mutationFn: (platform: "slack") => disconnectUserIntegrationFn({ data: platform }),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["user_integrations"] });
 			queryClient.invalidateQueries({ queryKey: ["users"] });

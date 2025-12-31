@@ -5,13 +5,14 @@ import { useServerFn } from "@tanstack/solid-start";
 import { endOfDay, parse, startOfDay } from "date-fns";
 import { Calendar, ChartColumn, Check, Copy, Layers, Target, Users } from "lucide-solid";
 import { createMemo, createSignal, For, Show, Suspense } from "solid-js";
-import { SlackAvatar } from "~/components/SlackEntityPicker";
+import { UserDisplay } from "~/components/MaybeUser";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { DateRangePicker } from "~/components/ui/date-range-picker";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { getMetrics } from "~/lib/incidents/incidents";
+import { useUserBySlackId } from "~/lib/users/users.hooks";
 
 export const Route = createFileRoute("/_authed/analysis/")({
 	component: AnalysisDashboard,
@@ -47,15 +48,18 @@ function AnalysisDashboard() {
 
 	const groupedData = createMemo(() => {
 		const data = incidents();
-		const groups: Record<string, { count: number; totalDuration: number; timeToFirstResponse: number; resolvedCount: number; label: string }> = {};
+		const groups: Record<
+			string,
+			{ user?: { id: string; name: string; avatar: string | undefined }; count: number; totalDuration: number; timeToFirstResponse: number; resolvedCount: number; label: string }
+		> = {};
 
 		for (const incident of data) {
+			const user = useUserBySlackId(() => incident.assignee);
 			let groupKey = "unknown";
 			let groupLabel = "Unknown";
-			if (grouping() === "assignee") {
-				const slackUserId = incident.assignee.userIntegrations.find((ui) => ui.platform === "slack")?.userId ?? "unknown";
-				groupKey = slackUserId;
-				groupLabel = slackUserId;
+			if (grouping() === "assignee" && !!user()) {
+				groupKey = user()!.id;
+				groupLabel = user()!.name;
 			} else if (grouping() === "entryPoint") {
 				groupKey = incident.entryPointId ?? "unknown";
 				groupLabel = incident.entryPointPrompt ?? "Generic/Unknown";
@@ -70,6 +74,7 @@ function AnalysisDashboard() {
 
 			const g = groups[groupKey];
 			g.count++;
+			g.user = user();
 			if (incident.metrics.totalDuration !== null) {
 				g.totalDuration += incident.metrics.totalDuration;
 				g.resolvedCount++;
@@ -81,6 +86,7 @@ function AnalysisDashboard() {
 
 		return Object.entries(groups)
 			.map(([key, stats]) => ({
+				user: stats.user,
 				key,
 				label: stats.label,
 				count: stats.count,
@@ -153,14 +159,14 @@ function AnalysisDashboard() {
 										<CardContent class="p-4 flex items-center justify-between">
 											<div class="flex items-center gap-4">
 												<Show
-													when={grouping() === "assignee"}
+													when={grouping() === "assignee" && item.user}
 													fallback={
 														<div class="p-2 bg-muted rounded-full">
 															<Target class="w-5 h-5 text-muted-foreground" />
 														</div>
 													}
 												>
-													<SlackAvatar id={item.key} withName />
+													{(user) => <UserDisplay user={user} />}
 												</Show>
 												<Show when={grouping() !== "assignee"}>
 													<div>

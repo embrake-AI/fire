@@ -1,0 +1,21 @@
+{
+	"hard_tabs": true,
+	"languages": {
+		"TypeScript": {
+			"formatter": {
+				"language_server": {
+					"name": "biome",
+				},
+			},
+			// "language_servers": ["tsgo", "biome"],
+		},
+		"TSX": {
+			"formatter": {
+				"language_server": {
+					"name": "biome",
+				},
+			},
+			// "language_servers": ["tsgo", "biome"],
+		},
+	},
+}

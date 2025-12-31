@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgView } from "drizzle-orm/pg-core";
+import { interval, json, pgView, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { userIntegration } from "./integration";
 import { rotation } from "./rotation";
 
@@ -30,45 +30,54 @@ export const effectiveAssignee = sql<string>`
   END
 `;
 
-export const rotationWithAssignee = pgView("rotationWithAssignee").as((qb) =>
-	qb
-		.select({
-			id: rotation.id,
-			name: rotation.name,
-			clientId: rotation.clientId,
-			shiftStart: shiftStart.as("shift_start"),
-			shiftLength: rotation.shiftLength,
-			assignees: rotation.assignees,
-			effectiveAssignee: effectiveAssignee.as("effective_assignee"),
-			baseAssignee: baseAssignee.as("base_assignee"),
-			createdAt: rotation.createdAt,
-			updatedAt: rotation.updatedAt,
-			teamId: rotation.teamId,
-			userIntegrations: sql<Array<{ platform: string; userId: string }>>`
-				COALESCE(
-					json_agg(
-						json_build_object(
-							'platform', ${userIntegration.platform},
-							'userId', ${userIntegration.data}->>'userId'
-						)
-					) FILTER (WHERE ${userIntegration.platform} IS NOT NULL),
-					'[]'::json
+// Not ideal that we have to redefine this, but else it doesn't work well with relations
+export const rotationWithAssignee = pgView("rotationWithAssignee", {
+	id: uuid("id").notNull(),
+	name: text("name").notNull(),
+	teamId: uuid("team_id"),
+	clientId: text("client_id").notNull(),
+	shiftStart: timestamp("shift_start", { withTimezone: true }),
+	shiftLength: interval("shift_length").notNull(),
+	assignees: text("assignees").array().notNull(),
+	effectiveAssignee: text("effective_assignee"),
+	baseAssignee: text("base_assignee"),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+	userIntegrations: json("user_integrations").$type<Array<{ platform: string; userId: string }>>(),
+}).as(sql`
+	select
+		${rotation.id} as "id",
+		${rotation.name} as "name",
+		${rotation.clientId} as "client_id",
+		${shiftStart} as "shift_start",
+		${rotation.shiftLength} as "shift_length",
+		${rotation.assignees} as "assignees",
+		${effectiveAssignee} as "effective_assignee",
+		${baseAssignee} as "base_assignee",
+		${rotation.createdAt} as "created_at",
+		${rotation.updatedAt} as "updated_at",
+		${rotation.teamId} as "team_id",
+		COALESCE(
+			json_agg(
+				json_build_object(
+					'platform', ${userIntegration.platform},
+					'userId', ${userIntegration.data} ->> 'userId'
 				)
-			`.as("user_integrations"),
-		})
-		.from(rotation)
-		.leftJoin(userIntegration, sql`${effectiveAssignee} = ${userIntegration.userId}`)
-		.groupBy(
-			rotation.id,
-			rotation.name,
-			rotation.clientId,
-			rotation.shiftLength,
-			rotation.assignees,
-			rotation.anchorAt,
-			rotation.assigneeOverwrite,
-			rotation.overrideForShiftStart,
-			rotation.createdAt,
-			rotation.updatedAt,
-			rotation.teamId,
-		),
-);
+			) FILTER (WHERE ${userIntegration.platform} IS NOT NULL),
+			'[]'::json
+		) as "user_integrations"
+	from ${rotation}
+	left join ${userIntegration} on ${effectiveAssignee} = ${userIntegration.userId}
+	group by
+		${rotation.id},
+		${rotation.name},
+		${rotation.clientId},
+		${rotation.shiftLength},
+		${rotation.assignees},
+		${rotation.anchorAt},
+		${rotation.assigneeOverwrite},
+		${rotation.overrideForShiftStart},
+		${rotation.createdAt},
+		${rotation.updatedAt},
+		${rotation.teamId}
+`);

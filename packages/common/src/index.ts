@@ -14,20 +14,16 @@ export type IS = {
 	prompt: string;
 	severity: IS_SEVERITY;
 	createdBy: string;
-	assignee: {
-		id: string;
-		userIntegrations: Array<{ platform: string; userId: string }>;
-	};
+	assignee: { slackId: string }; // TODO: When/if we support more platforms for incident, think about this
 	source: IS_SOURCE;
 	title: string;
 	description: string;
 	entryPointId: string;
-	rotationId?: string;
+	rotationId: string | undefined;
+	teamId: string | undefined;
 };
 
-export type ListIncidentsElement = Pick<IS, "id" | "status" | "severity" | "createdAt" | "title" | "description"> & {
-	assignee: string;
-};
+export type ListIncidentsElement = Pick<IS, "id" | "status" | "severity" | "createdAt" | "title" | "description" | "assignee">;
 
 export type IS_Event =
 	| {
@@ -77,10 +73,11 @@ export type EntryPoint = {
 	prompt: string;
 	assignee: {
 		id: string;
-		userIntegrations: Array<{ platform: string; userId: string }>;
+		slackId: string;
 	};
 	isFallback: boolean;
-	rotationId?: string;
+	rotationId: string | undefined;
+	teamId: string | undefined;
 };
 
 export type ShiftLength = (typeof SHIFT_LENGTH_OPTIONS)[number]["value"];
@@ -89,3 +86,8 @@ export const SHIFT_LENGTH_OPTIONS = [
 	{ value: "1 week", label: "1 week" },
 	{ value: "2 weeks", label: "2 weeks" },
 ] as const;
+
+export function emailInDomains(email: string, domains: string[]) {
+	const emailDomain = email.split("@")[1]?.toLowerCase();
+	return !!emailDomain && domains.some((domain) => domain.toLowerCase() === emailDomain);
+}

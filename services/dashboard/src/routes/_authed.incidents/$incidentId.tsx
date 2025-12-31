@@ -5,7 +5,8 @@ import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft } from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, For, Show, Suspense } from "solid-js";
-import { SlackAvatar, type SlackEntity, SlackEntityPicker } from "~/components/SlackEntityPicker";
+import { EntityPicker } from "~/components/EntityPicker";
+import { UserDisplay } from "~/components/MaybeUser";
 import { SlackMessageInput } from "~/components/SlackMessageInput";
 import { Timeline } from "~/components/Timeline";
 import { Badge } from "~/components/ui/badge";
@@ -19,6 +20,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { getSeverity, getStatus } from "~/lib/incident-config";
 import { getIncidentById, getIncidents } from "~/lib/incidents/incidents";
 import { useUpdateIncidentAssignee, useUpdateIncidentSeverity, useUpdateIncidentStatus } from "~/lib/incidents/incidents.hooks";
+import { usePossibleSlackUsers, useUserBySlackId } from "~/lib/users/users.hooks";
 
 function IncidentSkeleton() {
 	return (
@@ -152,9 +154,9 @@ function IncidentDetail() {
 function IncidentHeader(props: { incident: Accessor<IS> }) {
 	const queryClient = useQueryClient();
 	const incident = () => props.incident();
-	const updateSeverityMutation = useUpdateIncidentSeverity(incident().id);
-	const updateAssigneeMutation = useUpdateIncidentAssignee(incident().id);
-	const updateStatusMutation = useUpdateIncidentStatus(incident().id, {
+	const updateSeverityMutation = useUpdateIncidentSeverity(() => incident().id);
+	const updateAssigneeMutation = useUpdateIncidentAssignee(() => incident().id);
+	const updateStatusMutation = useUpdateIncidentStatus(() => incident().id, {
 		onSuccess: async (status) => {
 			if (status === "resolved") {
 				const previousIncidents = queryClient.getQueryData<IS[]>(["incidents"]);
@@ -166,6 +168,8 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 			}
 		},
 	});
+
+	const user = useUserBySlackId(() => incident().assignee.slackId);
 
 	const status = () => getStatus(incident().status);
 
@@ -200,6 +204,8 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 
 	const severityConfig = () => getSeverity(incident().severity);
 
+	const possibleSlackUsers = usePossibleSlackUsers();
+
 	return (
 		<div class="space-y-6">
 			<Dialog open={statusDialogOpen()} onOpenChange={setStatusDialogOpen}>
@@ -211,7 +217,7 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 						<DialogDescription>Please provide a message explaining this status change.</DialogDescription>
 					</DialogHeader>
 					<div class="py-4">
-						<Textarea placeholder="Describe what changed..." value={statusMessage()} onInput={(e) => setStatusMessage(e.currentTarget.value)} class="min-h-[100px]" />
+						<Textarea placeholder="Describe what changed..." value={statusMessage()} onInput={(e) => setStatusMessage(e.currentTarget.value)} class="min-h-25" />
 					</div>
 					<DialogFooter>
 						<Button variant="outline" onClick={() => setStatusDialogOpen(false)}>
@@ -296,20 +302,18 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 
 					<Popover open={open()} onOpenChange={setOpen}>
 						<PopoverTrigger as={Button} variant="ghost" size="sm" class="h-8 gap-2 bg-muted/50 hover:bg-muted font-normal">
-							<SlackAvatar id={incident().assignee.userIntegrations.find((ui) => ui.platform === "slack")?.userId} withName />
+							<UserDisplay user={user} withName />
 						</PopoverTrigger>
-						<PopoverContent class="p-0 w-[280px]">
-							<SlackEntityPicker
-								onSelect={(entity: SlackEntity) => {
-									updateAssigneeMutation.mutate({
-										id: entity.id,
-										userIntegrations: [{ platform: "slack", userId: entity.id }],
-									});
+						<PopoverContent class="p-0 w-70">
+							<EntityPicker
+								entities={possibleSlackUsers}
+								onSelect={(entity) => {
+									updateAssigneeMutation.mutate(entity.type === "user" ? entity.slackId : entity.id);
 									setOpen(false);
 								}}
-								selectedId={incident().assignee.userIntegrations.find((ui) => ui.platform === "slack")?.userId ?? undefined}
+								selectedId={incident().assignee.slackId}
 								placeholder="Change assignee..."
-								emptyMessage="No users or groups found."
+								emptyMessage="No users found."
 							/>
 						</PopoverContent>
 					</Popover>

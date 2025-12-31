@@ -54,6 +54,12 @@ export const relations = defineRelations(schema, (r) => ({
 			to: r.user.id,
 		}),
 	},
+	rotationWithAssignee: {
+		assignee: r.one.user({
+			from: r.rotationWithAssignee.effectiveAssignee,
+			to: r.user.id,
+		}),
+	},
 	user: {
 		teams: r.many.team({
 			from: r.user.id.through(r.teamMember.userId),

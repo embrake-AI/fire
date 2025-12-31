@@ -4,7 +4,7 @@ import { type Accessor, createEffect, createMemo, createSignal, For, Show, Suspe
 import { createStore, reconcile } from "solid-js/store";
 import { EntityPicker } from "~/components/EntityPicker";
 import { EntryPointCard, EntryPointCardSkeleton, EntryPointsEmptyState } from "~/components/entry-points/EntryPointCard";
-import { SlackAvatar } from "~/components/SlackEntityPicker";
+import { UserAvatar } from "~/components/UserAvatar";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
@@ -267,8 +267,7 @@ function UserPickerContent(props: { onSelect: (user: { id: string; name?: string
 				id: user.id,
 				name: user.name,
 				avatar: user.image,
-				disabled: !user.connectedIntegrations?.includes("slack"),
-				disabledReason: !user.connectedIntegrations?.includes("slack") ? "User must connect Slack to be assigned to incidents" : undefined,
+				disabled: !user.slackId,
 			})) ?? [],
 	);
 
@@ -290,6 +289,8 @@ function UserPickerContent(props: { onSelect: (user: { id: string; name?: string
 function RotationPickerContent(props: { onSelect: (rotation: { id: string; name: string }) => void; isAdding: Accessor<boolean> }) {
 	const rotationsQuery = useRotations();
 	const rotations = () => rotationsQuery.data ?? [];
+	const usersQuery = useUsers();
+	const users = () => usersQuery.data ?? [];
 
 	return (
 		<div class="p-2">
@@ -313,18 +314,21 @@ function RotationPickerContent(props: { onSelect: (rotation: { id: string; name:
 			>
 				<div class="space-y-1">
 					<For each={rotations()}>
-						{(rotation) => (
-							<button
-								type="button"
-								class="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer text-left disabled:opacity-50 disabled:cursor-not-allowed"
-								onClick={() => props.onSelect(rotation)}
-								disabled={props.isAdding()}
-							>
-								<SlackAvatar id={rotation.currentAssignee} />
-								<span class="flex-1 text-sm font-medium">{rotation.name}</span>
-								<Check class="w-4 h-4 text-transparent" />
-							</button>
-						)}
+						{(rotation) => {
+							const user = users().find((user) => user.id === rotation.currentAssignee);
+							return (
+								<button
+									type="button"
+									class="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer text-left disabled:opacity-50 disabled:cursor-not-allowed"
+									onClick={() => props.onSelect(rotation)}
+									disabled={props.isAdding()}
+								>
+									<Show when={user}>{(user) => <UserAvatar name={() => user().name} avatar={() => user().image} />}</Show>
+									<span class="flex-1 text-sm font-medium">{rotation.name}</span>
+									<Check class="w-4 h-4 text-transparent" />
+								</button>
+							);
+						}}
 					</For>
 				</div>
 			</Show>

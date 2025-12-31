@@ -212,14 +212,11 @@ slackRoutes.post("/interaction", async (c) => {
 					adapter: "slack",
 				});
 			} else if (action.type === "users_select" && action.action_id === "set_assignee") {
-				// For now, we only have the Slack user ID, so we construct a minimal assignee object
-				// In the future, we could look up the user's internal ID and full userIntegrations
 				await updateAssignee({
 					c,
 					id: incidentId,
 					assignee: {
-						id: action.selected_user,
-						userIntegrations: [{ platform: "slack", userId: action.selected_user }],
+						slackId: action.selected_user,
 					},
 					adapter: "slack",
 				});

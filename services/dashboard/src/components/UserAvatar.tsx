@@ -1,7 +1,7 @@
 import type { Accessor } from "solid-js";
 import { createMemo, Show } from "solid-js";
 
-export function UserAvatar(props: { name: Accessor<string>; withName?: boolean; avatar?: Accessor<string | undefined> }) {
+export function UserAvatar(props: { name: Accessor<string>; withName?: boolean; avatar?: Accessor<string | null | undefined> }) {
 	const initials = () =>
 		props
 			.name()

@@ -272,26 +272,23 @@ export async function getSlackIntegration(opts: {
 							prompt: true,
 							type: true,
 							isFallback: true,
-							assigneeId: true,
 							rotationId: true,
 						},
 						with: {
 							rotationWithAssignee: {
-								columns: {
-									effectiveAssignee: true,
-									userIntegrations: true,
+								with: {
+									assignee: {
+										columns: {
+											id: true,
+											slackId: true,
+										},
+									},
 								},
 							},
 							assignee: {
-								with: {
-									userIntegrations: {
-										columns: {
-											platform: true,
-										},
-										extras: {
-											userId: (userIntegration, { sql }) => sql<string>`${userIntegration.data}->>'userId'`,
-										},
-									},
+								columns: {
+									id: true,
+									slackId: true,
 								},
 							},
 						},
@@ -310,32 +307,38 @@ export async function getSlackIntegration(opts: {
 		entryPoints:
 			result.entryPoints
 				.map((ep) => {
-					let assigneeId: string | null;
-					let userIntegrations: Array<{ platform: string; userId: string }> = [];
+					let assignee: { id: string; slackId: string } | undefined;
 
 					if (ep.type === "rotation" && "rotationWithAssignee" in ep) {
-						assigneeId = ep.rotationWithAssignee?.effectiveAssignee ?? null;
-						userIntegrations = ep.rotationWithAssignee?.userIntegrations ?? [];
+						if (ep.rotationWithAssignee?.assignee?.slackId) {
+							const slackId = ep.rotationWithAssignee.assignee.slackId;
+							assignee = {
+								slackId,
+								id: ep.rotationWithAssignee.assignee.id,
+							};
+						}
 					} else if (ep.type === "user" && "assignee" in ep) {
-						assigneeId = ep.assigneeId ?? null;
-						userIntegrations = ep.assignee?.userIntegrations ?? [];
+						if (ep.assignee?.slackId) {
+							assignee = {
+								slackId: ep.assignee.slackId,
+								id: ep.assignee.id,
+							};
+						}
 					} else {
 						return null;
 					}
 
-					if (!assigneeId) {
+					if (!assignee) {
 						return null;
 					}
 
 					return {
 						id: ep.id,
-						assignee: {
-							id: assigneeId,
-							userIntegrations,
-						},
+						assignee,
 						prompt: ep.prompt,
 						isFallback: ep.isFallback,
 						rotationId: ep.rotationId ?? undefined,
+						teamId: ep.rotationWithAssignee?.teamId ?? undefined,
 					};
 				})
 				.filter((ep) => !!ep) ?? [],

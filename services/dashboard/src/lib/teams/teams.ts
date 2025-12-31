@@ -1,8 +1,12 @@
-import { team, teamMember } from "@fire/db/schema";
+import { emailInDomains } from "@fire/common";
+import { client, integration, team, teamMember, user } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, count, eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import { authMiddleware } from "../auth/auth-middleware";
+import { uploadImageFromUrl } from "../blob";
 import { db } from "../db";
+import { fetchSlackUserById } from "../slack";
 
 export const getTeams = createServerFn({
 	method: "GET",
@@ -133,6 +137,90 @@ export const updateTeam = createServerFn({ method: "POST" })
 		};
 	});
 
+export const addSlackUserAsTeamMember = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
+	.inputValidator((data: { teamId: string; slackUserId: string }) => data)
+	.handler(async ({ data, context }) => {
+		const [existingTeam] = await db
+			.select()
+			.from(team)
+			.where(and(eq(team.id, data.teamId), eq(team.clientId, context.clientId)));
+
+		if (!existingTeam) {
+			throw new Error("Team not found");
+		}
+
+		const [clientWithSlackIntegration] = await db
+			.select()
+			.from(integration)
+			.fullJoin(client, eq(integration.clientId, client.id))
+			.where(and(eq(integration.clientId, context.clientId), eq(integration.platform, "slack")))
+			.limit(1);
+
+		const botToken = clientWithSlackIntegration?.integration?.data?.botToken;
+		if (!botToken) {
+			throw new Error("Slack integration not found");
+		}
+
+		const slackUser = await fetchSlackUserById(botToken, data.slackUserId);
+		if (!slackUser) {
+			throw new Error("Slack user not found");
+		}
+		if (!slackUser.email) {
+			throw new Error("Slack user has no email");
+		}
+
+		if (!emailInDomains(slackUser.email, clientWithSlackIntegration?.client?.domains ?? [])) {
+			throw new Error("Email domain not allowed");
+		}
+
+		const [existingUser] = await db
+			.select()
+			.from(user)
+			.where(and(eq(user.email, slackUser.email), eq(user.clientId, context.clientId)));
+
+		let userId!: string;
+
+		await db.transaction(async (tx) => {
+			if (existingUser) {
+				if (existingUser.slackId && existingUser.slackId !== data.slackUserId) {
+					throw new Error("User linked to a different Slack user");
+				} else {
+					if (!existingUser.slackId) {
+						await tx.update(user).set({ slackId: data.slackUserId }).where(eq(user.id, existingUser.id));
+					}
+					userId = existingUser.id;
+				}
+			} else {
+				let imageUrl: string | null = null;
+				if (slackUser.avatar) {
+					imageUrl = await uploadImageFromUrl(slackUser.avatar, `users/${context.clientId}`);
+				}
+
+				userId = nanoid();
+				await tx.insert(user).values({
+					id: userId,
+					name: slackUser.name,
+					email: slackUser.email,
+					emailVerified: true,
+					image: imageUrl,
+					clientId: context.clientId,
+					slackId: data.slackUserId,
+				});
+			}
+
+			await tx
+				.insert(teamMember)
+				.values({
+					teamId: data.teamId,
+					userId,
+				})
+				.onConflictDoNothing();
+		});
+
+		return { success: true, userId };
+	});
+
 export const getUsers = createServerFn({
 	method: "GET",
 })
@@ -148,26 +236,17 @@ export const getUsers = createServerFn({
 						id: true,
 					},
 				},
-				userIntegrations: {
-					columns: {
-						platform: true,
-					},
-				},
 			},
 		});
 
 		return users.map((user) => {
-			const connectedIntegrations = user.userIntegrations.map((integration) => integration.platform);
-			const hasSlack = connectedIntegrations.includes("slack");
-
 			return {
 				id: user.id,
 				name: user.name,
 				email: user.email,
 				image: user.image,
 				teamIds: user.teams.map((team) => team.id),
-				connectedIntegrations,
-				disabled: !hasSlack,
+				slackId: user.slackId,
 			};
 		});
 	});

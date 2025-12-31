@@ -438,8 +438,7 @@ function AddAssigneePickerContent(props: AddAssigneePickerContentProps) {
 			id: u.id,
 			name: u.name,
 			avatar: u.image,
-			disabled: u.disabled,
-			disabledReason: u.disabled ? "Missing Slack integration" : undefined,
+			disabled: !u.slackId,
 		}));
 	});
 
