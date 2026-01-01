@@ -23,14 +23,16 @@ bun run lint       # Run biome linter
 3. **D1 is an eventually consistent index** for queries and listing
 4. **Acknowledge on DO persistence**, not on side effects
 
-## Current State vs Target Architecture
+## Outbox Pattern
 
-The queue-based dispatcher is **bypassed for cost/simplicity**. Currently:
+The DO implements an internal outbox for reliable downstream processing:
 
-- Handler updates D1 directly after DO response
-- Handler invokes senders directly after DO response
+- State changes atomically append events to an `event_log` table inside the DO
+- The DO alarm drains the outbox and calls `incidentd.dispatch()` via Service Binding
+- Dispatcher updates D1 index and invokes adapter senders
+- Events are marked `published_at` on success, retried on failure (max 3 attempts)
 
-When implementing new features, follow the existing pattern but keep code structured for future queue migration.
+This provides at-least-once delivery with strong transactional consistency.
 
 ## File Locations
 
