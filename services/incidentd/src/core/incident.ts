@@ -243,6 +243,7 @@ export class Incident extends DurableObject<Env> {
 			createdAt: state.createdAt,
 			entryPointId: state.entryPointId,
 			rotationId: state.rotationId,
+			teamId: state.teamId,
 		});
 	}
 

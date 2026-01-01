@@ -1,11 +1,25 @@
-import { apiKey, incidentAnalysis } from "@fire/db/schema";
+import { apiKey, entryPoint, incidentAnalysis, rotation, team } from "@fire/db/schema";
 import { createFileRoute } from "@tanstack/solid-router";
+import { subMonths } from "date-fns";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { auth } from "~/lib/auth/auth";
 import { db } from "~/lib/db";
 import { computeIncidentMetrics } from "~/lib/incidents/incidents";
 import { sha256 } from "~/lib/utils/server";
 
+/**
+ * Incident Metrics API
+ *
+ * GET /api/metrics
+ *
+ * Query params:
+ * - startDate: ISO date string (default: 2 months ago)
+ * - endDate: ISO date string (default: now)
+ * - teamId: UUID of team to filter by (optional)
+ *
+ * Returns incident data with computed metrics for integration with
+ * upstream systems or external dashboards.
+ */
 export const Route = createFileRoute("/api/metrics/")({
 	server: {
 		handlers: {
@@ -37,53 +51,73 @@ export const Route = createFileRoute("/api/metrics/")({
 				}
 
 				const url = new URL(request.url);
-				const fromParam = url.searchParams.get("from");
-				const toParam = url.searchParams.get("to");
+				const startDateParam = url.searchParams.get("startDate");
+				const endDateParam = url.searchParams.get("endDate");
+				const teamIdParam = url.searchParams.get("teamId");
 
-				const fromDate = fromParam ? new Date(fromParam) : null;
-				const toDate = toParam ? new Date(toParam) : null;
+				// Default: endDate = now, startDate = 2 months back (matching tech KPI convention)
+				const now = new Date();
+				const endDate = endDateParam ? new Date(endDateParam) : now;
+				const startDate = startDateParam ? new Date(startDateParam) : subMonths(now, 2);
 
-				if (fromParam && Number.isNaN(fromDate?.getTime())) {
-					return new Response(JSON.stringify({ error: "Invalid 'from' date format" }), {
+				if (startDateParam && Number.isNaN(startDate.getTime())) {
+					return new Response(JSON.stringify({ error: "Invalid 'startDate' format. Use ISO date string." }), {
 						status: 400,
 						headers: { "Content-Type": "application/json" },
 					});
 				}
-				if (toParam && Number.isNaN(toDate?.getTime())) {
-					return new Response(JSON.stringify({ error: "Invalid 'to' date format" }), {
+				if (endDateParam && Number.isNaN(endDate.getTime())) {
+					return new Response(JSON.stringify({ error: "Invalid 'endDate' format. Use ISO date string." }), {
 						status: 400,
 						headers: { "Content-Type": "application/json" },
 					});
 				}
 
-				const conditions = [eq(incidentAnalysis.clientId, clientId)];
+				const conditions = [eq(incidentAnalysis.clientId, clientId), gte(incidentAnalysis.resolvedAt, startDate), lte(incidentAnalysis.resolvedAt, endDate)];
 
-				if (fromDate) {
-					conditions.push(gte(incidentAnalysis.resolvedAt, fromDate));
-				}
-				if (toDate) {
-					conditions.push(lte(incidentAnalysis.resolvedAt, toDate));
+				if (teamIdParam) {
+					conditions.push(eq(incidentAnalysis.teamId, teamIdParam));
 				}
 
 				const incidents = await db
-					.select()
+					.select({
+						incident: incidentAnalysis,
+						entryPointPrompt: entryPoint.prompt,
+						rotationName: rotation.name,
+						teamName: team.name,
+					})
 					.from(incidentAnalysis)
+					.leftJoin(entryPoint, eq(incidentAnalysis.entryPointId, entryPoint.id))
+					.leftJoin(rotation, eq(incidentAnalysis.rotationId, rotation.id))
+					.leftJoin(team, eq(incidentAnalysis.teamId, team.id))
 					.where(and(...conditions))
 					.orderBy(desc(incidentAnalysis.resolvedAt))
 					.limit(100);
 
-				const results = incidents.map((incident) => ({
-					id: incident.id,
-					title: incident.title,
-					severity: incident.severity,
-					assignee: incident.assignee,
-					createdAt: incident.createdAt,
-					resolvedAt: incident.resolvedAt,
-					metrics: computeIncidentMetrics(incident),
-					summary: incident.summary,
-					entryPointId: incident.entryPointId,
-					rotationId: incident.rotationId,
-				}));
+				const results = incidents.map(({ incident, entryPointPrompt, rotationName, teamName }) => {
+					const metrics = computeIncidentMetrics(incident);
+					return {
+						id: incident.id,
+						title: incident.title,
+						severity: incident.severity,
+						assignee: incident.assignee,
+						createdAt: incident.createdAt,
+						resolvedAt: incident.resolvedAt,
+						summary: incident.summary,
+						entryPointId: incident.entryPointId,
+						entryPointPrompt,
+						rotationId: incident.rotationId,
+						rotationName,
+						teamId: incident.teamId,
+						teamName,
+						metrics: {
+							timeToFirstResponseMs: metrics.timeToFirstResponse,
+							timeToAssigneeResponseMs: metrics.timeToAssigneeResponse,
+							timeToMitigateMs: metrics.timeToMitigate,
+							totalDurationMs: metrics.totalDuration,
+						},
+					};
+				});
 
 				return new Response(JSON.stringify({ incidents: results }), {
 					status: 200,

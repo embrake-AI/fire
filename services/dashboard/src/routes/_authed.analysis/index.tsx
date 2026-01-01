@@ -31,12 +31,12 @@ function AnalysisDashboard() {
 			const toStr = range()[1]?.toString();
 			if (!fromStr || !toStr) return [];
 
-			const fromDate = startOfDay(parse(fromStr, "yyyy-MM-dd", new Date()));
-			const toDate = endOfDay(parse(toStr, "yyyy-MM-dd", new Date()));
+			const startDate = startOfDay(parse(fromStr, "yyyy-MM-dd", new Date()));
+			const endDate = endOfDay(parse(toStr, "yyyy-MM-dd", new Date()));
 			return getMetricsFn({
 				data: {
-					from: fromDate.toISOString(),
-					to: toDate.toISOString(),
+					startDate: startDate.toISOString(),
+					endDate: endDate.toISOString(),
 				},
 			});
 		},
@@ -246,12 +246,12 @@ function CopyApiUrlButton(props: { range: DateValue[] }) {
 		const toStr = props.range[1]?.toString();
 		if (!fromStr || !toStr) return;
 
-		const fromDate = startOfDay(parse(fromStr, "yyyy-MM-dd", new Date()));
-		const toDate = endOfDay(parse(toStr, "yyyy-MM-dd", new Date()));
+		const startDate = startOfDay(parse(fromStr, "yyyy-MM-dd", new Date()));
+		const endDate = endOfDay(parse(toStr, "yyyy-MM-dd", new Date()));
 
 		const url = new URL("/api/metrics", window.location.origin);
-		url.searchParams.set("from", fromDate.toISOString());
-		url.searchParams.set("to", toDate.toISOString());
+		url.searchParams.set("startDate", startDate.toISOString());
+		url.searchParams.set("endDate", endDate.toISOString());
 
 		void navigator.clipboard.writeText(url.toString());
 		setCopied(true);

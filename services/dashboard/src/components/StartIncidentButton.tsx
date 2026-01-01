@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Link, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { Check, ChevronDown, Hash, Lock, Plus } from "lucide-solid";
-import { createSignal, For, Show, Suspense } from "solid-js";
+import { createMemo, createSignal, For, Show, Suspense } from "solid-js";
 import { SlackIcon } from "~/components/icons/SlackIcon";
 import { Button } from "~/components/ui/button";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "~/components/ui/command";
@@ -56,8 +56,10 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 	}));
 
 	const entryPointsQuery = useEntryPoints();
-
 	const integrationsQuery = useIntegrations({ type: "workspace" });
+
+	const someEntryPoint = createMemo(() => !!entryPointsQuery.data?.some((ep) => !!ep.prompt || ep.isFallback));
+	const isSlackConnected = createMemo(() => integrationsQuery.data?.some((i) => i.platform === "slack"));
 
 	const getSlackBotChannelsFn = useServerFn(getSlackBotChannels);
 	const slackChannelsQuery = useQuery(() => ({
@@ -66,9 +68,6 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 		enabled: postToSlack(),
 		staleTime: Infinity,
 	}));
-
-	const someEntryPoint = () => !!entryPointsQuery.data?.some((ep) => !!ep.prompt);
-	const isSlackConnected = () => integrationsQuery.data?.some((i) => i.platform === "slack");
 
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();

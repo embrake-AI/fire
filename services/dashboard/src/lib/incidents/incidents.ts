@@ -336,18 +336,21 @@ export function computeIncidentMetrics(analysis: IncidentAnalysis) {
 }
 
 export const getMetrics = createServerFn({ method: "GET" })
-	.inputValidator((data: { from?: string; to?: string }) => data)
+	.inputValidator((data: { startDate?: string; endDate?: string; teamId?: string }) => data)
 	.middleware([authMiddleware])
 	.handler(async ({ data, context }) => {
-		const fromDate = data.from ? new Date(data.from) : null;
-		const toDate = data.to ? new Date(data.to) : null;
+		const startDate = data.startDate ? new Date(data.startDate) : null;
+		const endDate = data.endDate ? new Date(data.endDate) : null;
 
 		const conditions = [eq(incidentAnalysis.clientId, context.clientId)];
-		if (fromDate) {
-			conditions.push(gte(incidentAnalysis.resolvedAt, fromDate));
+		if (startDate) {
+			conditions.push(gte(incidentAnalysis.resolvedAt, startDate));
 		}
-		if (toDate) {
-			conditions.push(lte(incidentAnalysis.resolvedAt, toDate));
+		if (endDate) {
+			conditions.push(lte(incidentAnalysis.resolvedAt, endDate));
+		}
+		if (data.teamId) {
+			conditions.push(eq(incidentAnalysis.teamId, data.teamId));
 		}
 
 		const incidents = await db
@@ -374,6 +377,7 @@ export const getMetrics = createServerFn({ method: "GET" })
 			summary: incident.summary,
 			entryPointId: incident.entryPointId,
 			rotationId: incident.rotationId,
+			teamId: incident.teamId,
 			entryPointPrompt,
 			rotationName,
 		}));
