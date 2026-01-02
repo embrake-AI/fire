@@ -70,6 +70,7 @@ export const verification = pgTable("verification", {
 export const client = pgTable("client", {
 	id: text("id").primaryKey(),
 	name: text("name").notNull(),
+	image: text("image"),
 	domains: text("domains").array().default([]),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 	updatedAt: timestamp("updated_at").notNull().defaultNow(),

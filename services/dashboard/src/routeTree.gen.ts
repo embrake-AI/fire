@@ -13,17 +13,17 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
 import { Route as AuthErrorRouteImport } from './routes/auth.error'
+import { Route as ApiUploadRouteImport } from './routes/api/upload'
+import { Route as AuthedSettingsRouteImport } from './routes/_authed.settings'
 import { Route as AuthedConfigRouteImport } from './routes/_authed.config'
 import { Route as ApiMetricsIndexRouteImport } from './routes/api/metrics/index'
 import { Route as AuthedAnalysisIndexRouteImport } from './routes/_authed.analysis/index'
 import { Route as SlackOauthCallbackRouteImport } from './routes/slack/oauth/callback'
-import { Route as ApiUploadTeamImageRouteImport } from './routes/api/upload/team-image'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedTeamsTeamIdRouteImport } from './routes/_authed.teams/$teamId'
 import { Route as AuthedIncidentsIncidentIdRouteImport } from './routes/_authed.incidents/$incidentId'
 import { Route as AuthedConfigTeamsRouteImport } from './routes/_authed.config.teams'
 import { Route as AuthedConfigRotationRouteImport } from './routes/_authed.config.rotation'
-import { Route as AuthedConfigIntegrationsRouteImport } from './routes/_authed.config.integrations'
 import { Route as AuthedConfigEscalationRouteImport } from './routes/_authed.config.escalation'
 import { Route as AuthedConfigEntryPointsRouteImport } from './routes/_authed.config.entry-points'
 import { Route as AuthedConfigApiKeysRouteImport } from './routes/_authed.config.api-keys'
@@ -31,6 +31,10 @@ import { Route as AuthedAnalysisIncidentIdRouteImport } from './routes/_authed.a
 import { Route as AuthedTeamsTeamIdUsersRouteImport } from './routes/_authed.teams/$teamId.users'
 import { Route as AuthedTeamsTeamIdRotationsRouteImport } from './routes/_authed.teams/$teamId.rotations'
 import { Route as AuthedTeamsTeamIdEntryPointsRouteImport } from './routes/_authed.teams/$teamId.entry-points'
+import { Route as AuthedSettingsWorkspaceProfileRouteImport } from './routes/_authed.settings.workspace.profile'
+import { Route as AuthedSettingsWorkspaceIntegrationsRouteImport } from './routes/_authed.settings.workspace.integrations'
+import { Route as AuthedSettingsAccountProfileRouteImport } from './routes/_authed.settings.account.profile'
+import { Route as AuthedSettingsAccountIntegrationsRouteImport } from './routes/_authed.settings.account.integrations'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -51,6 +55,16 @@ const AuthErrorRoute = AuthErrorRouteImport.update({
   path: '/auth/error',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiUploadRoute = ApiUploadRouteImport.update({
+  id: '/api/upload',
+  path: '/api/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthedSettingsRoute = AuthedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedConfigRoute = AuthedConfigRouteImport.update({
   id: '/config',
   path: '/config',
@@ -69,11 +83,6 @@ const AuthedAnalysisIndexRoute = AuthedAnalysisIndexRouteImport.update({
 const SlackOauthCallbackRoute = SlackOauthCallbackRouteImport.update({
   id: '/slack/oauth/callback',
   path: '/slack/oauth/callback',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiUploadTeamImageRoute = ApiUploadTeamImageRouteImport.update({
-  id: '/api/upload/team-image',
-  path: '/api/upload/team-image',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -102,12 +111,6 @@ const AuthedConfigRotationRoute = AuthedConfigRotationRouteImport.update({
   path: '/rotation',
   getParentRoute: () => AuthedConfigRoute,
 } as any)
-const AuthedConfigIntegrationsRoute =
-  AuthedConfigIntegrationsRouteImport.update({
-    id: '/integrations',
-    path: '/integrations',
-    getParentRoute: () => AuthedConfigRoute,
-  } as any)
 const AuthedConfigEscalationRoute = AuthedConfigEscalationRouteImport.update({
   id: '/escalation',
   path: '/escalation',
@@ -146,26 +149,54 @@ const AuthedTeamsTeamIdEntryPointsRoute =
     path: '/entry-points',
     getParentRoute: () => AuthedTeamsTeamIdRoute,
   } as any)
+const AuthedSettingsWorkspaceProfileRoute =
+  AuthedSettingsWorkspaceProfileRouteImport.update({
+    id: '/workspace/profile',
+    path: '/workspace/profile',
+    getParentRoute: () => AuthedSettingsRoute,
+  } as any)
+const AuthedSettingsWorkspaceIntegrationsRoute =
+  AuthedSettingsWorkspaceIntegrationsRouteImport.update({
+    id: '/workspace/integrations',
+    path: '/workspace/integrations',
+    getParentRoute: () => AuthedSettingsRoute,
+  } as any)
+const AuthedSettingsAccountProfileRoute =
+  AuthedSettingsAccountProfileRouteImport.update({
+    id: '/account/profile',
+    path: '/account/profile',
+    getParentRoute: () => AuthedSettingsRoute,
+  } as any)
+const AuthedSettingsAccountIntegrationsRoute =
+  AuthedSettingsAccountIntegrationsRouteImport.update({
+    id: '/account/integrations',
+    path: '/account/integrations',
+    getParentRoute: () => AuthedSettingsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/config': typeof AuthedConfigRouteWithChildren
+  '/settings': typeof AuthedSettingsRouteWithChildren
+  '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
   '/': typeof AuthedIndexRoute
   '/analysis/$incidentId': typeof AuthedAnalysisIncidentIdRoute
   '/config/api-keys': typeof AuthedConfigApiKeysRoute
   '/config/entry-points': typeof AuthedConfigEntryPointsRoute
   '/config/escalation': typeof AuthedConfigEscalationRoute
-  '/config/integrations': typeof AuthedConfigIntegrationsRoute
   '/config/rotation': typeof AuthedConfigRotationRoute
   '/config/teams': typeof AuthedConfigTeamsRoute
   '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/upload/team-image': typeof ApiUploadTeamImageRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/analysis': typeof AuthedAnalysisIndexRoute
   '/api/metrics': typeof ApiMetricsIndexRoute
+  '/settings/account/integrations': typeof AuthedSettingsAccountIntegrationsRoute
+  '/settings/account/profile': typeof AuthedSettingsAccountProfileRoute
+  '/settings/workspace/integrations': typeof AuthedSettingsWorkspaceIntegrationsRoute
+  '/settings/workspace/profile': typeof AuthedSettingsWorkspaceProfileRoute
   '/teams/$teamId/entry-points': typeof AuthedTeamsTeamIdEntryPointsRoute
   '/teams/$teamId/rotations': typeof AuthedTeamsTeamIdRotationsRoute
   '/teams/$teamId/users': typeof AuthedTeamsTeamIdUsersRoute
@@ -173,22 +204,26 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/config': typeof AuthedConfigRouteWithChildren
+  '/settings': typeof AuthedSettingsRouteWithChildren
+  '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
   '/': typeof AuthedIndexRoute
   '/analysis/$incidentId': typeof AuthedAnalysisIncidentIdRoute
   '/config/api-keys': typeof AuthedConfigApiKeysRoute
   '/config/entry-points': typeof AuthedConfigEntryPointsRoute
   '/config/escalation': typeof AuthedConfigEscalationRoute
-  '/config/integrations': typeof AuthedConfigIntegrationsRoute
   '/config/rotation': typeof AuthedConfigRotationRoute
   '/config/teams': typeof AuthedConfigTeamsRoute
   '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/upload/team-image': typeof ApiUploadTeamImageRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/analysis': typeof AuthedAnalysisIndexRoute
   '/api/metrics': typeof ApiMetricsIndexRoute
+  '/settings/account/integrations': typeof AuthedSettingsAccountIntegrationsRoute
+  '/settings/account/profile': typeof AuthedSettingsAccountProfileRoute
+  '/settings/workspace/integrations': typeof AuthedSettingsWorkspaceIntegrationsRoute
+  '/settings/workspace/profile': typeof AuthedSettingsWorkspaceProfileRoute
   '/teams/$teamId/entry-points': typeof AuthedTeamsTeamIdEntryPointsRoute
   '/teams/$teamId/rotations': typeof AuthedTeamsTeamIdRotationsRoute
   '/teams/$teamId/users': typeof AuthedTeamsTeamIdUsersRoute
@@ -198,22 +233,26 @@ export interface FileRoutesById {
   '/_authed': typeof AuthedRouteWithChildren
   '/login': typeof LoginRoute
   '/_authed/config': typeof AuthedConfigRouteWithChildren
+  '/_authed/settings': typeof AuthedSettingsRouteWithChildren
+  '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/analysis/$incidentId': typeof AuthedAnalysisIncidentIdRoute
   '/_authed/config/api-keys': typeof AuthedConfigApiKeysRoute
   '/_authed/config/entry-points': typeof AuthedConfigEntryPointsRoute
   '/_authed/config/escalation': typeof AuthedConfigEscalationRoute
-  '/_authed/config/integrations': typeof AuthedConfigIntegrationsRoute
   '/_authed/config/rotation': typeof AuthedConfigRotationRoute
   '/_authed/config/teams': typeof AuthedConfigTeamsRoute
   '/_authed/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/_authed/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/upload/team-image': typeof ApiUploadTeamImageRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/_authed/analysis/': typeof AuthedAnalysisIndexRoute
   '/api/metrics/': typeof ApiMetricsIndexRoute
+  '/_authed/settings/account/integrations': typeof AuthedSettingsAccountIntegrationsRoute
+  '/_authed/settings/account/profile': typeof AuthedSettingsAccountProfileRoute
+  '/_authed/settings/workspace/integrations': typeof AuthedSettingsWorkspaceIntegrationsRoute
+  '/_authed/settings/workspace/profile': typeof AuthedSettingsWorkspaceProfileRoute
   '/_authed/teams/$teamId/entry-points': typeof AuthedTeamsTeamIdEntryPointsRoute
   '/_authed/teams/$teamId/rotations': typeof AuthedTeamsTeamIdRotationsRoute
   '/_authed/teams/$teamId/users': typeof AuthedTeamsTeamIdUsersRoute
@@ -223,22 +262,26 @@ export interface FileRouteTypes {
   fullPaths:
     | '/login'
     | '/config'
+    | '/settings'
+    | '/api/upload'
     | '/auth/error'
     | '/'
     | '/analysis/$incidentId'
     | '/config/api-keys'
     | '/config/entry-points'
     | '/config/escalation'
-    | '/config/integrations'
     | '/config/rotation'
     | '/config/teams'
     | '/incidents/$incidentId'
     | '/teams/$teamId'
     | '/api/auth/$'
-    | '/api/upload/team-image'
     | '/slack/oauth/callback'
     | '/analysis'
     | '/api/metrics'
+    | '/settings/account/integrations'
+    | '/settings/account/profile'
+    | '/settings/workspace/integrations'
+    | '/settings/workspace/profile'
     | '/teams/$teamId/entry-points'
     | '/teams/$teamId/rotations'
     | '/teams/$teamId/users'
@@ -246,22 +289,26 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/config'
+    | '/settings'
+    | '/api/upload'
     | '/auth/error'
     | '/'
     | '/analysis/$incidentId'
     | '/config/api-keys'
     | '/config/entry-points'
     | '/config/escalation'
-    | '/config/integrations'
     | '/config/rotation'
     | '/config/teams'
     | '/incidents/$incidentId'
     | '/teams/$teamId'
     | '/api/auth/$'
-    | '/api/upload/team-image'
     | '/slack/oauth/callback'
     | '/analysis'
     | '/api/metrics'
+    | '/settings/account/integrations'
+    | '/settings/account/profile'
+    | '/settings/workspace/integrations'
+    | '/settings/workspace/profile'
     | '/teams/$teamId/entry-points'
     | '/teams/$teamId/rotations'
     | '/teams/$teamId/users'
@@ -270,22 +317,26 @@ export interface FileRouteTypes {
     | '/_authed'
     | '/login'
     | '/_authed/config'
+    | '/_authed/settings'
+    | '/api/upload'
     | '/auth/error'
     | '/_authed/'
     | '/_authed/analysis/$incidentId'
     | '/_authed/config/api-keys'
     | '/_authed/config/entry-points'
     | '/_authed/config/escalation'
-    | '/_authed/config/integrations'
     | '/_authed/config/rotation'
     | '/_authed/config/teams'
     | '/_authed/incidents/$incidentId'
     | '/_authed/teams/$teamId'
     | '/api/auth/$'
-    | '/api/upload/team-image'
     | '/slack/oauth/callback'
     | '/_authed/analysis/'
     | '/api/metrics/'
+    | '/_authed/settings/account/integrations'
+    | '/_authed/settings/account/profile'
+    | '/_authed/settings/workspace/integrations'
+    | '/_authed/settings/workspace/profile'
     | '/_authed/teams/$teamId/entry-points'
     | '/_authed/teams/$teamId/rotations'
     | '/_authed/teams/$teamId/users'
@@ -294,9 +345,9 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ApiUploadRoute: typeof ApiUploadRoute
   AuthErrorRoute: typeof AuthErrorRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiUploadTeamImageRoute: typeof ApiUploadTeamImageRoute
   SlackOauthCallbackRoute: typeof SlackOauthCallbackRoute
   ApiMetricsIndexRoute: typeof ApiMetricsIndexRoute
 }
@@ -331,6 +382,20 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AuthErrorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/upload': {
+      id: '/api/upload'
+      path: '/api/upload'
+      fullPath: '/api/upload'
+      preLoaderRoute: typeof ApiUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authed/settings': {
+      id: '/_authed/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthedSettingsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/config': {
       id: '/_authed/config'
       path: '/config'
@@ -357,13 +422,6 @@ declare module '@tanstack/solid-router' {
       path: '/slack/oauth/callback'
       fullPath: '/slack/oauth/callback'
       preLoaderRoute: typeof SlackOauthCallbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/upload/team-image': {
-      id: '/api/upload/team-image'
-      path: '/api/upload/team-image'
-      fullPath: '/api/upload/team-image'
-      preLoaderRoute: typeof ApiUploadTeamImageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -399,13 +457,6 @@ declare module '@tanstack/solid-router' {
       path: '/rotation'
       fullPath: '/config/rotation'
       preLoaderRoute: typeof AuthedConfigRotationRouteImport
-      parentRoute: typeof AuthedConfigRoute
-    }
-    '/_authed/config/integrations': {
-      id: '/_authed/config/integrations'
-      path: '/integrations'
-      fullPath: '/config/integrations'
-      preLoaderRoute: typeof AuthedConfigIntegrationsRouteImport
       parentRoute: typeof AuthedConfigRoute
     }
     '/_authed/config/escalation': {
@@ -457,6 +508,34 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AuthedTeamsTeamIdEntryPointsRouteImport
       parentRoute: typeof AuthedTeamsTeamIdRoute
     }
+    '/_authed/settings/workspace/profile': {
+      id: '/_authed/settings/workspace/profile'
+      path: '/workspace/profile'
+      fullPath: '/settings/workspace/profile'
+      preLoaderRoute: typeof AuthedSettingsWorkspaceProfileRouteImport
+      parentRoute: typeof AuthedSettingsRoute
+    }
+    '/_authed/settings/workspace/integrations': {
+      id: '/_authed/settings/workspace/integrations'
+      path: '/workspace/integrations'
+      fullPath: '/settings/workspace/integrations'
+      preLoaderRoute: typeof AuthedSettingsWorkspaceIntegrationsRouteImport
+      parentRoute: typeof AuthedSettingsRoute
+    }
+    '/_authed/settings/account/profile': {
+      id: '/_authed/settings/account/profile'
+      path: '/account/profile'
+      fullPath: '/settings/account/profile'
+      preLoaderRoute: typeof AuthedSettingsAccountProfileRouteImport
+      parentRoute: typeof AuthedSettingsRoute
+    }
+    '/_authed/settings/account/integrations': {
+      id: '/_authed/settings/account/integrations'
+      path: '/account/integrations'
+      fullPath: '/settings/account/integrations'
+      preLoaderRoute: typeof AuthedSettingsAccountIntegrationsRouteImport
+      parentRoute: typeof AuthedSettingsRoute
+    }
   }
 }
 
@@ -464,7 +543,6 @@ interface AuthedConfigRouteChildren {
   AuthedConfigApiKeysRoute: typeof AuthedConfigApiKeysRoute
   AuthedConfigEntryPointsRoute: typeof AuthedConfigEntryPointsRoute
   AuthedConfigEscalationRoute: typeof AuthedConfigEscalationRoute
-  AuthedConfigIntegrationsRoute: typeof AuthedConfigIntegrationsRoute
   AuthedConfigRotationRoute: typeof AuthedConfigRotationRoute
   AuthedConfigTeamsRoute: typeof AuthedConfigTeamsRoute
 }
@@ -473,13 +551,32 @@ const AuthedConfigRouteChildren: AuthedConfigRouteChildren = {
   AuthedConfigApiKeysRoute: AuthedConfigApiKeysRoute,
   AuthedConfigEntryPointsRoute: AuthedConfigEntryPointsRoute,
   AuthedConfigEscalationRoute: AuthedConfigEscalationRoute,
-  AuthedConfigIntegrationsRoute: AuthedConfigIntegrationsRoute,
   AuthedConfigRotationRoute: AuthedConfigRotationRoute,
   AuthedConfigTeamsRoute: AuthedConfigTeamsRoute,
 }
 
 const AuthedConfigRouteWithChildren = AuthedConfigRoute._addFileChildren(
   AuthedConfigRouteChildren,
+)
+
+interface AuthedSettingsRouteChildren {
+  AuthedSettingsAccountIntegrationsRoute: typeof AuthedSettingsAccountIntegrationsRoute
+  AuthedSettingsAccountProfileRoute: typeof AuthedSettingsAccountProfileRoute
+  AuthedSettingsWorkspaceIntegrationsRoute: typeof AuthedSettingsWorkspaceIntegrationsRoute
+  AuthedSettingsWorkspaceProfileRoute: typeof AuthedSettingsWorkspaceProfileRoute
+}
+
+const AuthedSettingsRouteChildren: AuthedSettingsRouteChildren = {
+  AuthedSettingsAccountIntegrationsRoute:
+    AuthedSettingsAccountIntegrationsRoute,
+  AuthedSettingsAccountProfileRoute: AuthedSettingsAccountProfileRoute,
+  AuthedSettingsWorkspaceIntegrationsRoute:
+    AuthedSettingsWorkspaceIntegrationsRoute,
+  AuthedSettingsWorkspaceProfileRoute: AuthedSettingsWorkspaceProfileRoute,
+}
+
+const AuthedSettingsRouteWithChildren = AuthedSettingsRoute._addFileChildren(
+  AuthedSettingsRouteChildren,
 )
 
 interface AuthedTeamsTeamIdRouteChildren {
@@ -499,6 +596,7 @@ const AuthedTeamsTeamIdRouteWithChildren =
 
 interface AuthedRouteChildren {
   AuthedConfigRoute: typeof AuthedConfigRouteWithChildren
+  AuthedSettingsRoute: typeof AuthedSettingsRouteWithChildren
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedAnalysisIncidentIdRoute: typeof AuthedAnalysisIncidentIdRoute
   AuthedIncidentsIncidentIdRoute: typeof AuthedIncidentsIncidentIdRoute
@@ -508,6 +606,7 @@ interface AuthedRouteChildren {
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedConfigRoute: AuthedConfigRouteWithChildren,
+  AuthedSettingsRoute: AuthedSettingsRouteWithChildren,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedAnalysisIncidentIdRoute: AuthedAnalysisIncidentIdRoute,
   AuthedIncidentsIncidentIdRoute: AuthedIncidentsIncidentIdRoute,
@@ -521,9 +620,9 @@ const AuthedRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   LoginRoute: LoginRoute,
+  ApiUploadRoute: ApiUploadRoute,
   AuthErrorRoute: AuthErrorRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-  ApiUploadTeamImageRoute: ApiUploadTeamImageRoute,
   SlackOauthCallbackRoute: SlackOauthCallbackRoute,
   ApiMetricsIndexRoute: ApiMetricsIndexRoute,
 }

@@ -156,7 +156,7 @@ export function SlackMessageInput(props: SlackMessageInputProps) {
 					<Show when={!isConnected() && !integrationsQuery.isLoading}>
 						<p class="text-sm text-muted-foreground">
 							You need to connect Slack to send messages.{" "}
-							<Link to="/config/integrations" search={{}} class="text-primary hover:underline font-medium">
+							<Link to="/settings/account/integrations" search={{}} class="text-primary hover:underline font-medium">
 								Go to Integrations
 							</Link>
 						</p>

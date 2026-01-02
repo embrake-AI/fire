@@ -207,7 +207,7 @@ function TypeSelectionContent(props: { setStep: (step: PickerStep) => void }) {
 						</div>
 						<h4 class="text-sm font-medium text-foreground mb-1">No connected integrations</h4>
 						<p class="text-sm text-muted-foreground max-w-xs mb-4">Connect an integration to start adding entry points for incident routing.</p>
-						<Button as={Link} to="/config/integrations" variant="outline" size="sm" class="cursor-pointer">
+						<Button as={Link} to="/settings/workspace/integrations" variant="outline" size="sm" class="cursor-pointer">
 							Connect Integration
 						</Button>
 					</div>

@@ -116,7 +116,7 @@ export const updateTeam = createServerFn({ method: "POST" })
 		if (data.name !== undefined) {
 			updateFields.name = data.name;
 		}
-		if (data.imageUrl !== undefined && data.imageUrl !== null) {
+		if (data.imageUrl) {
 			updateFields.imageUrl = data.imageUrl || null;
 		}
 
@@ -219,34 +219,4 @@ export const addSlackUserAsTeamMember = createServerFn({ method: "POST" })
 		});
 
 		return { success: true, userId };
-	});
-
-export const getUsers = createServerFn({
-	method: "GET",
-})
-	.middleware([authMiddleware])
-	.handler(async ({ context }) => {
-		const users = await db.query.user.findMany({
-			where: {
-				clientId: context.clientId,
-			},
-			with: {
-				teams: {
-					columns: {
-						id: true,
-					},
-				},
-			},
-		});
-
-		return users.map((user) => {
-			return {
-				id: user.id,
-				name: user.name,
-				email: user.email,
-				image: user.image,
-				teamIds: user.teams.map((team) => team.id),
-				slackId: user.slackId,
-			};
-		});
 	});

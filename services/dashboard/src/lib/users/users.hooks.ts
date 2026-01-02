@@ -1,10 +1,10 @@
 import { emailInDomains } from "@fire/common";
-import { useQuery } from "@tanstack/solid-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import { type Accessor, createMemo } from "solid-js";
 import { useClient } from "../client/client.hooks";
-import { getUsers } from "../teams/teams";
 import { useSlackUsers } from "../useSlackUsers";
+import { getCurrentUser, getUsers, updateUser } from "./users";
 
 export function useUserBySlackId(slackId: Accessor<string>, options?: { enabled?: Accessor<boolean> }) {
 	const usersQuery = useUsers(options);
@@ -45,6 +45,7 @@ export function useUsers(options?: { enabled?: Accessor<boolean> }) {
 
 type GetUsersResponse = Awaited<ReturnType<typeof getUsers>>;
 type UserWithSlackId = GetUsersResponse[number] & { slackId: string };
+type CurrentUserResponse = Awaited<ReturnType<typeof getCurrentUser>>;
 
 export function usePossibleSlackUsers(options?: { enabled: Accessor<boolean> }) {
 	const usersQuery = useUsers(options);
@@ -60,4 +61,45 @@ export function usePossibleSlackUsers(options?: { enabled: Accessor<boolean> }) 
 		];
 	});
 	return possibleSlackUsers;
+}
+
+export function useCurrentUser() {
+	const getCurrentUserFn = useServerFn(getCurrentUser);
+	return useQuery(() => ({
+		queryKey: ["current-user"],
+		queryFn: getCurrentUserFn,
+		staleTime: 60_000,
+	}));
+}
+
+export function useUpdateUser() {
+	const queryClient = useQueryClient();
+	const updateUserFn = useServerFn(updateUser);
+	return useMutation(() => ({
+		mutationFn: (data: { name?: string; image?: string | null }) => updateUserFn({ data }),
+		onMutate: async (newData) => {
+			await queryClient.cancelQueries({ queryKey: ["current-user"] });
+
+			const previousCurrentUser = queryClient.getQueryData<CurrentUserResponse>(["current-user"]);
+			const patch = {
+				...(newData.name !== undefined && { name: newData.name }),
+				...(newData.image !== undefined && { image: newData.image }),
+			};
+
+			if (previousCurrentUser) {
+				queryClient.setQueryData<CurrentUserResponse>(["current-user"], { ...previousCurrentUser, ...patch });
+			}
+
+			return { previousCurrentUser };
+		},
+		onError: (_err, _variables, context) => {
+			if (context?.previousCurrentUser) {
+				queryClient.setQueryData(["current-user"], context.previousCurrentUser);
+			}
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["current-user"] });
+			queryClient.invalidateQueries({ queryKey: ["users"] });
+		},
+	}));
 }

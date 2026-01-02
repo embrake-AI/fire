@@ -2,7 +2,7 @@ import type { ListIncidentsElement } from "@fire/common";
 import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { ChevronRight, CircleCheck, Flame, Wrench } from "lucide-solid";
+import { ChevronRight, CircleCheck, Flame, Settings } from "lucide-solid";
 import type { JSX } from "solid-js";
 import { createMemo, createSignal, For, onMount, Show, Suspense } from "solid-js";
 import { ResolvedIncidents } from "~/components/ResolvedIncidents";
@@ -57,7 +57,7 @@ function IncidentsContent() {
 	);
 
 	const MitigatingIncidentsSection = (): JSX.Element => (
-		<IncidentSection icon={<Wrench class="w-5 h-5 text-amber-500" />} iconBg="bg-amber-100" title="Being Mitigated" incidents={mitigatingIncidents()} />
+		<IncidentSection icon={<Settings class="w-5 h-5 text-amber-500" />} iconBg="bg-amber-100" title="Being Mitigated" incidents={mitigatingIncidents()} />
 	);
 
 	const openAndMitigatingIncidents = () => openIncidents().length > 0 && mitigatingIncidents().length > 0;

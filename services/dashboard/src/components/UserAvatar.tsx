@@ -1,7 +1,7 @@
 import type { Accessor } from "solid-js";
 import { createMemo, Show } from "solid-js";
 
-export function UserAvatar(props: { name: Accessor<string>; withName?: boolean; avatar?: Accessor<string | null | undefined> }) {
+export function UserAvatar(props: { name: Accessor<string>; withName?: boolean; avatar?: Accessor<string | null | undefined>; sizeClass?: string }) {
 	const initials = () =>
 		props
 			.name()
@@ -11,12 +11,16 @@ export function UserAvatar(props: { name: Accessor<string>; withName?: boolean; 
 			.slice(0, 2);
 
 	const avatarUrl = createMemo(() => props.avatar?.());
+	const sizeClass = () => props.sizeClass ?? "w-8 h-8";
 
 	return (
-		<Show when={avatarUrl()} fallback={<div class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-medium text-sm">{initials()}</div>}>
+		<Show
+			when={avatarUrl()}
+			fallback={<div class={`flex items-center justify-center ${sizeClass()} rounded-full bg-blue-100 text-blue-600 font-medium text-sm`}>{initials()}</div>}
+		>
 			{(avatar) => (
 				<>
-					<img src={avatar()} alt={props.name()} loading="lazy" decoding="async" class="w-8 h-8 rounded-full object-cover shrink-0" />
+					<img src={avatar()} alt={props.name()} loading="lazy" decoding="async" class={`${sizeClass()} rounded-full object-cover shrink-0`} />
 					<Show when={props.withName && props.name()}>
 						<div class="flex flex-col">
 							<span class="truncate">{props.name()}</span>

@@ -50,6 +50,8 @@ fire/
 
 **Stack**: SolidJS, TanStack Start/Router/Query, Tailwind CSS, Ark UI
 
+**Route Generation**: TanStack Router auto-generates route types from file structure. After adding new route files, run `bun run dev` to regenerate route types.
+
 #### Server Functions with Auth Middleware
 
 All API calls go through server functions with auth middleware. See `src/lib/rotations/rotations.ts`:
@@ -215,7 +217,9 @@ Drizzle ORM schema and relations. See `src/schema/` for table definitions:
 - `user`, `team`, `teamMember` - User management
 - `integration`, `userIntegration` - OAuth connections (Slack, GitHub)
 
-Run migrations from root: `bun run db:migrate`
+Database commands from root:
+- `bun run db:generate` - Generate a new migration
+- `bun run db:migrate` - Run pending migrations
 
 ## Code Style
 

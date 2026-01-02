@@ -1,13 +1,14 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation } from "@tanstack/solid-router";
-import { Check, ImageUp, LoaderCircle, Pencil, Users as UsersIcon } from "lucide-solid";
-import { createEffect, createMemo, createSignal, ErrorBoundary, onCleanup, Show, Suspense } from "solid-js";
+import { Check, LoaderCircle, Pencil, Users as UsersIcon } from "lucide-solid";
+import { createMemo, createSignal, ErrorBoundary, Show, Suspense } from "solid-js";
+import { ImageUploadPicker } from "~/components/ImageUploadPicker";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent } from "~/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { useTeams, useUpdateTeam } from "~/lib/teams/teams.hooks";
+import { useUploadImage } from "~/lib/uploads/uploads.hooks";
 import { cn } from "~/lib/utils/client";
 
 export const Route = createFileRoute("/_authed/teams/$teamId")({
@@ -91,120 +92,29 @@ function TeamHeader(props: { team: { id: string; name: string; imageUrl: string 
 	const [name, setName] = createSignal(props.team.name);
 	const [imageFile, setImageFile] = createSignal<File | null>(null);
 	const [droppedImageUrl, setDroppedImageUrl] = createSignal("");
-	const [isUploadingImage, setIsUploadingImage] = createSignal(false);
-	const [isDragActive, setIsDragActive] = createSignal(false);
-	let fileInputRef: HTMLInputElement | undefined;
-
-	const formatFileSize = (size: number) => {
-		if (size < 1024) return `${size} B`;
-		if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-		return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-	};
-
-	const selectedFileDetails = createMemo(() => {
-		const file = imageFile();
-		return file ? { name: file.name, size: formatFileSize(file.size) } : null;
-	});
-
-	const [previewUrl, setPreviewUrl] = createSignal<string | null>(null);
-
-	createEffect(() => {
-		const file = imageFile();
-		if (!file) {
-			setPreviewUrl(null);
-			return;
-		}
-		const objectUrl = URL.createObjectURL(file);
-		setPreviewUrl(objectUrl);
-		onCleanup(() => URL.revokeObjectURL(objectUrl));
-	});
-
-	const previewSource = createMemo(() => previewUrl() || droppedImageUrl() || props.team.imageUrl || "");
+	const uploadImageMutation = useUploadImage("team");
 
 	const handleUpdateName = async () => {
 		updateTeamMutation.mutate({ id: props.team.id, name: name() });
 	};
 
 	const handleUpdateImage = async () => {
-		setIsUploadingImage(true);
-		try {
-			const file = imageFile();
-			const url = droppedImageUrl().trim();
-			let uploadedUrl = props.team.imageUrl || "";
+		const file = imageFile();
+		const url = droppedImageUrl().trim();
+		let uploadedUrl = props.team.imageUrl || "";
 
-			if (file || url) {
-				const formData = new FormData();
-				if (file) {
-					formData.append("file", file);
-				} else {
-					formData.append("url", url);
-				}
-
-				const response = await fetch("/api/upload/team-image", {
-					method: "POST",
-					body: formData,
-				});
-
-				if (!response.ok) {
-					throw new Error("Upload failed");
-				}
-
-				const data = (await response.json()) as { url: string };
-				uploadedUrl = data.url;
+		if (file || url) {
+			try {
+				const { imageUrl } = await uploadImageMutation.mutateAsync({ file, url });
+				uploadedUrl = imageUrl;
+			} catch {
+				return;
 			}
-
-			setImageFile(null);
-			setDroppedImageUrl("");
-			updateTeamMutation.mutate({ id: props.team.id, imageUrl: uploadedUrl || null });
-		} finally {
-			setIsUploadingImage(false);
 		}
-	};
 
-	const handleSelectedFile = (file: File | null) => {
-		if (!file || !file.type.startsWith("image/")) {
-			return;
-		}
-		setImageFile(file);
-		setDroppedImageUrl("");
-	};
-
-	const normalizeImageUrl = (raw: string) => {
-		const trimmed = raw.trim();
-		if (!trimmed) return "";
-		const directImagePattern = /\.(gif|png|jpe?g|webp)(\?.*)?$/i;
-		if (directImagePattern.test(trimmed)) return trimmed;
-		try {
-			const parsed = new URL(trimmed);
-			if (parsed.hostname.includes("giphy.com")) {
-				const giphyMatch = parsed.pathname.match(/\/gifs\/(?:.+-)?([a-zA-Z0-9]+)$/);
-				const id = giphyMatch?.[1];
-				if (id) {
-					return `https://media.giphy.com/media/${id}/giphy.gif`;
-				}
-			}
-		} catch {
-			// Fall through to regex extraction.
-		}
-		const match = trimmed.match(/https?:\/\/\S+/);
-		return match ? match[0] : "";
-	};
-
-	const extractDroppedUrl = (event: DragEvent) => {
-		const uriList = event.dataTransfer?.getData("text/uri-list") ?? "";
-		const plainText = event.dataTransfer?.getData("text/plain") ?? "";
-		const candidate = uriList
-			.split(/\r?\n/)
-			.map((line) => line.trim())
-			.find((line) => line && !line.startsWith("#"));
-		return candidate || plainText.trim();
-	};
-
-	const handleDroppedUrl = (rawUrl: string) => {
-		const normalized = normalizeImageUrl(rawUrl);
-		if (!normalized) return;
-		setDroppedImageUrl(normalized);
 		setImageFile(null);
+		setDroppedImageUrl("");
+		updateTeamMutation.mutate({ id: props.team.id, imageUrl: uploadedUrl || null });
 	};
 
 	const isSubmitting = () => updateTeamMutation.isPending;
@@ -235,96 +145,16 @@ function TeamHeader(props: { team: { id: string; name: string; imageUrl: string 
 						<DialogTitle>Update Team Icon</DialogTitle>
 					</DialogHeader>
 					<div class="space-y-4 py-4">
-						<div class="space-y-2">
-							<Card
-								class={cn("border-dashed bg-muted/30 transition-all", isDragActive() && "border-blue-300 bg-blue-50/60 shadow-md")}
-								onDragOver={(event) => {
-									event.preventDefault();
-									setIsDragActive(true);
-								}}
-								onDragLeave={(event) => {
-									event.preventDefault();
-									setIsDragActive(false);
-								}}
-								onDrop={(event) => {
-									event.preventDefault();
-									setIsDragActive(false);
-									const file = event.dataTransfer?.files?.[0] ?? null;
-									if (file) {
-										handleSelectedFile(file);
-										return;
-									}
-									const droppedUrl = extractDroppedUrl(event);
-									if (droppedUrl) {
-										handleDroppedUrl(droppedUrl);
-										return;
-									}
-									const items = event.dataTransfer?.items;
-									if (items?.length) {
-										for (const item of Array.from(items)) {
-											if (item.kind === "string") {
-												item.getAsString((value) => handleDroppedUrl(value));
-											}
-										}
-									}
-								}}
-							>
-								<CardContent class="p-4 space-y-3">
-									<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-										<div class="space-y-1">
-											<div class="flex items-center gap-2 text-sm font-medium text-foreground">
-												<ImageUp class="w-4 h-4 text-blue-600" />
-												<span>Select an image file</span>
-											</div>
-											<p class="text-xs text-muted-foreground">Choose or drop a file to replace the team icon.</p>
-										</div>
-										<div class="flex items-center gap-2">
-											<Input
-												ref={(el) => {
-													fileInputRef = el;
-												}}
-												id="team-image-file"
-												type="file"
-												accept="image/*"
-												class="hidden"
-												onChange={(e) => {
-													const file = e.currentTarget.files?.[0] ?? null;
-													handleSelectedFile(file);
-												}}
-											/>
-											<Button
-												variant="outline"
-												class="cursor-pointer"
-												onClick={(e) => {
-													e.stopPropagation();
-													fileInputRef?.click();
-												}}
-											>
-												<ImageUp class="w-4 h-4 mr-2" />
-												Browse files
-											</Button>
-										</div>
-									</div>
-									<Show when={selectedFileDetails()}>
-										{(details) => (
-											<div class="flex items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-xs">
-												<span class="font-medium text-foreground">{details().name}</span>
-												<span class="text-muted-foreground">{details().size}</span>
-											</div>
-										)}
-									</Show>
-								</CardContent>
-							</Card>
-						</div>
-						<Show when={previewSource()}>
-							{(src) => (
-								<div class="flex justify-center">
-									<div class="h-16 w-16 overflow-hidden rounded-xl border border-blue-200 bg-gradient-to-br from-blue-100 to-blue-50 shadow-sm">
-										<img src={src()} alt="Preview" class="h-full w-full object-cover" />
-									</div>
-								</div>
-							)}
-						</Show>
+						<ImageUploadPicker
+							description="Choose or drop a file to replace the team icon."
+							previewClass="h-16 w-16 overflow-hidden rounded-xl border border-blue-200 bg-gradient-to-br from-blue-100 to-blue-50 shadow-sm"
+							imageFile={imageFile}
+							setImageFile={setImageFile}
+							droppedImageUrl={droppedImageUrl}
+							setDroppedImageUrl={setDroppedImageUrl}
+							previewFallback={props.team.imageUrl}
+							inputId="team-image-file"
+						/>
 						<div class="flex justify-end gap-2">
 							<Button
 								variant="ghost"
@@ -340,9 +170,9 @@ function TeamHeader(props: { team: { id: string; name: string; imageUrl: string 
 									e.stopPropagation();
 									void handleUpdateImage();
 								}}
-								disabled={isSubmitting() || isUploadingImage() || (!imageFile() && !droppedImageUrl())}
+								disabled={isSubmitting() || uploadImageMutation.isPending || (!imageFile() && !droppedImageUrl())}
 							>
-								{isSubmitting() || isUploadingImage() ? <LoaderCircle class="w-4 h-4 animate-spin" /> : "Save"}
+								{isSubmitting() || uploadImageMutation.isPending ? <LoaderCircle class="w-4 h-4 animate-spin" /> : "Save"}
 							</Button>
 						</div>
 					</div>
