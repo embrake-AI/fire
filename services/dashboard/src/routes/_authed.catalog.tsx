@@ -1,18 +1,18 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation } from "@tanstack/solid-router";
-import { Settings } from "lucide-solid";
+import { BookOpen } from "lucide-solid";
 import { createMemo } from "solid-js";
 import { Tabs, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 
-export const Route = createFileRoute("/_authed/config")({
-	component: ConfigLayout,
+export const Route = createFileRoute("/_authed/catalog")({
+	component: CatalogLayout,
 	beforeLoad: ({ location }) => {
-		if (location.pathname === "/config") {
-			throw redirect({ to: "/config/entry-points" });
+		if (location.pathname === "/catalog") {
+			throw redirect({ to: "/catalog/entry-points" });
 		}
 	},
 });
 
-function ConfigLayout() {
+function CatalogLayout() {
 	const location = useLocation();
 
 	const activeTab = createMemo(() => {
@@ -20,7 +20,6 @@ function ConfigLayout() {
 		if (path.includes("teams")) return "teams";
 		if (path.includes("rotation")) return "rotation";
 		if (path.includes("escalation")) return "escalation";
-		if (path.includes("api-keys")) return "api-keys";
 		return "entry-points";
 	});
 
@@ -29,27 +28,24 @@ function ConfigLayout() {
 			<div class="max-w-5xl mx-auto">
 				<div class="flex items-center gap-3 mb-6">
 					<div class="p-2 rounded-lg bg-muted">
-						<Settings class="w-5 h-5 text-muted-foreground" />
+						<BookOpen class="w-5 h-5 text-muted-foreground" />
 					</div>
-					<h1 class="text-2xl font-semibold text-foreground">Configuration</h1>
+					<h1 class="text-2xl font-semibold text-foreground">Catalog</h1>
 				</div>
 
 				<Tabs value={activeTab()}>
 					<TabsList>
-						<TabsTrigger value="entry-points" as={Link} to="/config/entry-points">
+						<TabsTrigger value="entry-points" as={Link} to="/catalog/entry-points">
 							Entry Points
 						</TabsTrigger>
-						<TabsTrigger value="teams" as={Link} to="/config/teams">
+						<TabsTrigger value="teams" as={Link} to="/catalog/teams">
 							Teams
 						</TabsTrigger>
-						<TabsTrigger value="rotation" as={Link} to="/config/rotation">
+						<TabsTrigger value="rotation" as={Link} to="/catalog/rotation">
 							Rotation
 						</TabsTrigger>
-						<TabsTrigger value="escalation" as={Link} to="/config/escalation">
+						<TabsTrigger value="escalation" as={Link} to="/catalog/escalation">
 							Escalation
-						</TabsTrigger>
-						<TabsTrigger value="api-keys" as={Link} to="/config/api-keys">
-							API Keys
 						</TabsTrigger>
 						<TabsIndicator />
 					</TabsList>

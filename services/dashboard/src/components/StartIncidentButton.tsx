@@ -176,7 +176,7 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 					<DialogDescription>You need at least one entry point with a prompt configured before you can start an incident.</DialogDescription>
 				</DialogHeader>
 				<DialogFooter class="pt-4">
-					<Button as={Link} to="/config/entry-points" onClick={props.onClose}>
+					<Button as={Link} to="/catalog/entry-points" onClick={props.onClose}>
 						<Plus class="mr-2 h-4 w-4" /> Create Entry Point
 					</Button>
 				</DialogFooter>

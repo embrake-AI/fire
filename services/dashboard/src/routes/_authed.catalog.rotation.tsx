@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~
 import { Skeleton } from "~/components/ui/skeleton";
 import { useCreateRotation, useDeleteRotation, useRotations } from "~/lib/rotations/rotations.hooks";
 
-export const Route = createFileRoute("/_authed/config/rotation")({
+export const Route = createFileRoute("/_authed/catalog/rotation")({
 	component: RotationConfig,
 });
 

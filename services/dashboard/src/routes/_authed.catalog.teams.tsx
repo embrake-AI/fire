@@ -10,7 +10,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import type { getTeams } from "~/lib/teams/teams";
 import { useCreateTeam, useDeleteTeam, useTeams } from "~/lib/teams/teams.hooks";
 
-export const Route = createFileRoute("/_authed/config/teams")({
+export const Route = createFileRoute("/_authed/catalog/teams")({
 	component: TeamsConfig,
 });
 

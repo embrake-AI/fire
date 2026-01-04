@@ -98,7 +98,7 @@ function ResolvedIncidentCard(props: { incident: ResolvedIncident }) {
 	const severity = () => getSeverity(props.incident.severity);
 
 	return (
-		<Link to="/analysis/$incidentId" params={{ incidentId: props.incident.id }} class="block">
+		<Link to="/metrics/$incidentId" params={{ incidentId: props.incident.id }} class="block">
 			<Card class="p-4 transition-all cursor-pointer bg-muted/30 border-border/50 hover:bg-muted/50">
 				<div class="flex items-start justify-between gap-4">
 					<div class="flex items-start gap-3 min-w-0 flex-1">

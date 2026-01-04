@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation } from "@tanstack/solid-router";
-import { Building2, Plug, User } from "lucide-solid";
+import { Building2, Key, Plug, User } from "lucide-solid";
 import { cn } from "~/lib/utils/client";
 
 export const Route = createFileRoute("/_authed/settings")({
@@ -14,6 +14,7 @@ export const Route = createFileRoute("/_authed/settings")({
 const navItems = [
 	{ label: "Profile", to: "/settings/account/profile", section: "account", icon: User },
 	{ label: "Integrations", to: "/settings/account/integrations", section: "account", icon: Plug },
+	{ label: "API Keys", to: "/settings/account/api-keys", section: "account", icon: Key },
 	{ label: "Profile", to: "/settings/workspace/profile", section: "workspace", icon: Building2 },
 	{ label: "Integrations", to: "/settings/workspace/integrations", section: "workspace", icon: Plug },
 ] as const;

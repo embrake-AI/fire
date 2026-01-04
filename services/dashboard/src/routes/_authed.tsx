@@ -1,12 +1,9 @@
-import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/solid-router";
-import { useServerFn } from "@tanstack/solid-start";
 import { createMemo, Show } from "solid-js";
-import Header from "~/components/Header";
+import Sidebar from "~/components/Sidebar";
 import { getAuth, isAuthReady } from "~/lib/auth/auth-store";
-import { getSlackUsers } from "~/lib/entry-points/entry-points";
 import { useEntryPoints } from "~/lib/entry-points/entry-points.hooks";
-import { useIntegrations } from "~/lib/integrations/integrations.hooks";
+import { useSlackUsers } from "~/lib/useSlackUsers";
 
 export const Route = createFileRoute("/_authed")({
 	beforeLoad: ({ location }) => {
@@ -30,27 +27,18 @@ function AuthedLayout() {
 		const auth = getAuth();
 		return !!auth?.userId && !!auth?.clientId;
 	});
-	const getSlackUsersFn = useServerFn(getSlackUsers);
-
 	// app-wide interesting data. Kept to make things feel more responsive.
 	useEntryPoints();
-	const integrationsQuery = useIntegrations({ type: "workspace" });
-
-	const hasSlackIntegration = createMemo(() => integrationsQuery.data?.some((i) => i.platform === "slack" && i.installedAt));
-
-	useQuery(() => ({
-		queryKey: ["slack-users"],
-		queryFn: getSlackUsersFn,
-		staleTime: Infinity,
-		enabled: authed() && hasSlackIntegration(),
-	}));
+	useSlackUsers();
 
 	return (
 		<Show when={authed()}>
-			<Header />
-			<main class="flex-1 flex flex-col overflow-y-auto">
-				<Outlet />
-			</main>
+			<div class="flex flex-1 min-h-0">
+				<Sidebar />
+				<main class="flex-1 flex flex-col overflow-y-auto">
+					<Outlet />
+				</main>
+			</div>
 		</Show>
 	);
 }

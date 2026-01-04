@@ -159,7 +159,7 @@ export function EntryPointsEmptyState() {
 				</div>
 			</div>
 			<h3 class="text-lg font-medium text-foreground mb-1">No entry points yet</h3>
-			<p class="text-sm text-muted-foreground text-center max-w-sm">Add rotations or Slack users to define entry points for incident routing.</p>
+			<p class="text-sm text-muted-foreground text-center max-w-sm">Add rotations or users to define entry points for incident routing.</p>
 		</div>
 	);
 }

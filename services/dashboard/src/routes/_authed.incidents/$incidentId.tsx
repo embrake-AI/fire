@@ -103,7 +103,7 @@ function IncidentDetail() {
 
 	createEffect(() => {
 		if (incidentQuery.data?.error === "NOT_FOUND") {
-			navigate({ to: "/analysis/$incidentId", params: { incidentId: params().incidentId } });
+			navigate({ to: "/metrics/$incidentId", params: { incidentId: params().incidentId } });
 		}
 	});
 

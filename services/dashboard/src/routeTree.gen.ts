@@ -15,19 +15,18 @@ import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
 import { Route as AuthErrorRouteImport } from './routes/auth.error'
 import { Route as ApiUploadRouteImport } from './routes/api/upload'
 import { Route as AuthedSettingsRouteImport } from './routes/_authed.settings'
-import { Route as AuthedConfigRouteImport } from './routes/_authed.config'
+import { Route as AuthedCatalogRouteImport } from './routes/_authed.catalog'
 import { Route as ApiMetricsIndexRouteImport } from './routes/api/metrics/index'
-import { Route as AuthedAnalysisIndexRouteImport } from './routes/_authed.analysis/index'
+import { Route as AuthedMetricsIndexRouteImport } from './routes/_authed.metrics/index'
 import { Route as SlackOauthCallbackRouteImport } from './routes/slack/oauth/callback'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedTeamsTeamIdRouteImport } from './routes/_authed.teams/$teamId'
+import { Route as AuthedMetricsIncidentIdRouteImport } from './routes/_authed.metrics/$incidentId'
 import { Route as AuthedIncidentsIncidentIdRouteImport } from './routes/_authed.incidents/$incidentId'
-import { Route as AuthedConfigTeamsRouteImport } from './routes/_authed.config.teams'
-import { Route as AuthedConfigRotationRouteImport } from './routes/_authed.config.rotation'
-import { Route as AuthedConfigEscalationRouteImport } from './routes/_authed.config.escalation'
-import { Route as AuthedConfigEntryPointsRouteImport } from './routes/_authed.config.entry-points'
-import { Route as AuthedConfigApiKeysRouteImport } from './routes/_authed.config.api-keys'
-import { Route as AuthedAnalysisIncidentIdRouteImport } from './routes/_authed.analysis/$incidentId'
+import { Route as AuthedCatalogTeamsRouteImport } from './routes/_authed.catalog.teams'
+import { Route as AuthedCatalogRotationRouteImport } from './routes/_authed.catalog.rotation'
+import { Route as AuthedCatalogEscalationRouteImport } from './routes/_authed.catalog.escalation'
+import { Route as AuthedCatalogEntryPointsRouteImport } from './routes/_authed.catalog.entry-points'
 import { Route as AuthedTeamsTeamIdUsersRouteImport } from './routes/_authed.teams/$teamId.users'
 import { Route as AuthedTeamsTeamIdRotationsRouteImport } from './routes/_authed.teams/$teamId.rotations'
 import { Route as AuthedTeamsTeamIdEntryPointsRouteImport } from './routes/_authed.teams/$teamId.entry-points'
@@ -35,6 +34,7 @@ import { Route as AuthedSettingsWorkspaceProfileRouteImport } from './routes/_au
 import { Route as AuthedSettingsWorkspaceIntegrationsRouteImport } from './routes/_authed.settings.workspace.integrations'
 import { Route as AuthedSettingsAccountProfileRouteImport } from './routes/_authed.settings.account.profile'
 import { Route as AuthedSettingsAccountIntegrationsRouteImport } from './routes/_authed.settings.account.integrations'
+import { Route as AuthedSettingsAccountApiKeysRouteImport } from './routes/_authed.settings.account.api-keys'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -65,9 +65,9 @@ const AuthedSettingsRoute = AuthedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedConfigRoute = AuthedConfigRouteImport.update({
-  id: '/config',
-  path: '/config',
+const AuthedCatalogRoute = AuthedCatalogRouteImport.update({
+  id: '/catalog',
+  path: '/catalog',
   getParentRoute: () => AuthedRoute,
 } as any)
 const ApiMetricsIndexRoute = ApiMetricsIndexRouteImport.update({
@@ -75,9 +75,9 @@ const ApiMetricsIndexRoute = ApiMetricsIndexRouteImport.update({
   path: '/api/metrics/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthedAnalysisIndexRoute = AuthedAnalysisIndexRouteImport.update({
-  id: '/analysis/',
-  path: '/analysis/',
+const AuthedMetricsIndexRoute = AuthedMetricsIndexRouteImport.update({
+  id: '/metrics/',
+  path: '/metrics/',
   getParentRoute: () => AuthedRoute,
 } as any)
 const SlackOauthCallbackRoute = SlackOauthCallbackRouteImport.update({
@@ -95,42 +95,37 @@ const AuthedTeamsTeamIdRoute = AuthedTeamsTeamIdRouteImport.update({
   path: '/teams/$teamId',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedMetricsIncidentIdRoute = AuthedMetricsIncidentIdRouteImport.update({
+  id: '/metrics/$incidentId',
+  path: '/metrics/$incidentId',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedIncidentsIncidentIdRoute =
   AuthedIncidentsIncidentIdRouteImport.update({
     id: '/incidents/$incidentId',
     path: '/incidents/$incidentId',
     getParentRoute: () => AuthedRoute,
   } as any)
-const AuthedConfigTeamsRoute = AuthedConfigTeamsRouteImport.update({
+const AuthedCatalogTeamsRoute = AuthedCatalogTeamsRouteImport.update({
   id: '/teams',
   path: '/teams',
-  getParentRoute: () => AuthedConfigRoute,
+  getParentRoute: () => AuthedCatalogRoute,
 } as any)
-const AuthedConfigRotationRoute = AuthedConfigRotationRouteImport.update({
+const AuthedCatalogRotationRoute = AuthedCatalogRotationRouteImport.update({
   id: '/rotation',
   path: '/rotation',
-  getParentRoute: () => AuthedConfigRoute,
+  getParentRoute: () => AuthedCatalogRoute,
 } as any)
-const AuthedConfigEscalationRoute = AuthedConfigEscalationRouteImport.update({
+const AuthedCatalogEscalationRoute = AuthedCatalogEscalationRouteImport.update({
   id: '/escalation',
   path: '/escalation',
-  getParentRoute: () => AuthedConfigRoute,
+  getParentRoute: () => AuthedCatalogRoute,
 } as any)
-const AuthedConfigEntryPointsRoute = AuthedConfigEntryPointsRouteImport.update({
-  id: '/entry-points',
-  path: '/entry-points',
-  getParentRoute: () => AuthedConfigRoute,
-} as any)
-const AuthedConfigApiKeysRoute = AuthedConfigApiKeysRouteImport.update({
-  id: '/api-keys',
-  path: '/api-keys',
-  getParentRoute: () => AuthedConfigRoute,
-} as any)
-const AuthedAnalysisIncidentIdRoute =
-  AuthedAnalysisIncidentIdRouteImport.update({
-    id: '/analysis/$incidentId',
-    path: '/analysis/$incidentId',
-    getParentRoute: () => AuthedRoute,
+const AuthedCatalogEntryPointsRoute =
+  AuthedCatalogEntryPointsRouteImport.update({
+    id: '/entry-points',
+    path: '/entry-points',
+    getParentRoute: () => AuthedCatalogRoute,
   } as any)
 const AuthedTeamsTeamIdUsersRoute = AuthedTeamsTeamIdUsersRouteImport.update({
   id: '/users',
@@ -173,26 +168,32 @@ const AuthedSettingsAccountIntegrationsRoute =
     path: '/account/integrations',
     getParentRoute: () => AuthedSettingsRoute,
   } as any)
+const AuthedSettingsAccountApiKeysRoute =
+  AuthedSettingsAccountApiKeysRouteImport.update({
+    id: '/account/api-keys',
+    path: '/account/api-keys',
+    getParentRoute: () => AuthedSettingsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
-  '/config': typeof AuthedConfigRouteWithChildren
+  '/catalog': typeof AuthedCatalogRouteWithChildren
   '/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
   '/': typeof AuthedIndexRoute
-  '/analysis/$incidentId': typeof AuthedAnalysisIncidentIdRoute
-  '/config/api-keys': typeof AuthedConfigApiKeysRoute
-  '/config/entry-points': typeof AuthedConfigEntryPointsRoute
-  '/config/escalation': typeof AuthedConfigEscalationRoute
-  '/config/rotation': typeof AuthedConfigRotationRoute
-  '/config/teams': typeof AuthedConfigTeamsRoute
+  '/catalog/entry-points': typeof AuthedCatalogEntryPointsRoute
+  '/catalog/escalation': typeof AuthedCatalogEscalationRoute
+  '/catalog/rotation': typeof AuthedCatalogRotationRoute
+  '/catalog/teams': typeof AuthedCatalogTeamsRoute
   '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
+  '/metrics/$incidentId': typeof AuthedMetricsIncidentIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
-  '/analysis': typeof AuthedAnalysisIndexRoute
+  '/metrics': typeof AuthedMetricsIndexRoute
   '/api/metrics': typeof ApiMetricsIndexRoute
+  '/settings/account/api-keys': typeof AuthedSettingsAccountApiKeysRoute
   '/settings/account/integrations': typeof AuthedSettingsAccountIntegrationsRoute
   '/settings/account/profile': typeof AuthedSettingsAccountProfileRoute
   '/settings/workspace/integrations': typeof AuthedSettingsWorkspaceIntegrationsRoute
@@ -203,23 +204,23 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
-  '/config': typeof AuthedConfigRouteWithChildren
+  '/catalog': typeof AuthedCatalogRouteWithChildren
   '/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
   '/': typeof AuthedIndexRoute
-  '/analysis/$incidentId': typeof AuthedAnalysisIncidentIdRoute
-  '/config/api-keys': typeof AuthedConfigApiKeysRoute
-  '/config/entry-points': typeof AuthedConfigEntryPointsRoute
-  '/config/escalation': typeof AuthedConfigEscalationRoute
-  '/config/rotation': typeof AuthedConfigRotationRoute
-  '/config/teams': typeof AuthedConfigTeamsRoute
+  '/catalog/entry-points': typeof AuthedCatalogEntryPointsRoute
+  '/catalog/escalation': typeof AuthedCatalogEscalationRoute
+  '/catalog/rotation': typeof AuthedCatalogRotationRoute
+  '/catalog/teams': typeof AuthedCatalogTeamsRoute
   '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
+  '/metrics/$incidentId': typeof AuthedMetricsIncidentIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
-  '/analysis': typeof AuthedAnalysisIndexRoute
+  '/metrics': typeof AuthedMetricsIndexRoute
   '/api/metrics': typeof ApiMetricsIndexRoute
+  '/settings/account/api-keys': typeof AuthedSettingsAccountApiKeysRoute
   '/settings/account/integrations': typeof AuthedSettingsAccountIntegrationsRoute
   '/settings/account/profile': typeof AuthedSettingsAccountProfileRoute
   '/settings/workspace/integrations': typeof AuthedSettingsWorkspaceIntegrationsRoute
@@ -232,23 +233,23 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
   '/login': typeof LoginRoute
-  '/_authed/config': typeof AuthedConfigRouteWithChildren
+  '/_authed/catalog': typeof AuthedCatalogRouteWithChildren
   '/_authed/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
   '/_authed/': typeof AuthedIndexRoute
-  '/_authed/analysis/$incidentId': typeof AuthedAnalysisIncidentIdRoute
-  '/_authed/config/api-keys': typeof AuthedConfigApiKeysRoute
-  '/_authed/config/entry-points': typeof AuthedConfigEntryPointsRoute
-  '/_authed/config/escalation': typeof AuthedConfigEscalationRoute
-  '/_authed/config/rotation': typeof AuthedConfigRotationRoute
-  '/_authed/config/teams': typeof AuthedConfigTeamsRoute
+  '/_authed/catalog/entry-points': typeof AuthedCatalogEntryPointsRoute
+  '/_authed/catalog/escalation': typeof AuthedCatalogEscalationRoute
+  '/_authed/catalog/rotation': typeof AuthedCatalogRotationRoute
+  '/_authed/catalog/teams': typeof AuthedCatalogTeamsRoute
   '/_authed/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
+  '/_authed/metrics/$incidentId': typeof AuthedMetricsIncidentIdRoute
   '/_authed/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
-  '/_authed/analysis/': typeof AuthedAnalysisIndexRoute
+  '/_authed/metrics/': typeof AuthedMetricsIndexRoute
   '/api/metrics/': typeof ApiMetricsIndexRoute
+  '/_authed/settings/account/api-keys': typeof AuthedSettingsAccountApiKeysRoute
   '/_authed/settings/account/integrations': typeof AuthedSettingsAccountIntegrationsRoute
   '/_authed/settings/account/profile': typeof AuthedSettingsAccountProfileRoute
   '/_authed/settings/workspace/integrations': typeof AuthedSettingsWorkspaceIntegrationsRoute
@@ -261,23 +262,23 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/login'
-    | '/config'
+    | '/catalog'
     | '/settings'
     | '/api/upload'
     | '/auth/error'
     | '/'
-    | '/analysis/$incidentId'
-    | '/config/api-keys'
-    | '/config/entry-points'
-    | '/config/escalation'
-    | '/config/rotation'
-    | '/config/teams'
+    | '/catalog/entry-points'
+    | '/catalog/escalation'
+    | '/catalog/rotation'
+    | '/catalog/teams'
     | '/incidents/$incidentId'
+    | '/metrics/$incidentId'
     | '/teams/$teamId'
     | '/api/auth/$'
     | '/slack/oauth/callback'
-    | '/analysis'
+    | '/metrics'
     | '/api/metrics'
+    | '/settings/account/api-keys'
     | '/settings/account/integrations'
     | '/settings/account/profile'
     | '/settings/workspace/integrations'
@@ -288,23 +289,23 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
-    | '/config'
+    | '/catalog'
     | '/settings'
     | '/api/upload'
     | '/auth/error'
     | '/'
-    | '/analysis/$incidentId'
-    | '/config/api-keys'
-    | '/config/entry-points'
-    | '/config/escalation'
-    | '/config/rotation'
-    | '/config/teams'
+    | '/catalog/entry-points'
+    | '/catalog/escalation'
+    | '/catalog/rotation'
+    | '/catalog/teams'
     | '/incidents/$incidentId'
+    | '/metrics/$incidentId'
     | '/teams/$teamId'
     | '/api/auth/$'
     | '/slack/oauth/callback'
-    | '/analysis'
+    | '/metrics'
     | '/api/metrics'
+    | '/settings/account/api-keys'
     | '/settings/account/integrations'
     | '/settings/account/profile'
     | '/settings/workspace/integrations'
@@ -316,23 +317,23 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authed'
     | '/login'
-    | '/_authed/config'
+    | '/_authed/catalog'
     | '/_authed/settings'
     | '/api/upload'
     | '/auth/error'
     | '/_authed/'
-    | '/_authed/analysis/$incidentId'
-    | '/_authed/config/api-keys'
-    | '/_authed/config/entry-points'
-    | '/_authed/config/escalation'
-    | '/_authed/config/rotation'
-    | '/_authed/config/teams'
+    | '/_authed/catalog/entry-points'
+    | '/_authed/catalog/escalation'
+    | '/_authed/catalog/rotation'
+    | '/_authed/catalog/teams'
     | '/_authed/incidents/$incidentId'
+    | '/_authed/metrics/$incidentId'
     | '/_authed/teams/$teamId'
     | '/api/auth/$'
     | '/slack/oauth/callback'
-    | '/_authed/analysis/'
+    | '/_authed/metrics/'
     | '/api/metrics/'
+    | '/_authed/settings/account/api-keys'
     | '/_authed/settings/account/integrations'
     | '/_authed/settings/account/profile'
     | '/_authed/settings/workspace/integrations'
@@ -396,11 +397,11 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AuthedSettingsRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/config': {
-      id: '/_authed/config'
-      path: '/config'
-      fullPath: '/config'
-      preLoaderRoute: typeof AuthedConfigRouteImport
+    '/_authed/catalog': {
+      id: '/_authed/catalog'
+      path: '/catalog'
+      fullPath: '/catalog'
+      preLoaderRoute: typeof AuthedCatalogRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/api/metrics/': {
@@ -410,11 +411,11 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof ApiMetricsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authed/analysis/': {
-      id: '/_authed/analysis/'
-      path: '/analysis'
-      fullPath: '/analysis'
-      preLoaderRoute: typeof AuthedAnalysisIndexRouteImport
+    '/_authed/metrics/': {
+      id: '/_authed/metrics/'
+      path: '/metrics'
+      fullPath: '/metrics'
+      preLoaderRoute: typeof AuthedMetricsIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/slack/oauth/callback': {
@@ -438,6 +439,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AuthedTeamsTeamIdRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/metrics/$incidentId': {
+      id: '/_authed/metrics/$incidentId'
+      path: '/metrics/$incidentId'
+      fullPath: '/metrics/$incidentId'
+      preLoaderRoute: typeof AuthedMetricsIncidentIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/incidents/$incidentId': {
       id: '/_authed/incidents/$incidentId'
       path: '/incidents/$incidentId'
@@ -445,47 +453,33 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AuthedIncidentsIncidentIdRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/config/teams': {
-      id: '/_authed/config/teams'
+    '/_authed/catalog/teams': {
+      id: '/_authed/catalog/teams'
       path: '/teams'
-      fullPath: '/config/teams'
-      preLoaderRoute: typeof AuthedConfigTeamsRouteImport
-      parentRoute: typeof AuthedConfigRoute
+      fullPath: '/catalog/teams'
+      preLoaderRoute: typeof AuthedCatalogTeamsRouteImport
+      parentRoute: typeof AuthedCatalogRoute
     }
-    '/_authed/config/rotation': {
-      id: '/_authed/config/rotation'
+    '/_authed/catalog/rotation': {
+      id: '/_authed/catalog/rotation'
       path: '/rotation'
-      fullPath: '/config/rotation'
-      preLoaderRoute: typeof AuthedConfigRotationRouteImport
-      parentRoute: typeof AuthedConfigRoute
+      fullPath: '/catalog/rotation'
+      preLoaderRoute: typeof AuthedCatalogRotationRouteImport
+      parentRoute: typeof AuthedCatalogRoute
     }
-    '/_authed/config/escalation': {
-      id: '/_authed/config/escalation'
+    '/_authed/catalog/escalation': {
+      id: '/_authed/catalog/escalation'
       path: '/escalation'
-      fullPath: '/config/escalation'
-      preLoaderRoute: typeof AuthedConfigEscalationRouteImport
-      parentRoute: typeof AuthedConfigRoute
+      fullPath: '/catalog/escalation'
+      preLoaderRoute: typeof AuthedCatalogEscalationRouteImport
+      parentRoute: typeof AuthedCatalogRoute
     }
-    '/_authed/config/entry-points': {
-      id: '/_authed/config/entry-points'
+    '/_authed/catalog/entry-points': {
+      id: '/_authed/catalog/entry-points'
       path: '/entry-points'
-      fullPath: '/config/entry-points'
-      preLoaderRoute: typeof AuthedConfigEntryPointsRouteImport
-      parentRoute: typeof AuthedConfigRoute
-    }
-    '/_authed/config/api-keys': {
-      id: '/_authed/config/api-keys'
-      path: '/api-keys'
-      fullPath: '/config/api-keys'
-      preLoaderRoute: typeof AuthedConfigApiKeysRouteImport
-      parentRoute: typeof AuthedConfigRoute
-    }
-    '/_authed/analysis/$incidentId': {
-      id: '/_authed/analysis/$incidentId'
-      path: '/analysis/$incidentId'
-      fullPath: '/analysis/$incidentId'
-      preLoaderRoute: typeof AuthedAnalysisIncidentIdRouteImport
-      parentRoute: typeof AuthedRoute
+      fullPath: '/catalog/entry-points'
+      preLoaderRoute: typeof AuthedCatalogEntryPointsRouteImport
+      parentRoute: typeof AuthedCatalogRoute
     }
     '/_authed/teams/$teamId/users': {
       id: '/_authed/teams/$teamId/users'
@@ -536,30 +530,36 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AuthedSettingsAccountIntegrationsRouteImport
       parentRoute: typeof AuthedSettingsRoute
     }
+    '/_authed/settings/account/api-keys': {
+      id: '/_authed/settings/account/api-keys'
+      path: '/account/api-keys'
+      fullPath: '/settings/account/api-keys'
+      preLoaderRoute: typeof AuthedSettingsAccountApiKeysRouteImport
+      parentRoute: typeof AuthedSettingsRoute
+    }
   }
 }
 
-interface AuthedConfigRouteChildren {
-  AuthedConfigApiKeysRoute: typeof AuthedConfigApiKeysRoute
-  AuthedConfigEntryPointsRoute: typeof AuthedConfigEntryPointsRoute
-  AuthedConfigEscalationRoute: typeof AuthedConfigEscalationRoute
-  AuthedConfigRotationRoute: typeof AuthedConfigRotationRoute
-  AuthedConfigTeamsRoute: typeof AuthedConfigTeamsRoute
+interface AuthedCatalogRouteChildren {
+  AuthedCatalogEntryPointsRoute: typeof AuthedCatalogEntryPointsRoute
+  AuthedCatalogEscalationRoute: typeof AuthedCatalogEscalationRoute
+  AuthedCatalogRotationRoute: typeof AuthedCatalogRotationRoute
+  AuthedCatalogTeamsRoute: typeof AuthedCatalogTeamsRoute
 }
 
-const AuthedConfigRouteChildren: AuthedConfigRouteChildren = {
-  AuthedConfigApiKeysRoute: AuthedConfigApiKeysRoute,
-  AuthedConfigEntryPointsRoute: AuthedConfigEntryPointsRoute,
-  AuthedConfigEscalationRoute: AuthedConfigEscalationRoute,
-  AuthedConfigRotationRoute: AuthedConfigRotationRoute,
-  AuthedConfigTeamsRoute: AuthedConfigTeamsRoute,
+const AuthedCatalogRouteChildren: AuthedCatalogRouteChildren = {
+  AuthedCatalogEntryPointsRoute: AuthedCatalogEntryPointsRoute,
+  AuthedCatalogEscalationRoute: AuthedCatalogEscalationRoute,
+  AuthedCatalogRotationRoute: AuthedCatalogRotationRoute,
+  AuthedCatalogTeamsRoute: AuthedCatalogTeamsRoute,
 }
 
-const AuthedConfigRouteWithChildren = AuthedConfigRoute._addFileChildren(
-  AuthedConfigRouteChildren,
+const AuthedCatalogRouteWithChildren = AuthedCatalogRoute._addFileChildren(
+  AuthedCatalogRouteChildren,
 )
 
 interface AuthedSettingsRouteChildren {
+  AuthedSettingsAccountApiKeysRoute: typeof AuthedSettingsAccountApiKeysRoute
   AuthedSettingsAccountIntegrationsRoute: typeof AuthedSettingsAccountIntegrationsRoute
   AuthedSettingsAccountProfileRoute: typeof AuthedSettingsAccountProfileRoute
   AuthedSettingsWorkspaceIntegrationsRoute: typeof AuthedSettingsWorkspaceIntegrationsRoute
@@ -567,6 +567,7 @@ interface AuthedSettingsRouteChildren {
 }
 
 const AuthedSettingsRouteChildren: AuthedSettingsRouteChildren = {
+  AuthedSettingsAccountApiKeysRoute: AuthedSettingsAccountApiKeysRoute,
   AuthedSettingsAccountIntegrationsRoute:
     AuthedSettingsAccountIntegrationsRoute,
   AuthedSettingsAccountProfileRoute: AuthedSettingsAccountProfileRoute,
@@ -595,23 +596,23 @@ const AuthedTeamsTeamIdRouteWithChildren =
   AuthedTeamsTeamIdRoute._addFileChildren(AuthedTeamsTeamIdRouteChildren)
 
 interface AuthedRouteChildren {
-  AuthedConfigRoute: typeof AuthedConfigRouteWithChildren
+  AuthedCatalogRoute: typeof AuthedCatalogRouteWithChildren
   AuthedSettingsRoute: typeof AuthedSettingsRouteWithChildren
   AuthedIndexRoute: typeof AuthedIndexRoute
-  AuthedAnalysisIncidentIdRoute: typeof AuthedAnalysisIncidentIdRoute
   AuthedIncidentsIncidentIdRoute: typeof AuthedIncidentsIncidentIdRoute
+  AuthedMetricsIncidentIdRoute: typeof AuthedMetricsIncidentIdRoute
   AuthedTeamsTeamIdRoute: typeof AuthedTeamsTeamIdRouteWithChildren
-  AuthedAnalysisIndexRoute: typeof AuthedAnalysisIndexRoute
+  AuthedMetricsIndexRoute: typeof AuthedMetricsIndexRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
-  AuthedConfigRoute: AuthedConfigRouteWithChildren,
+  AuthedCatalogRoute: AuthedCatalogRouteWithChildren,
   AuthedSettingsRoute: AuthedSettingsRouteWithChildren,
   AuthedIndexRoute: AuthedIndexRoute,
-  AuthedAnalysisIncidentIdRoute: AuthedAnalysisIncidentIdRoute,
   AuthedIncidentsIncidentIdRoute: AuthedIncidentsIncidentIdRoute,
+  AuthedMetricsIncidentIdRoute: AuthedMetricsIncidentIdRoute,
   AuthedTeamsTeamIdRoute: AuthedTeamsTeamIdRouteWithChildren,
-  AuthedAnalysisIndexRoute: AuthedAnalysisIndexRoute,
+  AuthedMetricsIndexRoute: AuthedMetricsIndexRoute,
 }
 
 const AuthedRouteWithChildren =

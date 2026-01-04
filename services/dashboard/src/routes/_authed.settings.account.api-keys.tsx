@@ -5,8 +5,6 @@ import { Check, Copy, Key, LoaderCircle, Plus } from "lucide-solid";
 import { createSignal, For, Show, Suspense } from "solid-js";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card } from "~/components/ui/card";
-import { ConfigCard, ConfigCardActions, ConfigCardDeleteButton, ConfigCardIcon, ConfigCardRow, ConfigCardTitle } from "~/components/ui/config-card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -29,49 +27,49 @@ function generateKeyName(): string {
 
 // --- Route ---
 
-export const Route = createFileRoute("/_authed/config/api-keys")({
-	component: ApiKeysConfig,
+export const Route = createFileRoute("/_authed/settings/account/api-keys")({
+	component: ApiKeysPage,
 });
 
 // --- Main Component ---
 
-function ApiKeysConfig() {
+function ApiKeysPage() {
 	return (
-		<Card class="p-6">
-			<Suspense fallback={<ApiKeysContentSkeleton />}>
+		<div class="space-y-4">
+			<div class="text-center">
+				<h2 class="text-lg font-semibold text-foreground">API Keys</h2>
+				<p class="text-sm text-muted-foreground mt-1">Manage your personal API keys for programmatic access.</p>
+			</div>
+
+			<Suspense fallback={<ApiKeysSkeleton />}>
 				<ApiKeysContent />
 			</Suspense>
-		</Card>
+		</div>
 	);
 }
 
 // --- Skeleton ---
 
-function ApiKeysContentSkeleton() {
+function ApiKeysSkeleton() {
 	return (
-		<div class="space-y-6">
-			<Skeleton class="h-10 w-36" />
+		<div class="max-w-xl mx-auto rounded-xl bg-muted/20 px-4 py-4">
 			<div class="space-y-3">
-				<ApiKeyCardSkeleton />
-				<ApiKeyCardSkeleton />
+				<ApiKeyRowSkeleton />
+				<ApiKeyRowSkeleton />
 			</div>
-			<Skeleton variant="text" class="h-4 w-28" />
 		</div>
 	);
 }
 
-function ApiKeyCardSkeleton() {
+function ApiKeyRowSkeleton() {
 	return (
-		<div class="flex items-center gap-4 p-4 border border-border rounded-lg bg-muted/30">
-			<div class="flex items-center gap-2">
+		<div class="flex items-center gap-3 py-3 border-b border-border/40 last:border-0">
+			<Skeleton class="h-8 w-8 rounded-lg" />
+			<div class="flex-1 space-y-1">
 				<Skeleton variant="text" class="h-4 w-24" />
-				<Skeleton variant="text" class="h-5 w-20" />
-			</div>
-			<div class="flex-1" />
-			<div class="flex items-center gap-6">
 				<Skeleton variant="text" class="h-3 w-32" />
-				<Skeleton variant="text" class="h-3 w-28" />
 			</div>
+			<Skeleton class="h-8 w-16 rounded-md" />
 		</div>
 	);
 }
@@ -80,22 +78,22 @@ function ApiKeyCardSkeleton() {
 
 function ApiKeysEmptyState() {
 	return (
-		<div class="flex flex-col items-center justify-center py-12 border border-dashed border-border rounded-lg">
+		<div class="flex flex-col items-center justify-center py-8 text-center">
 			<div class="relative mb-4">
 				<div class="absolute inset-0 bg-blue-400/20 rounded-full blur-xl animate-pulse" />
 				<div class="relative p-3 rounded-full bg-gradient-to-br from-blue-100 to-blue-50 border border-blue-200/60">
-					<Key class="w-8 h-8 text-blue-600" />
+					<Key class="w-6 h-6 text-blue-600" />
 				</div>
 			</div>
-			<h3 class="text-lg font-medium text-foreground mb-1">No API keys yet</h3>
-			<p class="text-sm text-muted-foreground text-center max-w-sm">Create an API key to access incident metrics programmatically.</p>
+			<h3 class="text-sm font-medium text-foreground mb-1">No API keys yet</h3>
+			<p class="text-xs text-muted-foreground max-w-xs">Create an API key to access incident metrics programmatically.</p>
 		</div>
 	);
 }
 
-// --- API Key Card ---
+// --- API Key Row ---
 
-interface ApiKeyCardProps {
+interface ApiKeyRowProps {
 	id: string;
 	name: string;
 	keyPrefix: string;
@@ -105,7 +103,7 @@ interface ApiKeyCardProps {
 	isRevoking: boolean;
 }
 
-function ApiKeyCard(props: ApiKeyCardProps) {
+function ApiKeyRow(props: ApiKeyRowProps) {
 	const formatDate = (date: Date | null) => {
 		if (!date) return "Never";
 		return new Intl.DateTimeFormat("en-US", {
@@ -116,31 +114,29 @@ function ApiKeyCard(props: ApiKeyCardProps) {
 	};
 
 	return (
-		<ConfigCard>
-			<ConfigCardRow>
-				<ConfigCardIcon variant="slate" size="sm">
-					<Key class="w-4 h-4" />
-				</ConfigCardIcon>
-				<span class="flex items-center gap-2 min-w-0">
-					<ConfigCardTitle>{props.name}</ConfigCardTitle>
-					<Badge variant="outline" class="font-mono text-xs">
+		<div class="flex items-center gap-3 py-3 border-b border-border/40 last:border-0">
+			<div class="p-2 rounded-lg bg-zinc-100 border border-zinc-200">
+				<Key class="w-4 h-4 text-zinc-600" />
+			</div>
+			<div class="flex-1 min-w-0">
+				<div class="flex items-center gap-2">
+					<span class="text-sm font-medium text-foreground truncate">{props.name}</span>
+					<Badge variant="outline" class="font-mono text-xs shrink-0">
 						{props.keyPrefix}...
 					</Badge>
-				</span>
-				<span class="flex-1" />
-				<span class="flex items-center gap-6 text-xs text-muted-foreground">
+				</div>
+				<div class="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
 					<span>Created {formatDate(props.createdAt)}</span>
-					<span>
-						<Show when={props.lastUsedAt} fallback={<span>Never used</span>}>
-							Last used {formatDate(props.lastUsedAt)}
-						</Show>
-					</span>
-				</span>
-				<ConfigCardActions animated>
-					<ConfigCardDeleteButton onDelete={() => props.onRevoke(props.id)} isDeleting={props.isRevoking} alwaysVisible />
-				</ConfigCardActions>
-			</ConfigCardRow>
-		</ConfigCard>
+					<span class="text-border">·</span>
+					<Show when={props.lastUsedAt} fallback={<span>Never used</span>}>
+						Last used {formatDate(props.lastUsedAt)}
+					</Show>
+				</div>
+			</div>
+			<Button variant="ghost" size="sm" class="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => props.onRevoke(props.id)} disabled={props.isRevoking}>
+				{props.isRevoking ? <LoaderCircle class="w-4 h-4 animate-spin" /> : "Revoke"}
+			</Button>
+		</div>
 	);
 }
 
@@ -318,31 +314,33 @@ function ApiKeysContent() {
 	};
 
 	return (
-		<div class="space-y-6">
-			<Button onClick={handleOpenCreate}>
-				<Plus class="w-4 h-4" />
-				Create API Key
-			</Button>
+		<div class="max-w-xl mx-auto">
+			<div class="rounded-xl bg-muted/20 px-4 py-2">
+				<Show when={apiKeysQuery.data && apiKeysQuery.data.length > 0} fallback={<ApiKeysEmptyState />}>
+					<div class="divide-y divide-border/40">
+						<For each={apiKeysQuery.data}>
+							{(key) => (
+								<ApiKeyRow
+									id={key.id}
+									name={key.name}
+									keyPrefix={key.keyPrefix}
+									createdAt={key.createdAt}
+									lastUsedAt={key.lastUsedAt}
+									onRevoke={handleRevoke}
+									isRevoking={revokeMutation.isPending && revokeMutation.variables?.data.id === key.id}
+								/>
+							)}
+						</For>
+					</div>
+				</Show>
+			</div>
 
-			<Show when={apiKeysQuery.data && apiKeysQuery.data.length > 0} fallback={<ApiKeysEmptyState />}>
-				<div class="space-y-3">
-					<For each={apiKeysQuery.data}>
-						{(key) => (
-							<ApiKeyCard
-								id={key.id}
-								name={key.name}
-								keyPrefix={key.keyPrefix}
-								createdAt={key.createdAt}
-								lastUsedAt={key.lastUsedAt}
-								onRevoke={handleRevoke}
-								isRevoking={revokeMutation.isPending && revokeMutation.variables?.data.id === key.id}
-							/>
-						)}
-					</For>
-				</div>
-			</Show>
-
-			<ApiKeysFooter count={apiKeysQuery.data?.length ?? 0} />
+			<div class="mt-4 flex justify-center">
+				<Button variant="outline" size="sm" onClick={handleOpenCreate}>
+					<Plus class="w-4 h-4" />
+					Create API Key
+				</Button>
+			</div>
 
 			<CreateApiKeyDialog
 				open={createDialogOpen()}
@@ -355,24 +353,5 @@ function ApiKeysContent() {
 
 			<KeyCreatedDialog createdKey={createdKey()} onClose={() => setCreatedKey(null)} />
 		</div>
-	);
-}
-
-// --- Footer ---
-
-interface ApiKeysFooterProps {
-	count: number;
-}
-
-function ApiKeysFooter(props: ApiKeysFooterProps) {
-	return (
-		<Show when={props.count > 0}>
-			<div class="pt-4 border-t border-border">
-				<p class="text-sm text-muted-foreground">
-					<span class="font-medium text-foreground">{props.count}</span> API key
-					{props.count !== 1 && "s"} configured
-				</p>
-			</div>
-		</Show>
 	);
 }

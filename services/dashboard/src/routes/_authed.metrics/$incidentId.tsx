@@ -83,7 +83,7 @@ function AnalysisSkeleton() {
 	);
 }
 
-export const Route = createFileRoute("/_authed/analysis/$incidentId")({
+export const Route = createFileRoute("/_authed/metrics/$incidentId")({
 	component: AnalysisDetail,
 });
 

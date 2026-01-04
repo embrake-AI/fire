@@ -14,7 +14,7 @@ import { Tabs, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs
 import { getMetrics } from "~/lib/incidents/incidents";
 import { useUserBySlackId } from "~/lib/users/users.hooks";
 
-export const Route = createFileRoute("/_authed/analysis/")({
+export const Route = createFileRoute("/_authed/metrics/")({
 	component: AnalysisDashboard,
 });
 

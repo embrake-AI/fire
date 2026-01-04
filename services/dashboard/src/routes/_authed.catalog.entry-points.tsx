@@ -14,7 +14,7 @@ import { useIntegrations } from "~/lib/integrations/integrations.hooks";
 import { useRotations } from "~/lib/rotations/rotations.hooks";
 import { usePossibleSlackUsers, useUsers } from "~/lib/users/users.hooks";
 
-export const Route = createFileRoute("/_authed/config/entry-points")({
+export const Route = createFileRoute("/_authed/catalog/entry-points")({
 	component: EntryPointsConfig,
 });
 
@@ -300,7 +300,7 @@ function RotationPickerContent(props: { onSelect: (rotation: { id: string; name:
 						</div>
 						<h4 class="text-sm font-medium text-foreground mb-1">No rotations available</h4>
 						<p class="text-sm text-muted-foreground max-w-xs mb-4">Create a rotation with at least one assignee to use it as an entry point.</p>
-						<Button as={Link} to="/config/rotation" variant="outline" size="sm" class="cursor-pointer">
+						<Button as={Link} to="/catalog/rotation" variant="outline" size="sm" class="cursor-pointer">
 							Configure Rotations
 						</Button>
 					</div>

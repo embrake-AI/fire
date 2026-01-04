@@ -1,15 +1,22 @@
 import type { IS, IS_Event } from "@fire/common";
-import { useMutation, useQueryClient } from "@tanstack/solid-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
-import { updateAssignee, updateSeverity, updateStatus } from "./incidents";
+import { getIncidents, updateAssignee, updateSeverity, updateStatus } from "./incidents";
+
+export function useIncidents() {
+	const getIncidentsFn = useServerFn(getIncidents);
+
+	return useQuery(() => ({
+		queryKey: ["incidents"],
+		queryFn: getIncidentsFn,
+		refetchInterval: 10_000,
+		staleTime: 10_000,
+	}));
+}
 
 type Incident = { state: IS; events: IS_Event[] };
 
-/**
- * Hook for updating incident severity with optimistic updates.
- * Immediately updates the severity in cache, rolls back on error.
- */
 export function useUpdateIncidentSeverity(incidentId: Accessor<string>, options?: { onSuccess?: () => void; onError?: () => void }) {
 	const queryClient = useQueryClient();
 
@@ -41,10 +48,6 @@ export function useUpdateIncidentSeverity(incidentId: Accessor<string>, options?
 	}));
 }
 
-/**
- * Hook for updating incident assignee with optimistic updates.
- * Immediately updates the assignee in cache, rolls back on error.
- */
 export function useUpdateIncidentAssignee(incidentId: Accessor<string>, options?: { onSuccess?: () => void; onError?: () => void }) {
 	const queryClient = useQueryClient();
 
@@ -76,11 +79,6 @@ export function useUpdateIncidentAssignee(incidentId: Accessor<string>, options?
 	}));
 }
 
-/**
- * Hook for updating incident status with optimistic updates.
- * Immediately updates the status in cache, rolls back on error.
- * On resolved, also invalidates the incidents list.
- */
 export function useUpdateIncidentStatus(incidentId: Accessor<string>, options?: { onSuccess?: (status: "mitigating" | "resolved") => void; onError?: () => void }) {
 	const queryClient = useQueryClient();
 

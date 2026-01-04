@@ -1,24 +1,39 @@
 import type { ListIncidentsElement } from "@fire/common";
-import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
-import { useServerFn } from "@tanstack/solid-start";
 import { ChevronRight, CircleCheck, Flame, Settings } from "lucide-solid";
 import type { JSX } from "solid-js";
 import { createMemo, createSignal, For, onMount, Show, Suspense } from "solid-js";
 import { ResolvedIncidents } from "~/components/ResolvedIncidents";
+import StartIncidentButton from "~/components/StartIncidentButton";
 import { Card } from "~/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { getSeverity } from "~/lib/incident-config";
-import { getIncidents } from "~/lib/incidents/incidents";
+import { useIncidents } from "~/lib/incidents/incidents.hooks";
 
 export const Route = createFileRoute("/_authed/")({
 	component: IncidentsList,
 });
 
 function IncidentsList() {
+	const incidentsQuery = useIncidents();
+
+	const hasActiveIncidents = createMemo(() => {
+		const incidents = incidentsQuery.data ?? [];
+		return incidents.some((inc) => inc.status === "open" || inc.status === "mitigating");
+	});
+
 	return (
-		<div class="flex-1 bg-background p-6 md:p-8 flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
-			<div class="max-w-4xl mx-auto w-full flex-1 flex flex-col overflow-hidden">
+		<div class="flex-1 bg-background p-6 md:p-8 flex flex-col h-screen overflow-hidden">
+			<div class="max-w-5xl mx-auto w-full flex-1 flex flex-col overflow-hidden">
+				<div class="flex items-center justify-between mb-6">
+					<div class="flex items-center gap-3">
+						<div class={hasActiveIncidents() ? "p-2 rounded-lg bg-red-100" : "p-2 rounded-lg bg-muted"}>
+							<Flame class={hasActiveIncidents() ? "w-5 h-5 text-red-500" : "w-5 h-5 text-muted-foreground"} />
+						</div>
+						<h1 class="text-2xl font-semibold text-foreground">Incidents</h1>
+					</div>
+					<StartIncidentButton />
+				</div>
 				<Suspense>
 					<IncidentsContent />
 				</Suspense>
@@ -28,14 +43,7 @@ function IncidentsList() {
 }
 
 function IncidentsContent() {
-	const getIncidentsFn = useServerFn(getIncidents);
-
-	const incidentsQuery = useQuery(() => ({
-		queryKey: ["incidents"],
-		queryFn: getIncidentsFn,
-		refetchInterval: 10_000,
-		staleTime: 10_000,
-	}));
+	const incidentsQuery = useIncidents();
 	const incidents = () => incidentsQuery.data ?? [];
 
 	const severityOrder = { high: 0, medium: 1, low: 2 } as const;

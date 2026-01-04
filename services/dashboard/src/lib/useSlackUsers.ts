@@ -7,7 +7,7 @@ import type { getWorkspaceIntegrations } from "./integrations/integrations";
 type GetWorkspaceIntegrationsResponse = Awaited<ReturnType<typeof getWorkspaceIntegrations>>;
 export function useSlackUsers() {
 	const integrationsQuery = useQuery<GetWorkspaceIntegrationsResponse>(() => ({
-		queryKey: ["integrations"],
+		queryKey: ["workspace_integrations"],
 		staleTime: Infinity,
 		enabled: false,
 	}));
