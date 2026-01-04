@@ -109,7 +109,7 @@ function AnalysisDashboard() {
 			<div class="max-w-6xl mx-auto space-y-8">
 				<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
 					<div>
-						<h1 class="text-3xl font-bold tracking-tight">Analysis & Metrics</h1>
+						<h1 class="text-3xl font-bold tracking-tight">Metrics</h1>
 						<p class="text-muted-foreground">Visualize incident trends and response performance.</p>
 					</div>
 

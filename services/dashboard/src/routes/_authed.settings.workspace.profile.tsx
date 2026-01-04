@@ -15,9 +15,10 @@ export const Route = createFileRoute("/_authed/settings/workspace/profile")({
 
 function WorkspaceProfilePage() {
 	return (
-		<div class="space-y-4">
-			<div class="text-center">
+		<div class="space-y-8">
+			<div>
 				<h2 class="text-lg font-semibold text-foreground">Workspace Profile</h2>
+				<p class="text-sm text-muted-foreground mt-1">Manage your workspace settings and branding</p>
 			</div>
 
 			<Suspense fallback={<ProfileSkeleton />}>
@@ -29,25 +30,19 @@ function WorkspaceProfilePage() {
 
 function ProfileSkeleton() {
 	return (
-		<div class="max-w-xl mx-auto rounded-xl bg-muted/20 px-4 py-2">
+		<div class="rounded-xl bg-muted/20 px-4 py-2">
 			<div class="divide-y divide-border/40">
-				<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
-					<div class="space-y-2">
-						<Skeleton class="h-4 w-24" />
-					</div>
-					<Skeleton class="h-10 w-10 rounded-xl justify-self-end" />
+				<div class="flex items-center justify-between py-3">
+					<Skeleton class="h-4 w-24" />
+					<Skeleton class="h-10 w-10 rounded-xl" />
 				</div>
-				<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
-					<div class="space-y-2">
-						<Skeleton class="h-4 w-28" />
-					</div>
-					<Skeleton class="h-8 w-48 rounded-md justify-self-end" />
+				<div class="flex items-center justify-between py-3">
+					<Skeleton class="h-4 w-28" />
+					<Skeleton class="h-8 w-48 rounded-md" />
 				</div>
-				<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
-					<div class="space-y-2">
-						<Skeleton class="h-4 w-20" />
-					</div>
-					<Skeleton class="h-4 w-40 justify-self-end" />
+				<div class="flex items-center justify-between py-3">
+					<Skeleton class="h-4 w-20" />
+					<Skeleton class="h-4 w-40" />
 				</div>
 			</div>
 		</div>
@@ -67,9 +62,10 @@ function ProfileContent() {
 	let saveTimeout: ReturnType<typeof setTimeout> | undefined;
 
 	createEffect(() => {
-		if (clientQuery.data?.name) {
-			setName(clientQuery.data.name);
-			setLastSavedName(clientQuery.data.name);
+		const serverName = clientQuery.data?.name;
+		if (serverName && !lastSavedName()) {
+			setName(serverName);
+			setLastSavedName(serverName);
 		}
 	});
 
@@ -114,13 +110,13 @@ function ProfileContent() {
 	};
 
 	return (
-		<div class="max-w-xl mx-auto rounded-xl bg-muted/20 px-4 py-2">
+		<div class="rounded-xl bg-muted/20 px-4 py-2">
 			<div class="divide-y divide-border/40">
-				<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
+				<div class="flex items-center justify-between py-3">
 					<p class="text-sm font-medium text-foreground">Workspace image</p>
 					<button
 						type="button"
-						class="relative h-10 w-10 rounded-xl overflow-hidden cursor-pointer flex-shrink-0 bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center justify-self-end"
+						class="relative h-10 w-10 rounded-xl overflow-hidden cursor-pointer flex-shrink-0 bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center"
 						onClick={() => setIsEditingImage(true)}
 					>
 						<Show when={clientQuery.data?.image} fallback={<Building2 class="h-6 w-6 text-blue-600" />}>
@@ -132,28 +128,25 @@ function ProfileContent() {
 					</button>
 				</div>
 
-				<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
+				<div class="flex items-center justify-between py-3">
 					<p class="text-sm font-medium text-foreground">Name</p>
-					<div class="sm:justify-self-end">
-						<Input
-							id="workspace-profile-name"
-							value={name()}
-							onInput={(e) => {
-								const next = e.currentTarget.value;
-								setName(next);
-								scheduleSave(next);
-							}}
-							onBlur={() => saveName(name())}
-							disabled={updateClientMutation.isPending}
-							class="h-8 w-56 text-left"
-						/>
-					</div>
+					<Input
+						id="workspace-profile-name"
+						value={name()}
+						onInput={(e) => {
+							const next = e.currentTarget.value;
+							setName(next);
+							scheduleSave(next);
+						}}
+						onBlur={() => saveName(name())}
+						class="h-8 w-64 text-left"
+					/>
 				</div>
 
 				<Show when={clientQuery.data?.domains && clientQuery.data.domains.length > 0}>
-					<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
+					<div class="flex items-center justify-between py-3">
 						<p class="text-sm font-medium text-foreground">Domains</p>
-						<p class="text-sm font-medium text-foreground sm:justify-self-end text-right">{clientQuery.data?.domains?.join(", ")}</p>
+						<p class="text-sm text-muted-foreground">{clientQuery.data?.domains?.join(", ")}</p>
 					</div>
 				</Show>
 			</div>

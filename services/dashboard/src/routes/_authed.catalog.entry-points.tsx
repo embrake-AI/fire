@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { Check, ChevronDown, Link2, LoaderCircle, Plus, RefreshCw, User, X } from "lucide-solid";
-import { type Accessor, createEffect, createMemo, createSignal, For, Show, Suspense } from "solid-js";
-import { createStore, reconcile } from "solid-js/store";
+import { type Accessor, createMemo, createSignal, For, Show, Suspense } from "solid-js";
 import { EntityPicker } from "~/components/EntityPicker";
 import { EntryPointCard, EntryPointCardSkeleton, EntryPointsEmptyState } from "~/components/entry-points/EntryPointCard";
 import { UserAvatar } from "~/components/UserAvatar";
@@ -32,14 +31,10 @@ type PickerStep = "type-selection" | "user" | "rotation";
 
 function EntryPointsContent() {
 	const entryPointsQuery = useEntryPoints();
-	const [entryPoints, setEntryPoints] = createStore<NonNullable<typeof entryPointsQuery.data>>([]);
+	const entryPoints = createMemo(() => entryPointsQuery.data ?? []);
 
 	const [isCreating, setIsCreating] = createSignal(false);
 	const [expandedId, setExpandedId] = createSignal<string | null>(null);
-
-	createEffect(() => {
-		setEntryPoints(reconcile(entryPointsQuery.data ?? [], { key: "id" }));
-	});
 
 	const createMutation = useCreateEntryPoint({
 		onMutate: (tempId) => {
@@ -95,22 +90,23 @@ function EntryPointsContent() {
 				/>
 			</Show>
 
-			<Show when={entryPoints.length > 0} fallback={!isCreating() && <EntryPointsEmptyState />}>
+			<Show when={entryPoints().length > 0} fallback={!isCreating() && <EntryPointsEmptyState />}>
 				<div class="space-y-3">
-					<For each={entryPoints}>
+					<For each={entryPoints()}>
 						{(ep) => (
 							<EntryPointCard
 								entryPoint={ep}
 								onDelete={() => handleDelete(ep.id)}
 								isExpanded={expandedId() === ep.id}
 								onToggle={() => setExpandedId(expandedId() === ep.id ? null : ep.id)}
+								showTeamBadge
 							/>
 						)}
 					</For>
 				</div>
 			</Show>
 
-			<EntryPointsFooter count={entryPoints.filter((ep) => !!ep.prompt || ep.isFallback).length} />
+			<EntryPointsFooter count={entryPoints().filter((ep) => !!ep.prompt || ep.isFallback).length} />
 		</div>
 	);
 }
@@ -189,7 +185,7 @@ function AddEntryPointPicker(props: AddEntryPointPickerProps) {
 }
 
 function TypeSelectionContent(props: { setStep: (step: PickerStep) => void }) {
-	const integrationsQuery = useIntegrations();
+	const integrationsQuery = useIntegrations({ type: "workspace" });
 
 	const hasSlackIntegration = () => integrationsQuery.data?.some((i) => i.platform === "slack" && i.installedAt);
 

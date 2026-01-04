@@ -1,4 +1,5 @@
-import { ChevronDown, ChevronUp, Clock, GripVertical, LoaderCircle, Plus, RefreshCw, Users, X } from "lucide-solid";
+import { Link } from "@tanstack/solid-router";
+import { Check, ChevronDown, ChevronUp, Clock, GripVertical, LoaderCircle, Pencil, Plus, RefreshCw, Users, X } from "lucide-solid";
 import { type Accessor, createEffect, createMemo, createSignal, For, Show, Suspense } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { EntityPicker } from "~/components/EntityPicker";
@@ -6,6 +7,7 @@ import { UserAvatar } from "~/components/UserAvatar";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
+import { Input } from "~/components/ui/input";
 import {
 	ConfigCard,
 	ConfigCardActions,
@@ -27,7 +29,9 @@ import {
 	useRemoveRotationAssignee,
 	useReorderRotationAssignee,
 	useSetRotationOverride,
+	useUpdateRotationName,
 } from "~/lib/rotations/rotations.hooks";
+import { useTeams } from "~/lib/teams/teams.hooks";
 import { usePossibleSlackUsers, useUsers } from "~/lib/users/users.hooks";
 
 // --- Types ---
@@ -54,6 +58,7 @@ export interface RotationCardProps {
 	isExpanded: boolean;
 	onToggle: () => void;
 	onDelete: () => void;
+	showTeamBadge?: boolean;
 }
 
 export function RotationCard(props: RotationCardProps) {
@@ -63,9 +68,27 @@ export function RotationCard(props: RotationCardProps) {
 	const reorderMutation = useReorderRotationAssignee();
 	const overrideMutation = useSetRotationOverride();
 	const clearOverrideMutation = useClearRotationOverride();
+	const updateNameMutation = useUpdateRotationName({ onMutate: () => setIsEditingName(false) });
 	const usersQuery = useUsers();
+	const teamsQuery = useTeams({ enabled: () => !!props.showTeamBadge });
 
 	const [isAddingAssignee, setIsAddingAssignee] = createSignal(false);
+	const [isEditingName, setIsEditingName] = createSignal(false);
+	const [editingName, setEditingName] = createSignal(props.rotation.name);
+
+	const handleUpdateName = () => {
+		const trimmedName = editingName().trim();
+		if (trimmedName && trimmedName !== props.rotation.name) {
+			updateNameMutation.mutate({ id: props.rotation.id, name: trimmedName });
+		} else {
+			setIsEditingName(false);
+		}
+	};
+
+	const team = createMemo(() => {
+		if (!props.showTeamBadge || !props.rotation.teamId) return null;
+		return teamsQuery.data?.find((t) => t.id === props.rotation.teamId);
+	});
 
 	const currentAssignee = () => props.rotation.assignees.find((a) => a.isOverride) ?? props.rotation.assignees.find((a) => a.isBaseAssignee);
 
@@ -101,8 +124,23 @@ export function RotationCard(props: RotationCardProps) {
 	};
 
 	return (
-		<ConfigCard isActive={props.isExpanded}>
-			<ConfigCardRow onClick={props.onToggle}>
+		<ConfigCard isActive={props.isExpanded} class={team() ? "relative overflow-visible" : undefined}>
+			<Show when={team()}>
+				{(t) => (
+					<Link
+						to="/teams/$teamId"
+						params={{ teamId: t().id }}
+						class="absolute -top-1.5 -left-1.5 z-10 flex items-center justify-center w-5 h-5 rounded-full bg-blue-100 border border-blue-200 text-blue-600 hover:bg-blue-200 transition-colors shadow-sm"
+						title={t().name}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<Show when={t().imageUrl} fallback={<Users class="w-2.5 h-2.5" />}>
+							{(imageUrl) => <img src={imageUrl()} alt={t().name} class="w-full h-full rounded-full object-cover" />}
+						</Show>
+					</Link>
+				)}
+			</Show>
+			<ConfigCardRow onClick={isEditingName() ? undefined : props.onToggle}>
 				<Show
 					when={currentAssigneeUser()}
 					fallback={
@@ -115,7 +153,56 @@ export function RotationCard(props: RotationCardProps) {
 				</Show>
 
 				<span class="flex items-center gap-2">
-					<ConfigCardTitle class="shrink-0">{props.rotation.name}</ConfigCardTitle>
+					<Show
+						when={props.isExpanded && isEditingName()}
+						fallback={
+							<Show
+								when={props.isExpanded}
+								fallback={<ConfigCardTitle class="shrink-0">{props.rotation.name}</ConfigCardTitle>}
+							>
+								<button
+									type="button"
+									class="flex items-center gap-1.5 group/title cursor-pointer bg-transparent border-none p-0"
+									onClick={(e) => {
+										e.stopPropagation();
+										setEditingName(props.rotation.name);
+										setIsEditingName(true);
+									}}
+								>
+									<ConfigCardTitle class="shrink-0">{props.rotation.name}</ConfigCardTitle>
+									<Pencil class="w-3 h-3 text-muted-foreground" />
+								</button>
+							</Show>
+						}
+					>
+						<form
+							class="flex items-center gap-1.5"
+							onSubmit={(e) => {
+								e.preventDefault();
+								handleUpdateName();
+							}}
+							onFocusOut={(e) => {
+								if (!e.currentTarget.contains(e.relatedTarget as Node) && !updateNameMutation.isPending) {
+									setIsEditingName(false);
+								}
+							}}
+						>
+							<Input
+								value={editingName()}
+								onInput={(e) => setEditingName(e.currentTarget.value)}
+								class="h-7 text-sm font-medium w-40"
+								autofocus
+								onKeyDown={(e) => {
+									if (e.key === "Escape") {
+										setIsEditingName(false);
+									}
+								}}
+							/>
+							<Button size="sm" type="submit" disabled={updateNameMutation.isPending || !editingName().trim()} class="h-7 w-7 p-0">
+								<Check class="w-3.5 h-3.5" />
+							</Button>
+						</form>
+					</Show>
 					<Badge variant="outline" class="font-normal text-xs shrink-0">
 						<Clock class="w-3 h-3 mr-1" />
 						{formatShiftLength(props.rotation.shiftLength)}

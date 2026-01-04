@@ -35,10 +35,10 @@ export const Route = createFileRoute("/_authed/settings/account/api-keys")({
 
 function ApiKeysPage() {
 	return (
-		<div class="space-y-4">
-			<div class="text-center">
+		<div class="space-y-8">
+			<div>
 				<h2 class="text-lg font-semibold text-foreground">API Keys</h2>
-				<p class="text-sm text-muted-foreground mt-1">Manage your personal API keys for programmatic access.</p>
+				<p class="text-sm text-muted-foreground mt-1">Manage your personal API keys for programmatic access</p>
 			</div>
 
 			<Suspense fallback={<ApiKeysSkeleton />}>
@@ -52,7 +52,7 @@ function ApiKeysPage() {
 
 function ApiKeysSkeleton() {
 	return (
-		<div class="max-w-xl mx-auto rounded-xl bg-muted/20 px-4 py-4">
+		<div class="rounded-xl bg-muted/20 px-4 py-4">
 			<div class="space-y-3">
 				<ApiKeyRowSkeleton />
 				<ApiKeyRowSkeleton />
@@ -314,7 +314,7 @@ function ApiKeysContent() {
 	};
 
 	return (
-		<div class="max-w-xl mx-auto">
+		<div>
 			<div class="rounded-xl bg-muted/20 px-4 py-2">
 				<Show when={apiKeysQuery.data && apiKeysQuery.data.length > 0} fallback={<ApiKeysEmptyState />}>
 					<div class="divide-y divide-border/40">
@@ -335,7 +335,7 @@ function ApiKeysContent() {
 				</Show>
 			</div>
 
-			<div class="mt-4 flex justify-center">
+			<div class="mt-4">
 				<Button variant="outline" size="sm" onClick={handleOpenCreate}>
 					<Plus class="w-4 h-4" />
 					Create API Key

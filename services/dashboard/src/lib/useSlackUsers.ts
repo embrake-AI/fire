@@ -12,7 +12,10 @@ export function useSlackUsers() {
 		enabled: false,
 	}));
 
-	const hasSlackIntegration = createMemo(() => !!integrationsQuery.data?.some((i) => i.platform === "slack" && i.installedAt));
+	const hasSlackIntegration = createMemo(() => {
+		if (!integrationsQuery.isSuccess) return false;
+		return integrationsQuery.data?.some((i) => i.platform === "slack" && i.installedAt) ?? false;
+	});
 
 	const getSlackUsersFn = useServerFn(getSlackUsers);
 	const slackUsersQuery = useQuery(() => ({

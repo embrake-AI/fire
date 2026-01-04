@@ -16,9 +16,10 @@ export const Route = createFileRoute("/_authed/settings/account/profile")({
 
 function AccountProfilePage() {
 	return (
-		<div class="space-y-4">
-			<div class="text-center">
+		<div class="space-y-8">
+			<div>
 				<h2 class="text-lg font-semibold text-foreground">Profile</h2>
+				<p class="text-sm text-muted-foreground mt-1">Manage your personal profile information</p>
 			</div>
 
 			<Suspense fallback={<ProfileSkeleton />}>
@@ -30,25 +31,19 @@ function AccountProfilePage() {
 
 function ProfileSkeleton() {
 	return (
-		<div class="max-w-xl mx-auto rounded-xl bg-muted/20 px-4 py-2">
+		<div class="rounded-xl bg-muted/20 px-4 py-2">
 			<div class="divide-y divide-border/40">
-				<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
-					<div class="space-y-2">
-						<Skeleton class="h-4 w-24" />
-					</div>
-					<Skeleton class="h-10 w-10 rounded-full justify-self-end" />
+				<div class="flex items-center justify-between py-3">
+					<Skeleton class="h-4 w-24" />
+					<Skeleton class="h-10 w-10 rounded-full" />
 				</div>
-				<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
-					<div class="space-y-2">
-						<Skeleton class="h-4 w-20" />
-					</div>
-					<Skeleton class="h-8 w-40 rounded-md justify-self-end" />
+				<div class="flex items-center justify-between py-3">
+					<Skeleton class="h-4 w-20" />
+					<Skeleton class="h-8 w-48 rounded-md" />
 				</div>
-				<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
-					<div class="space-y-2">
-						<Skeleton class="h-4 w-16" />
-					</div>
-					<Skeleton class="h-4 w-40 justify-self-end" />
+				<div class="flex items-center justify-between py-3">
+					<Skeleton class="h-4 w-16" />
+					<Skeleton class="h-4 w-40" />
 				</div>
 			</div>
 		</div>
@@ -68,9 +63,10 @@ function ProfileContent() {
 	let saveTimeout: ReturnType<typeof setTimeout> | undefined;
 
 	createEffect(() => {
-		if (userQuery.data?.name) {
-			setName(userQuery.data.name);
-			setLastSavedName(userQuery.data.name);
+		const serverName = userQuery.data?.name;
+		if (serverName && !lastSavedName()) {
+			setName(serverName);
+			setLastSavedName(serverName);
 		}
 	});
 
@@ -115,11 +111,11 @@ function ProfileContent() {
 	};
 
 	return (
-		<div class="max-w-xl mx-auto rounded-xl bg-muted/20 px-4 py-2">
+		<div class="rounded-xl bg-muted/20 px-4 py-2">
 			<div class="divide-y divide-border/40">
-				<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
+				<div class="flex items-center justify-between py-3">
 					<p class="text-sm font-medium text-foreground">Profile picture</p>
-					<button type="button" class="relative h-10 w-10 rounded-full overflow-hidden cursor-pointer flex-shrink-0 sm:justify-self-end" onClick={() => setIsEditingImage(true)}>
+					<button type="button" class="relative h-10 w-10 rounded-full overflow-hidden cursor-pointer flex-shrink-0" onClick={() => setIsEditingImage(true)}>
 						<Show when={userQuery.data} fallback={<div class="h-full w-full bg-muted" />}>
 							{(user) => (
 								<div class="h-full w-full">
@@ -133,26 +129,23 @@ function ProfileContent() {
 					</button>
 				</div>
 
-				<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
+				<div class="flex items-center justify-between py-3">
 					<p class="text-sm font-medium text-foreground">Name</p>
-					<div class="sm:justify-self-end">
-						<Input
-							value={name()}
-							onInput={(e) => {
-								const next = e.currentTarget.value;
-								setName(next);
-								scheduleSave(next);
-							}}
-							onBlur={() => saveName(name())}
-							disabled={updateUserMutation.isPending}
-							class="h-8 w-48 text-left"
-						/>
-					</div>
+					<Input
+						value={name()}
+						onInput={(e) => {
+							const next = e.currentTarget.value;
+							setName(next);
+							scheduleSave(next);
+						}}
+						onBlur={() => saveName(name())}
+						class="h-8 w-64 text-left"
+					/>
 				</div>
 
-				<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
+				<div class="flex items-center justify-between py-3">
 					<p class="text-sm font-medium text-foreground">Email</p>
-					<p class="text-sm font-medium text-foreground sm:justify-self-end text-right">{userQuery.data?.email}</p>
+					<p class="text-sm text-muted-foreground">{userQuery.data?.email}</p>
 				</div>
 			</div>
 

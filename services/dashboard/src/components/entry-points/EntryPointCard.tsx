@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/solid-router";
 import { ChevronDown, ChevronUp, Star, TriangleAlert, Users } from "lucide-solid";
 import { createMemo, Show } from "solid-js";
 import { UserAvatar } from "~/components/UserAvatar";
@@ -8,6 +9,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import type { getEntryPoints } from "~/lib/entry-points/entry-points";
 import { useSetFallbackEntryPoint, useUpdateEntryPointPrompt } from "~/lib/entry-points/entry-points.hooks";
 import { useRotations } from "~/lib/rotations/rotations.hooks";
+import { useTeams } from "~/lib/teams/teams.hooks";
 import { useUsers } from "~/lib/users/users.hooks";
 
 type EntryPoint = Awaited<ReturnType<typeof getEntryPoints>>[number];
@@ -17,13 +19,20 @@ export interface EntryPointCardProps {
 	isExpanded: boolean;
 	onToggle: () => void;
 	onDelete: () => void;
+	showTeamBadge?: boolean;
 }
 
 export function EntryPointCard(props: EntryPointCardProps) {
 	const usersQuery = useUsers();
 	const rotations = useRotations();
+	const teamsQuery = useTeams({ enabled: () => !!props.showTeamBadge });
 	const updatePromptMutation = useUpdateEntryPointPrompt();
 	const setFallbackMutation = useSetFallbackEntryPoint();
+
+	const team = createMemo(() => {
+		if (!props.showTeamBadge || !props.entryPoint.teamId) return null;
+		return teamsQuery.data?.find((t) => t.id === props.entryPoint.teamId);
+	});
 
 	const handleSave = async (value: string) => {
 		await updatePromptMutation.mutateAsync({ id: props.entryPoint.id, prompt: value });
@@ -60,7 +69,22 @@ export function EntryPointCard(props: EntryPointCardProps) {
 	});
 
 	return (
-		<ConfigCard hasWarning={incomplete()} isActive={props.isExpanded}>
+		<ConfigCard hasWarning={incomplete()} isActive={props.isExpanded} class={team() ? "relative overflow-visible" : undefined}>
+			<Show when={team()}>
+				{(t) => (
+					<Link
+						to="/teams/$teamId"
+						params={{ teamId: t().id }}
+						class="absolute -top-1.5 -left-1.5 z-10 flex items-center justify-center w-5 h-5 rounded-full bg-blue-100 border border-blue-200 text-blue-600 hover:bg-blue-200 transition-colors shadow-sm"
+						title={t().name}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<Show when={t().imageUrl} fallback={<Users class="w-2.5 h-2.5" />}>
+							{(imageUrl) => <img src={imageUrl()} alt={t().name} class="w-full h-full rounded-full object-cover" />}
+						</Show>
+					</Link>
+				)}
+			</Show>
 			<ConfigCardRow onClick={props.onToggle}>
 				<Show when={userData()}>{(user) => <UserAvatar name={() => user().name} avatar={() => user().image ?? undefined} />}</Show>
 

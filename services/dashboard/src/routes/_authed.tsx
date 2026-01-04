@@ -3,7 +3,7 @@ import { createMemo, Show } from "solid-js";
 import Sidebar from "~/components/Sidebar";
 import { getAuth, isAuthReady } from "~/lib/auth/auth-store";
 import { useEntryPoints } from "~/lib/entry-points/entry-points.hooks";
-import { useSlackUsers } from "~/lib/useSlackUsers";
+import { useIntegrations } from "~/lib/integrations/integrations.hooks";
 
 export const Route = createFileRoute("/_authed")({
 	beforeLoad: ({ location }) => {
@@ -28,8 +28,18 @@ function AuthedLayout() {
 		return !!auth?.userId && !!auth?.clientId;
 	});
 	// app-wide interesting data. Kept to make things feel more responsive.
-	useEntryPoints();
-	useSlackUsers();
+	useEntryPoints({ enabled: authed });
+	useIntegrations({ type: "workspace", enabled: authed });
+
+	// TODO: If slack not connected, force connecting it.
+	// createEffect(() => {
+	// 	const path = location.pathname;
+	// 	if (integrationsQuery.isSuccess && path !== "/settings/account/integrations") {
+	// 		// if (!integrationsQuery.data.find((i) => i.platform === "slack")) {
+	// 		navigate({ to: "/settings/account/integrations" });
+	// 		// }
+	// 	}
+	// });
 
 	return (
 		<Show when={authed()}>

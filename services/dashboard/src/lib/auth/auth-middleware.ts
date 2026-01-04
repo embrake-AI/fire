@@ -32,7 +32,7 @@ export const authMiddleware = createMiddleware({ type: "function" }).server(asyn
 
 	return next({
 		context: {
-			session,
+			session: session.session,
 			user: session.user,
 			userId: session.user.id,
 			clientId: session.user.clientId,

@@ -23,8 +23,8 @@ export const Route = createFileRoute("/_authed/settings/workspace/integrations")
 
 function WorkspaceIntegrationsPage() {
 	return (
-		<div class="space-y-6">
-			<div class="text-center">
+		<div class="space-y-8">
+			<div>
 				<h2 class="text-lg font-semibold text-foreground">Workspace Integrations</h2>
 				<p class="text-sm text-muted-foreground mt-1">Connect third-party services to your workspace</p>
 			</div>
@@ -38,14 +38,14 @@ function WorkspaceIntegrationsPage() {
 
 function IntegrationsSkeleton() {
 	return (
-		<div class="max-w-xl mx-auto rounded-xl bg-muted/20 px-4 py-2">
+		<div class="rounded-xl bg-muted/20 px-4 py-2">
 			<div class="divide-y divide-border/40">
-				<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
+				<div class="flex items-center justify-between py-3">
 					<div class="flex items-center gap-3">
 						<Skeleton class="size-10 rounded" />
 						<Skeleton class="h-4 w-24" />
 					</div>
-					<Skeleton class="h-9 w-24 rounded-md sm:justify-self-end" />
+					<Skeleton class="h-9 w-24 rounded-md" />
 				</div>
 			</div>
 		</div>
@@ -105,37 +105,36 @@ function IntegrationsContent() {
 	};
 
 	return (
-		<div class="max-w-xl mx-auto rounded-xl bg-muted/20 px-4 py-2">
+		<div class="rounded-xl bg-muted/20 px-4 py-2">
 			<div class="divide-y divide-border/40">
-				<div class="grid gap-3 py-3 sm:grid-cols-[160px_1fr] sm:items-center sm:gap-6">
+				<div class="flex items-center justify-between py-3">
 					<div class="flex items-center gap-3">
 						<div class="flex items-center justify-center size-10 rounded-lg bg-muted">
 							<SlackIcon class="size-5" />
 						</div>
+						<span class="text-sm font-medium text-foreground">Slack</span>
 						<Show when={isConnected("slack")}>
 							<Badge class="bg-emerald-100 text-emerald-700 border-emerald-200">Connected</Badge>
 						</Show>
 					</div>
-					<div class="sm:justify-self-end">
-						<Show
-							when={isConnected("slack")}
-							fallback={
-								<Button onClick={() => handleConnect("slack")} disabled={isConnecting()}>
-									<Show when={isConnecting()}>
-										<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-									</Show>
-									Connect
-								</Button>
-							}
-						>
-							<Button onClick={() => disconnectMutation.mutate("slack")} disabled={disconnectMutation.isPending} variant="outline">
-								<Show when={disconnectMutation.isPending}>
+					<Show
+						when={isConnected("slack")}
+						fallback={
+							<Button onClick={() => handleConnect("slack")} disabled={isConnecting()}>
+								<Show when={isConnecting()}>
 									<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
 								</Show>
-								Disconnect
+								Connect
 							</Button>
-						</Show>
-					</div>
+						}
+					>
+						<Button onClick={() => disconnectMutation.mutate("slack")} disabled={disconnectMutation.isPending} variant="outline">
+							<Show when={disconnectMutation.isPending}>
+								<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+							</Show>
+							Disconnect
+						</Button>
+					</Show>
 				</div>
 			</div>
 		</div>

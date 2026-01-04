@@ -86,6 +86,7 @@ function RotationContent() {
 								isExpanded={expandedId() === rotation().id}
 								onToggle={() => toggleExpanded(rotation().id)}
 								onDelete={() => handleDelete(rotation().id)}
+								showTeamBadge
 							/>
 						)}
 					</Index>

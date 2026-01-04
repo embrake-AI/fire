@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/solid-router";
-import { BarChart3, BookOpen, Building2, ChevronRight, Flame, LogOut, PanelLeftClose, PanelLeftOpen, Settings, Users } from "lucide-solid";
+import { ArrowLeft, BarChart3, BookOpen, Building2, ChevronDown, Flame, Key, LogOut, PanelLeftClose, PanelLeftOpen, Plug, Settings, User, Users } from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, For, on, onMount, Show, Suspense } from "solid-js";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
@@ -28,6 +28,21 @@ const navItems: NavItem[] = [
 	{ label: "Metrics", to: "/metrics", icon: BarChart3 },
 ];
 
+type SettingsNavItemType = {
+	label: string;
+	to: string;
+	icon: typeof User;
+	section: "account" | "workspace";
+};
+
+const settingsNavItems: SettingsNavItemType[] = [
+	{ label: "Profile", to: "/settings/account/profile", section: "account", icon: User },
+	{ label: "Connected Accounts", to: "/settings/account/integrations", section: "account", icon: Plug },
+	{ label: "API Keys", to: "/settings/account/api-keys", section: "account", icon: Key },
+	{ label: "Profile", to: "/settings/workspace/profile", section: "workspace", icon: Building2 },
+	{ label: "Integrations", to: "/settings/workspace/integrations", section: "workspace", icon: Plug },
+];
+
 function createStoredBoolean(key: string, defaultValue: boolean) {
 	const [value, setValue] = createSignal(defaultValue);
 
@@ -52,26 +67,38 @@ function createStoredBoolean(key: string, defaultValue: boolean) {
 }
 
 export default function Sidebar() {
+	const location = useLocation();
 	const [collapsed, setCollapsed] = createStoredBoolean("sidebar-collapsed", false);
 
 	const toggleCollapsed = () => {
 		setCollapsed((value) => !value);
 	};
 
+	const isSettingsPage = () => location().pathname.startsWith("/settings");
+
 	return (
 		<aside class={cn("flex flex-col bg-zinc-50 border-r border-zinc-200 transition-[width] duration-200 ease-in-out shrink-0", collapsed() ? "w-[60px]" : "w-[200px]")}>
 			<div class="flex-1 flex flex-col py-4">
-				<Suspense fallback={<WorkspaceSelectorFallback collapsed={collapsed} />}>
-					<WorkspaceSelector collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
-				</Suspense>
+				<Show
+					when={isSettingsPage()}
+					fallback={
+						<>
+							<Suspense fallback={<WorkspaceSelectorFallback collapsed={collapsed} />}>
+								<WorkspaceSelector collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
+							</Suspense>
 
-				<Suspense fallback={<NavItemsSkeleton collapsed={collapsed} />}>
-					<SidebarNav collapsed={collapsed} />
-				</Suspense>
+							<Suspense fallback={<NavItemsSkeleton collapsed={collapsed} />}>
+								<SidebarNav collapsed={collapsed} />
+							</Suspense>
 
-				<Suspense fallback={<MyTeamsSectionSkeleton collapsed={collapsed} />}>
-					<MyTeamsSection collapsed={collapsed} />
-				</Suspense>
+							<Suspense fallback={<MyTeamsSectionSkeleton collapsed={collapsed} />}>
+								<MyTeamsSection collapsed={collapsed} />
+							</Suspense>
+						</>
+					}
+				>
+					<SettingsSidebarContent collapsed={collapsed} />
+				</Show>
 			</div>
 		</aside>
 	);
@@ -181,11 +208,12 @@ function WorkspaceSelector(props: { collapsed: Accessor<boolean>; onToggleCollap
 						<span
 							class={cn(
 								"text-sm font-medium truncate text-left whitespace-nowrap transition-[opacity,width] duration-200",
-								props.collapsed() ? "opacity-0 w-0" : "opacity-100 w-auto",
+								props.collapsed() ? "opacity-0 w-0" : "opacity-100 max-w-20",
 							)}
 						>
 							{clientQuery.data?.name}
 						</span>
+						<ChevronDown class={cn("w-4 h-4 text-zinc-400 shrink-0 transition-[opacity,width] duration-200", props.collapsed() ? "opacity-0 w-0" : "opacity-100 w-auto")} />
 					</PopoverTrigger>
 					<PopoverContent class="w-44 p-1">
 						<Link
@@ -215,9 +243,9 @@ function WorkspaceSelector(props: { collapsed: Accessor<boolean>; onToggleCollap
 							e.stopPropagation();
 							props.onToggleCollapse();
 						}}
-						class="absolute inset-0 z-10 flex items-center justify-center bg-zinc-900/80 rounded-lg opacity-0 group-hover/workspace:opacity-100 transition-opacity duration-150 cursor-pointer"
+						class="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 flex items-center justify-center bg-zinc-900/80 rounded-lg opacity-0 group-hover/workspace:opacity-100 transition-opacity duration-150 cursor-pointer"
 					>
-						<PanelLeftOpen class="w-4 h-4 text-white" />
+						<PanelLeftOpen class="w-3.5 h-3.5 text-white" />
 					</button>
 				</Show>
 			</div>
@@ -273,7 +301,6 @@ function MyTeamsSection(props: { collapsed: Accessor<boolean> }) {
 					)}
 				>
 					<span>My Teams</span>
-					<ChevronRight class={cn("w-3 h-3 transition-transform", isOpen() && "rotate-90")} />
 				</CollapsibleTrigger>
 				<CollapsibleContent>
 					<Show
@@ -306,8 +333,8 @@ function TeamNavItem(props: { team: { id: string; name: string; imageUrl: string
 					to="/teams/$teamId/users"
 					params={{ teamId: props.team.id } as { teamId: string }}
 					class={cn(
-						"flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all overflow-hidden",
-						props.collapsed() && "justify-center px-1.5",
+						"flex items-center px-3 py-1.5 rounded-lg transition-all overflow-hidden",
+						props.collapsed() ? "justify-center px-1.5" : "gap-2",
 						isActive() ? "bg-zinc-200 text-zinc-900 font-medium" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100",
 					)}
 				>
@@ -359,5 +386,74 @@ function MyTeamsSectionSkeleton(props: { collapsed: Accessor<boolean> }) {
 				</div>
 			</Show>
 		</div>
+	);
+}
+
+function SettingsSidebarContent(props: { collapsed: Accessor<boolean> }) {
+	const accountItems = settingsNavItems.filter((item) => item.section === "account");
+	const workspaceItems = settingsNavItems.filter((item) => item.section === "workspace");
+
+	return (
+		<>
+			<div class="px-2">
+				<Link
+					to="/"
+					class={cn(
+						"flex items-center gap-2 px-3 py-2 rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors",
+						props.collapsed() && "justify-center px-2",
+					)}
+				>
+					<ArrowLeft class="w-4 h-4 shrink-0" />
+					<span class={cn("text-sm whitespace-nowrap transition-[opacity,width] duration-200", props.collapsed() ? "opacity-0 w-0" : "opacity-100 w-auto")}>Back</span>
+				</Link>
+			</div>
+
+			<div class={cn("mt-4 px-2", props.collapsed() && "px-1")}>
+				<Show when={!props.collapsed()}>
+					<h2 class="px-3 mb-3 text-sm font-semibold text-zinc-900">Settings</h2>
+				</Show>
+
+				<div class="space-y-4">
+					<div>
+						<span class={cn("px-3 text-[10px] font-medium text-zinc-400 uppercase tracking-wider", props.collapsed() && "hidden")}>Account</span>
+						<div class={cn("space-y-0.5", !props.collapsed() && "mt-1")}>
+							<For each={accountItems}>{(item) => <SettingsNavItem item={item} collapsed={props.collapsed} />}</For>
+						</div>
+					</div>
+					<div>
+						<span class={cn("px-3 text-[10px] font-medium text-zinc-400 uppercase tracking-wider", props.collapsed() && "hidden")}>Workspace</span>
+						<div class={cn("space-y-0.5", !props.collapsed() && "mt-1")}>
+							<For each={workspaceItems}>{(item) => <SettingsNavItem item={item} collapsed={props.collapsed} />}</For>
+						</div>
+					</div>
+				</div>
+			</div>
+		</>
+	);
+}
+
+function SettingsNavItem(props: { item: SettingsNavItemType; collapsed: Accessor<boolean> }) {
+	const location = useLocation();
+	const isActive = () => location().pathname === props.item.to;
+
+	return (
+		<Tooltip placement="right" openDelay={0} disabled={!props.collapsed()}>
+			<TooltipTrigger as="div">
+				<Link
+					to={props.item.to}
+					class={cn(
+						"flex items-center px-3 py-1.5 rounded-lg transition-all overflow-hidden",
+						props.collapsed() ? "justify-center px-1.5" : "gap-2",
+						isActive() ? "bg-zinc-200 text-zinc-900 font-medium" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100",
+					)}
+				>
+					<props.item.icon class="w-4 h-4 shrink-0" />
+					<span class={cn("text-sm truncate whitespace-nowrap transition-[opacity,width] duration-200", props.collapsed() ? "opacity-0 w-0" : "opacity-100 w-auto")}>
+						{props.item.label}
+					</span>
+				</Link>
+			</TooltipTrigger>
+			<TooltipContent class="bg-zinc-800 text-white border-zinc-700 px-2 py-1 text-xs">{props.item.label}</TooltipContent>
+		</Tooltip>
 	);
 }

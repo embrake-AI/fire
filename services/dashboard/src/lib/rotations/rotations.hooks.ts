@@ -112,7 +112,7 @@ export function useDeleteRotation(options?: { onSuccess?: () => void; onError?: 
 	}));
 }
 
-export function useUpdateRotationName(options?: { onSuccess?: () => void; onError?: () => void }) {
+export function useUpdateRotationName(options?: { onMutate?: () => void; onSuccess?: () => void; onError?: () => void }) {
 	const queryClient = useQueryClient();
 	const updateRotationNameFn = useServerFn(updateRotationName);
 
@@ -125,6 +125,8 @@ export function useUpdateRotationName(options?: { onSuccess?: () => void; onErro
 			const previousRotations = queryClient.getQueryData<GetRotationsResponse>(["rotations"]);
 
 			queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) => old?.map((r) => (r.id === id ? { ...r, name } : r)));
+
+			options?.onMutate?.();
 
 			return { previousRotations };
 		},
