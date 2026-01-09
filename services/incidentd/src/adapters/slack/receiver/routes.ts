@@ -133,7 +133,8 @@ slackRoutes.post("/events", async (c) => {
 				return c.text("OK");
 			}
 
-			if (message.user === slackIntegration.data.botUserId || message.bot_id === slackIntegration.data.botId) {
+			// For now, we ignore all bot messages. We could filter by our specific bot
+			if (message.user === slackIntegration.data.botUserId || message.bot_id) {
 				return c.text("OK");
 			}
 
