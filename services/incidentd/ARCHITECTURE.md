@@ -3,7 +3,7 @@
 The goal of `incidentd` is to provide **fast acknowledgement** and **strong eventual consistency**.
 
 - Requests are acknowledged when the incident state is durably persisted.
-- Side effects (D1 index updates, Slack updates, etc.) are executed asynchronously and retried until they succeed.
+- Side effects (D1 index updates, Slack updates, etc.) are executed asynchronously and retried with a bounded workflow retry policy.
 
 ## Platform
 
@@ -11,7 +11,7 @@ The goal of `incidentd` is to provide **fast acknowledgement** and **strong even
 
 - [Durable Objects](https://developers.cloudflare.com/durable-objects/) as the transactional data plane (per-incident source of truth)
 - [D1](https://developers.cloudflare.com/d1/) as the query-optimized control plane index
-- [Service Bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/) to call the Worker dispatcher from within the DO without an external queue
+- [Workflows](https://developers.cloudflare.com/workflows/) as the per-incident event loop for side effects
 
 > We intentionally do **not** use Cloudflare Queues in the current design. Instead, each Incident DO maintains its own outbox log and uses alarms as a durable retry mechanism. (originally the implementation did, but alarms are superior due to transactional guarantees of DO storage)
 
@@ -38,40 +38,44 @@ Incident state is split across two planes:
 To ensure reliable downstream processing without an external queue, the DO implements an **internal outbox**:
 
 - The DO persists incident state and (if relevant) appends an event to an `event_log` table.
-- Each outbox row has `published_at` which indicates whether the event has been successfully dispatched.
+- Each outbox row has `published_at` which indicates whether the event has been accepted by the workflow (create/send succeeded).
 - The DO schedules an alarm to ensure the outbox will be drained
 
 This provides **at-least-once** delivery semantics to downstream processing, with strong transactional consistency between state changes and outbox enqueue.
 
-### Alarm-driven dispatch loop + Service Binding dispatcher
+### Alarm-driven workflow forwarder
 
 Instead of a separate queue consumer, the DO itself is the driver of eventual consistency:
 
-- The alarm handler drains the outbox in order and calls `incidentd.dispatch(...)` using a Service Binding.
-- The dispatcher performs side effects:
+- The alarm handler drains the outbox in order and creates/sends events to a per-incident workflow.
+- The workflow instance id is `incidentId`.
+- The workflow is created with the `INCIDENT_CREATED` event payload, and all subsequent events are sent via `sendEvent`.
+- The workflow processes events in order and stops waiting after the incident is resolved.
+- The workflow performs side effects:
   - update the D1 control-plane index
   - invoke adapter senders (Slack, etc.)
 
-This keeps the Durable Object “core” transactional and deterministic, while isolating side effects in a dispatcher entrypoint.
+This keeps the Durable Object “core” transactional and deterministic, while isolating side effects in a workflow event loop.
 
 ## Reliability invariants
 
 ### What we acknowledge
 
-Receivers (Slack, dashboard) are acknowledged when the DO has durably persisted the new state snapshot (no need to wait for the dispatcher)
+Receivers (Slack, dashboard) are acknowledged when the DO has durably persisted the new state snapshot (no need to wait for the workflow dispatcher)
 
-This guarantees that once the caller is acknowledged, the change is not lost. Side effects are retried until applied, ensuring eventual consistency.
+This guarantees that once the caller is acknowledged, the change is not lost. Side effects are retried with a bounded workflow policy, and failures are tolerated.
 
 ### Outbox invariants (per incident)
 
 - A state update is accepted **iff** it is committed: `state` snapshot + outbox `event_log` row.
 - A state update is committed **iff** an alarm is scheduled within `OUTBOX_FLUSH_DELAY_MS` (unless there are no outbox events to dispatch).
-- An event is considered dispatched **iff** `published_at` is set on its outbox row.
+- An event is considered accepted by the workflow **iff** `published_at` is set on its outbox row.
 
 ### Delivery / retries
 
-- Delivery is **at-least-once**: dispatch may be retried.
+- Workflow acceptance is **at-least-once**: create/send may be retried.
 - Dispatchers and senders should be written to be idempotent (e.g. keyed by `(incident_id, event_id)`).
+- Dispatcher retries are handled inside the workflow and may ultimately fail without blocking later events.
 
 ## Data flow
 
@@ -106,16 +110,17 @@ The Incident Durable Object is the transactional core of the system. It:
 - Appends outbox events into `event_log` for downstream processing
 - Schedules an alarm to guarantee eventual dispatch
 
-### Dispatcher (Service Binding entrypoint)
+### Workflow (per-incident event loop, dispatcher/workflow.ts)
 
-The dispatcher is the common exit point for side effects. It is invoked by:
+The workflow is the common exit point for side effects. It is invoked by:
 
-- the DO alarm drain loop (reliable fallback)
+- the DO alarm drain loop (create/send events)
 
 Responsibilities:
 
 - Update D1 control-plane index
 - Forward events to adapter senders (Slack, future integrations)
+- Adapter senders can use workflow steps for per-call retries
 - Keep side effects isolated from the transactional core
 
 ### Senders `adapters/*/sender/`
@@ -126,7 +131,7 @@ Senders translate internal events into external side effects:
 - Pushing updates to the dashboard (the dashboard currently polls)
 - Future integrations
 
-Senders are isolated per adapter and are invoked only by the dispatcher.
+Senders are isolated per adapter and are invoked only by the workflow dispatcher.
 
 ---
 
@@ -191,16 +196,16 @@ Senders are isolated per adapter and are invoked only by the dispatcher.
                            │  Reliable fallback:
                            │  DO alarm drains outbox until empty
                            ▼
-┌─────────────────────────────────────────────────────────┐    5. DO alarm drain loop (internal "queue consumer")
+┌─────────────────────────────────────────────────────────┐    5. DO alarm drain loop (workflow forwarder)
 │ ALARM                             core/incident.ts      │       ├─▶ SELECT unpublished events (ORDER BY id)
-│ alarm()                                                 │       ├─▶ For each: dispatch via Service Binding
+│ alarm()                                                 │       ├─▶ For each: create/send workflow event
 │                                                         │       ├─▶ Mark published_at on success
 │                                                         │       └─▶ Reschedule if any remain
 └──────────────────────────┬──────────────────────────────┘
                            │
                            ▼
-┌─────────────────────────────────────────────────────────┐    6. Dispatcher (Service Binding entrypoint)
-│ DISPATCHER                     incidentd.dispatch()     │       ├─▶ Update D1 index (control plane)
+┌─────────────────────────────────────────────────────────┐    6. Workflow (per-incident event loop)
+│ WORKFLOW                    dispatcher/workflow.ts      │       ├─▶ Update D1 index (control plane)
 │                                                         │       └─▶ Invoke adapter senders (Slack, ...)
 └──────────────────────────┬──────────────────────────────┘
                            │

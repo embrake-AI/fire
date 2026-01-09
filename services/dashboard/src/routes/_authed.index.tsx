@@ -65,7 +65,7 @@ function IncidentsContent() {
 	);
 
 	const MitigatingIncidentsSection = (): JSX.Element => (
-		<IncidentSection icon={<Settings class="w-5 h-5 text-amber-500" />} iconBg="bg-amber-100" title="Being Mitigated" incidents={mitigatingIncidents()} />
+		<IncidentSection icon={<Settings class="w-5 h-5 text-amber-500" />} iconBg="bg-amber-100" title="Mitigating" incidents={mitigatingIncidents()} />
 	);
 
 	const openAndMitigatingIncidents = () => openIncidents().length > 0 && mitigatingIncidents().length > 0;

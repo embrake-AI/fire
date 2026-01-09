@@ -21,6 +21,13 @@
 			},
 		],
 	},
+	"workflows": [
+		{
+			"name": "incident-workflow",
+			"binding": "INCIDENT_WORKFLOW",
+			"class_name": "IncidentWorkflow",
+		},
+	],
 	"observability": {
 		"enabled": true,
 	},

@@ -68,13 +68,15 @@ function createStoredBoolean(key: string, defaultValue: boolean) {
 
 export default function Sidebar() {
 	const location = useLocation();
-	const [collapsed, setCollapsed] = createStoredBoolean("sidebar-collapsed", false);
-
-	const toggleCollapsed = () => {
-		setCollapsed((value) => !value);
-	};
+	const [storedCollapsed, setStoredCollapsed] = createStoredBoolean("sidebar-collapsed", false);
 
 	const isSettingsPage = () => location().pathname.startsWith("/settings");
+
+	const collapsed = () => (isSettingsPage() ? false : storedCollapsed());
+
+	const toggleCollapsed = () => {
+		setStoredCollapsed((value) => !value);
+	};
 
 	return (
 		<aside class={cn("flex flex-col bg-zinc-50 border-r border-zinc-200 transition-[width] duration-200 ease-in-out shrink-0", collapsed() ? "w-[60px]" : "w-[200px]")}>
@@ -187,12 +189,12 @@ function WorkspaceSelector(props: { collapsed: Accessor<boolean>; onToggleCollap
 	return (
 		<div class={cn("px-2 flex items-center justify-between", props.collapsed() && "group/workspace")}>
 			<div class={cn("relative", props.collapsed() && "flex-1")}>
-				<Popover open={open()} onOpenChange={setOpen}>
+				<Popover open={open()} onOpenChange={(isOpen) => !props.collapsed() && setOpen(isOpen)}>
 					<PopoverTrigger
 						type="button"
 						class={cn(
-							"flex items-center gap-2 px-2 py-2 rounded-lg text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer overflow-hidden",
-							props.collapsed() && "w-full",
+							"flex items-center gap-2 px-2 py-2 rounded-lg text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 transition-colors overflow-hidden",
+							props.collapsed() ? "w-full pointer-events-none" : "cursor-pointer",
 						)}
 					>
 						<Show
@@ -292,21 +294,21 @@ function MyTeamsSection(props: { collapsed: Accessor<boolean> }) {
 
 	return (
 		<div class="mt-4 px-2">
-			<div class={cn("border-t border-zinc-200 mb-2 mx-2 transition-opacity duration-200", props.collapsed() ? "opacity-100" : "opacity-0 h-0 mb-0")} />
+			<div class={cn("border-t border-zinc-200 mx-2 transition-all duration-200 ease-in-out", props.collapsed() ? "opacity-100 mb-2 h-px" : "opacity-0 mb-0 h-0")} />
 			<Collapsible open={isOpen()} onOpenChange={setIsOpen}>
-				<CollapsibleTrigger
-					class={cn(
-						"flex items-center justify-between w-full px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer overflow-hidden",
-						props.collapsed() && "justify-center px-0 py-0 h-0 opacity-0",
-					)}
-				>
-					<span>My Teams</span>
-				</CollapsibleTrigger>
+				<div class={cn("grid transition-all duration-200 ease-in-out", props.collapsed() ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100")}>
+					<div class="overflow-hidden">
+						<CollapsibleTrigger class="flex items-center justify-between w-full px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-600 transition-colors cursor-pointer">
+							<span>My Teams</span>
+							<ChevronDown class={cn("w-3 h-3 transition-transform duration-200", isOpen() ? "rotate-0" : "-rotate-90")} />
+						</CollapsibleTrigger>
+					</div>
+				</div>
 				<CollapsibleContent>
 					<Show
-						when={isOpen() && userTeams().length > 0}
+						when={userTeams().length > 0}
 						fallback={
-							<Show when={isOpen() && !props.collapsed()}>
+							<Show when={!props.collapsed()}>
 								<p class="px-3 py-1.5 text-xs text-zinc-400">No teams</p>
 							</Show>
 						}

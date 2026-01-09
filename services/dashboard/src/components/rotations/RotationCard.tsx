@@ -7,7 +7,6 @@ import { UserAvatar } from "~/components/UserAvatar";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
 import {
 	ConfigCard,
 	ConfigCardActions,
@@ -18,6 +17,7 @@ import {
 	ConfigCardRow,
 	ConfigCardTitle,
 } from "~/components/ui/config-card";
+import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
 import type { getRotations } from "~/lib/rotations/rotations";
 import {
@@ -156,10 +156,7 @@ export function RotationCard(props: RotationCardProps) {
 					<Show
 						when={props.isExpanded && isEditingName()}
 						fallback={
-							<Show
-								when={props.isExpanded}
-								fallback={<ConfigCardTitle class="shrink-0">{props.rotation.name}</ConfigCardTitle>}
-							>
+							<Show when={props.isExpanded} fallback={<ConfigCardTitle class="shrink-0">{props.rotation.name}</ConfigCardTitle>}>
 								<button
 									type="button"
 									class="flex items-center gap-1.5 group/title cursor-pointer bg-transparent border-none p-0"

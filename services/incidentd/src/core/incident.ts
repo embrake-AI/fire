@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { EntryPoint, EventLog, IS, IS_Event } from "@fire/common";
 import { incidentAnalysis } from "@fire/db/schema";
+import { INCIDENT_WORKFLOW_EVENT_TYPE, type IncidentWorkflowPayload } from "../dispatcher/workflow";
 import type { Metadata } from "../handler";
 import { getDB } from "../lib/db";
 import { calculateIncidentInfo, generateIncidentSummary } from "./idontknowhowtonamethisitswhereillplacecallstoai";
@@ -28,10 +29,10 @@ const MAX_ATTEMPTS = 3;
  * - An update is accepted iff the state is commited: `state` snapshot + `event` row
  * - A state update is (transactionally) committed iff an alarm is scheduled
  * - An Incident exists iff `start` is called. Otherwise, it rejects all other calls.
- * - An event is dispatched only when all previous events have been published or failed MAX_ATTEMPTS times.
+ * - An event is forwarded to the workflow only when all previous events have been published or failed MAX_ATTEMPTS times.
  *
  * Acknowledge callers on state persistence, not on side effects:
- * - All side effects are executed in the alarm handler (non-blocking, can only run one at a time).
+ * - All side effects are executed in the workflow (alarm only forwards events to it).
  *
  * Retrieve from ctx.storage, not from local state:
  * - Both would work, but retrieving from storage is as efficient since cloudflare will cache the result.
@@ -67,6 +68,44 @@ export class Incident extends DurableObject<Env> {
 		await this.ctx.storage.setAlarm(time);
 	}
 
+	private buildWorkflowPayload(event: EventLog, state: DOState): IncidentWorkflowPayload {
+		return {
+			event: {
+				event_type: event.event_type,
+				event_data: JSON.parse(event.event_data),
+				event_id: event.id,
+				incident_id: state.id,
+			},
+			metadata: state.metadata,
+		};
+	}
+
+	private async ensureWorkflowStarted(workflowId: string, payload: IncidentWorkflowPayload) {
+		try {
+			await this.env.INCIDENT_WORKFLOW.create({ id: workflowId, params: payload });
+		} catch (error) {
+			if (error instanceof Error && /already.*exist/i.test(error.message)) {
+				return;
+			}
+			throw error;
+		}
+	}
+
+	private async sendWorkflowEvent(workflowId: string, payload: IncidentWorkflowPayload) {
+		const instance = await this.env.INCIDENT_WORKFLOW.get(workflowId);
+		await instance.sendEvent({ type: INCIDENT_WORKFLOW_EVENT_TYPE, payload });
+	}
+
+	private async dispatchToWorkflow(event: EventLog, state: DOState) {
+		const payload = this.buildWorkflowPayload(event, state);
+		const workflowId = state.id;
+		if (event.event_type === "INCIDENT_CREATED") {
+			await this.ensureWorkflowStarted(workflowId, payload);
+		} else {
+			await this.sendWorkflowEvent(workflowId, payload);
+		}
+	}
+
 	/**
 	 * Either succeeds and there is no unpublished event
 	 * or fails throwing an error (and retries)
@@ -93,22 +132,14 @@ export class Incident extends DurableObject<Env> {
 		if (events.length > 0) {
 			for (const event of events) {
 				try {
-					await this.env.incidentd.dispatch(
-						{
-							event_type: event.event_type,
-							event_data: JSON.parse(event.event_data),
-							event_id: event.id,
-							incident_id: state.id,
-						},
-						state.metadata,
-					);
+					await this.dispatchToWorkflow(event, state);
 					this.ctx.storage.sql.exec("UPDATE event_log SET published_at = CURRENT_TIMESTAMP WHERE id = ? AND published_at IS NULL", event.id);
 				} catch (error) {
 					const attempts = event.attempts + 1;
 					if (attempts >= MAX_ATTEMPTS) {
 						console.error("Event failed after MAX_ATTEMPTS attempts, giving up", MAX_ATTEMPTS, event, error);
 					} else {
-						console.warn("Error dispatching event", event, error);
+						console.warn("Error forwarding event to workflow", event, error);
 					}
 					this.ctx.storage.sql.exec("UPDATE event_log SET attempts = ? WHERE id = ?", attempts, event.id);
 					throw error;

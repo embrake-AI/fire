@@ -28,7 +28,7 @@ export function useUpdateIncidentSeverity(incidentId: Accessor<string>, options?
 		onMutate: async (severity) => {
 			await queryClient.cancelQueries({ queryKey: ["incident", incidentId()] });
 
-			const previousIncident = queryClient.getQueryData<Incident>(["incident", incidentId]);
+			const previousIncident = queryClient.getQueryData<Incident>(["incident", incidentId()]);
 			queryClient.setQueryData(["incident", incidentId()], { ...previousIncident, state: { ...previousIncident?.state, severity } });
 
 			return { previousIncident };

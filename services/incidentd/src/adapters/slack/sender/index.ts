@@ -1,14 +1,20 @@
 import { IS_SEVERITY } from "@fire/common";
 import type { ActionsBlock, KnownBlock } from "@slack/types";
-import type { Incident } from "../../../dispatcher";
+import type { Incident, StepDo } from "../../../dispatcher/workflow";
 import type { Metadata } from "../../../handler";
+
+type SlackApiResponse = {
+	ok?: boolean;
+	ts?: string;
+	error?: string;
+};
 
 /**
  * Useful guide to create Slack messages (has sub-routes for each type of message):
  *   - https://docs.slack.dev/messaging/
  */
 
-export async function incidentStarted(env: Env, id: string, { severity, status, assignee, title }: Incident, metadata: Metadata) {
+export async function incidentStarted(stepDo: StepDo, env: Env, id: string, { severity, status, assignee, title }: Incident, metadata: Metadata) {
 	const { botToken, channel, thread } = metadata;
 	if (!botToken || !channel) {
 		// Thread is optional, if we have a channel and no thread, we'll post in the channel directly
@@ -20,50 +26,90 @@ export async function incidentStarted(env: Env, id: string, { severity, status, 
 	}
 	const blocks = incidentBlocks({ frontendUrl: env.FRONTEND_URL, incidentId: id, severity, status, assigneeUserId: assignee, title });
 	const shouldBroadcast = severity === "high" && !!thread;
-	const [response] = await Promise.allSettled([
-		fetch(`https://slack.com/api/chat.postMessage`, {
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${botToken}`,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				text: "Incident created 🔴",
-				channel,
-				thread_ts: thread,
-				...(shouldBroadcast && { reply_broadcast: true }),
-				blocks,
-				metadata: {
-					event_type: "incident",
-					event_payload: { id },
+	const [postResult] = await Promise.allSettled([
+		stepDo(
+			`slack.post-message`,
+			{
+				retries: {
+					limit: 3,
+					delay: "1 second",
 				},
-			}),
-		}),
-		fetch(`https://slack.com/api/reactions.remove`, {
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${botToken}`,
-				"Content-Type": "application/json",
 			},
-			body: JSON.stringify({
-				name: "fire",
-				channel,
-				timestamp: thread,
-			}),
-		}),
+			async () => {
+				const response = await fetch(`https://slack.com/api/chat.postMessage`, {
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${botToken}`,
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						text: "Incident created 🔴",
+						channel,
+						thread_ts: thread,
+						...(shouldBroadcast && { reply_broadcast: true }),
+						blocks,
+						metadata: {
+							event_type: "incident",
+							event_payload: { id },
+						},
+					}),
+				});
+				const payload = await response.json<SlackApiResponse>();
+				if (!response.ok || payload.ok === false || !payload.ts) {
+					throw new Error(`Slack postMessage failed: ${payload.error ?? response.status}`);
+				}
+				return { ts: payload.ts };
+			},
+		),
+		stepDo(
+			"slack.remove-reaction",
+			{
+				retries: {
+					limit: 3,
+					delay: "1 second",
+				},
+			},
+			async () => {
+				const response = await fetch(`https://slack.com/api/reactions.remove`, {
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${botToken}`,
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						name: "fire",
+						channel,
+						timestamp: thread,
+					}),
+				});
+				const payload = await response.json<SlackApiResponse>().catch(() => ({}) as SlackApiResponse);
+				if (!response.ok || payload.ok === false) {
+					throw new Error(`Slack remove reaction failed: ${payload.error ?? response.status}`);
+				}
+			},
+		),
 	]);
-	if (response.status === "fulfilled") {
-		const { ts } = await response.value.json<{ ts: string }>();
-		if (!ts) {
-			console.error("Failed to create incident", response);
-			return;
-		}
-		const incident = env.INCIDENT.get(env.INCIDENT.idFromString(id));
-		await incident.addMetadata({ postedMessageTs: ts, channel, thread: thread ?? ts });
+	if (postResult.status === "fulfilled") {
+		const { ts } = postResult.value;
+		await stepDo(
+			"incident.addMetadata",
+			{
+				retries: {
+					limit: 3,
+					delay: "1 second",
+				},
+			},
+			async () => {
+				const incident = env.INCIDENT.get(env.INCIDENT.idFromString(id));
+				await incident.addMetadata({ postedMessageTs: ts, channel, thread: thread ?? ts });
+			},
+		);
+	} else {
+		console.error("Failed to create incident", postResult.reason);
 	}
 }
 
-export async function incidentSeverityUpdated(env: Env, id: string, incident: Incident, metadata: Metadata) {
+export async function incidentSeverityUpdated(stepDo: StepDo, env: Env, id: string, incident: Incident, metadata: Metadata) {
 	const { severity, status, assignee, title } = incident;
 	const { botToken, channel, thread, postedMessageTs } = metadata;
 	if (!botToken || !channel || !postedMessageTs) {
@@ -72,6 +118,7 @@ export async function incidentSeverityUpdated(env: Env, id: string, incident: In
 	}
 	const shouldBroadcast = severity === "high" && !!thread;
 	await updateIncidentMessage({
+		stepDo,
 		frontendUrl: env.FRONTEND_URL,
 		botToken,
 		channel,
@@ -85,17 +132,7 @@ export async function incidentSeverityUpdated(env: Env, id: string, incident: In
 	});
 }
 
-export async function incidentAssigneeUpdated(env: Env, id: string, incident: Incident, metadata: Metadata) {
-	const { severity, status, assignee, title } = incident;
-	const { botToken, channel, postedMessageTs } = metadata;
-	if (!botToken || !channel || !postedMessageTs) {
-		// Not created through Slack, so no message to send
-		return;
-	}
-	await updateIncidentMessage({ frontendUrl: env.FRONTEND_URL, botToken, channel, postedMessageTs, id, severity, status, assignee, incidentName: title });
-}
-
-export async function incidentStatusUpdated(env: Env, id: string, incident: Incident, message: string, metadata: Metadata) {
+export async function incidentAssigneeUpdated(stepDo: StepDo, env: Env, id: string, incident: Incident, metadata: Metadata) {
 	const { severity, status, assignee, title } = incident;
 	const { botToken, channel, postedMessageTs } = metadata;
 	if (!botToken || !channel || !postedMessageTs) {
@@ -103,6 +140,28 @@ export async function incidentStatusUpdated(env: Env, id: string, incident: Inci
 		return;
 	}
 	await updateIncidentMessage({
+		stepDo,
+		frontendUrl: env.FRONTEND_URL,
+		botToken,
+		channel,
+		postedMessageTs,
+		id,
+		severity,
+		status,
+		assignee,
+		incidentName: title,
+	});
+}
+
+export async function incidentStatusUpdated(stepDo: StepDo, env: Env, id: string, incident: Incident, message: string, metadata: Metadata) {
+	const { severity, status, assignee, title } = incident;
+	const { botToken, channel, postedMessageTs } = metadata;
+	if (!botToken || !channel || !postedMessageTs) {
+		// Not created through Slack, so no message to send
+		return;
+	}
+	await updateIncidentMessage({
+		stepDo,
 		frontendUrl: env.FRONTEND_URL,
 		botToken,
 		channel,
@@ -117,6 +176,7 @@ export async function incidentStatusUpdated(env: Env, id: string, incident: Inci
 }
 
 async function updateIncidentMessage({
+	stepDo,
 	frontendUrl,
 	botToken,
 	channel,
@@ -129,6 +189,7 @@ async function updateIncidentMessage({
 	broadcast,
 	incidentName,
 }: {
+	stepDo: StepDo;
 	frontendUrl: string;
 	botToken: string;
 	channel: string;
@@ -143,33 +204,65 @@ async function updateIncidentMessage({
 }) {
 	const blocks = incidentBlocks({ frontendUrl, incidentId: id, severity, status, assigneeUserId: assignee, statusMessage, title: incidentName });
 	const textFallback = `${incidentName} - ${status === "resolved" ? "resolved ✅" : status === "mitigating" ? "mitigating 🟡" : "open 🔴"}`;
-	await fetch(`https://slack.com/api/chat.update`, {
-		method: "POST",
-		headers: {
-			Authorization: `Bearer ${botToken}`,
-			"Content-Type": "application/json",
+	await stepDo(
+		`slack.update-message`,
+		{
+			retries: {
+				limit: 3,
+				delay: "1 second",
+			},
 		},
-		body: JSON.stringify({
-			channel,
-			ts: postedMessageTs,
-			text: textFallback,
-			blocks,
-		}),
-	});
+		async () => {
+			const response = await fetch(`https://slack.com/api/chat.update`, {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${botToken}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					channel,
+					ts: postedMessageTs,
+					text: textFallback,
+					blocks,
+				}),
+			});
+			const payload = await response.json<SlackApiResponse>().catch(() => ({}) as SlackApiResponse);
+			if (!response.ok || payload.ok === false) {
+				throw new Error(`Slack update message failed: ${payload.error ?? response.status}`);
+			}
+		},
+	);
 	// broadcast if needed (can't update content and broadcast in the same request)
 	if (broadcast) {
-		await fetch(`https://slack.com/api/chat.update`, {
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${botToken}`,
-				"Content-Type": "application/json",
+		await stepDo(
+			`slack.broadcast`,
+			{
+				retries: {
+					limit: 3,
+					delay: "1 second",
+				},
 			},
-			body: JSON.stringify({
-				channel,
-				ts: postedMessageTs,
-				reply_broadcast: true,
-			}),
-		}).catch(() => {});
+			async () => {
+				const response = await fetch(`https://slack.com/api/chat.update`, {
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${botToken}`,
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						channel,
+						ts: postedMessageTs,
+						reply_broadcast: true,
+					}),
+				});
+				const payload = await response.json<SlackApiResponse>().catch(() => ({}) as SlackApiResponse);
+				if (!response.ok || payload.ok === false) {
+					throw new Error(`Slack broadcast failed: ${payload.error ?? response.status}`);
+				}
+			},
+		).catch((error) => {
+			console.warn("Slack broadcast failed", error);
+		});
 	}
 }
 

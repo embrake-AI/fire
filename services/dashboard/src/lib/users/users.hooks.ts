@@ -58,7 +58,7 @@ export function usePossibleSlackUsers(options?: { enabled: Accessor<boolean> }) 
 		return [
 			...users.map((u) => ({ id: u.id, name: u.name, avatar: u.image, type: "user" as const, teamIds: u.teamIds, slackId: u.slackId })),
 			...slackUsers.map((u) => ({ id: u.id, name: u.name, avatar: u.avatar, type: "slack" as const })),
-			].sort((a,b) => a.name.localeCompare(b.name));
+		].sort((a, b) => a.name.localeCompare(b.name));
 	});
 	return possibleSlackUsers;
 }

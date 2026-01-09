@@ -18,7 +18,7 @@ bun run lint       # Run biome linter
 
 ## Key Principles
 
-1. **Data flow follows folder structure**: `receiver → handler → core → dispatcher → sender`
+1. **Data flow follows folder structure**: `receiver → handler → core → dispatcher (workflow) → sender`
 2. **Durable Objects are the source of truth** for incident state (transactional, strongly consistent)
 3. **D1 is an eventually consistent index** for queries and listing
 4. **Acknowledge on DO persistence**, not on side effects
@@ -28,9 +28,9 @@ bun run lint       # Run biome linter
 The DO implements an internal outbox for reliable downstream processing:
 
 - State changes atomically append events to an `event_log` table inside the DO
-- The DO alarm drains the outbox and calls `incidentd.dispatch()` via Service Binding
-- Dispatcher updates D1 index and invokes adapter senders
-- Events are marked `published_at` on success, retried on failure (max 3 attempts)
+- The DO alarm drains the outbox and creates/sends events to a per-incident workflow
+- Workflow updates D1 index and invokes adapter senders
+- Events are marked `published_at` when the workflow create/send succeeds, retried on failure (max 3 attempts)
 
 This provides at-least-once delivery with strong transactional consistency.
 
@@ -39,9 +39,9 @@ This provides at-least-once delivery with strong transactional consistency.
 | Layer      | Path                   | Purpose                                   |
 | ---------- | ---------------------- | ----------------------------------------- |
 | Receivers  | `adapters/*/receiver/` | Validate, auth, normalize external input  |
-| Handler    | `handler/index.ts`     | Orchestrate DO + D1 + senders             |
+| Handler    | `handler/index.ts`     | Orchestrate DO operations                 |
 | Core       | `core/incident.ts`     | Incident Durable Object (source of truth) |
-| Dispatcher | `dispatcher/index.ts`  | Queue consumer (not yet implemented)      |
+| Dispatcher | `dispatcher/workflow.ts` | Workflow dispatcher for side effects      |
 | Senders    | `adapters/*/sender/`   | Send updates to external systems          |
 
 ## Adding New Adapters
@@ -51,4 +51,4 @@ When adding support for a new external system (e.g., PagerDuty, email):
 1. Create `adapters/{name}/receiver/` for incoming webhooks/requests
 2. Create `adapters/{name}/sender/` for outgoing notifications
 3. Register routes in `src/index.ts`
-4. Sender should be invoked by handler (for now) or dispatcher (future)
+4. Sender should be invoked by the dispatcher workflow
