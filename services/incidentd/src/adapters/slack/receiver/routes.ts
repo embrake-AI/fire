@@ -133,7 +133,7 @@ slackRoutes.post("/events", async (c) => {
 				return c.text("OK");
 			}
 
-			if (message.user === slackIntegration.data.botUserId || message.bot_id === slackIntegration.data.botUserId) {
+			if (message.user === slackIntegration.data.botUserId || message.bot_id === slackIntegration.data.botId) {
 				return c.text("OK");
 			}
 

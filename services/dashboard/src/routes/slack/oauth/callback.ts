@@ -61,11 +61,25 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 
 				const tokenJson = (await tokenRes.json()) as SlackOAuthAccessResponse;
 
-				if (!tokenJson.ok) {
+				if (!tokenJson.ok || !tokenJson.access_token) {
 					return new Response(`Slack token exchange failed: ${tokenJson.error ?? "unknown_error"}`, {
 						status: 400,
 					});
 				}
+
+				const authRes = await fetch("https://slack.com/api/auth.test", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/x-www-form-urlencoded",
+					},
+					body: new URLSearchParams({
+						token: tokenJson.access_token,
+					}),
+				});
+
+				const authJson = (await authRes.json()) as { bot_id?: string };
+
+				const botId = authJson.bot_id;
 
 				const teamId = tokenJson.team?.id;
 				const teamName = tokenJson.team?.name;
@@ -83,7 +97,7 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 					return new Response("Slack response missing required fields", { status: 500 });
 				}
 
-				if (botUserId && botToken && botScopes) {
+				if (botUserId && botToken && botScopes && botId) {
 					await db
 						.insert(integration)
 						.values({
@@ -97,6 +111,7 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 								botUserId,
 								botToken,
 								botScopes: botScopes.split(","),
+								botId,
 							},
 							createdBy: userId,
 						})

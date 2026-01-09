@@ -8,6 +8,7 @@ export const platformType = pgEnum("platform_type", ["slack"]);
  */
 export type SlackIntegrationData = {
 	teamId: string;
+	botId: string;
 	teamName: string;
 	enterpriseId: string | null;
 	appId: string;
@@ -36,7 +37,7 @@ export const integration = pgTable(
 	(table) => [uniqueIndex("integration_client_platform_idx").on(table.clientId, table.platform)],
 );
 
-export type UserSlackIntegrationData = Omit<SlackIntegrationData, "botUserId" | "botToken" | "botScopes"> & {
+export type UserSlackIntegrationData = Omit<SlackIntegrationData, "botUserId" | "botToken" | "botScopes" | "botId"> & {
 	userId: string;
 	userToken: string;
 	userScopes: string[];

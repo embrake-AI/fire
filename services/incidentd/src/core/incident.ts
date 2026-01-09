@@ -248,9 +248,7 @@ export class Incident extends DurableObject<Env> {
 	private async persistAnalysis() {
 		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
 		const events = this.ctx.storage.sql
-			.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "adapter" | "created_at">>(
-				"SELECT id, event_type, event_data, adapter, created_at FROM event_log ORDER BY id ASC",
-			)
+			.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "adapter" | "created_at">>("SELECT id, event_type, event_data, adapter, created_at FROM event_log ORDER BY id ASC")
 			.toArray();
 
 		const eventsForStorage = events.map((e) => ({
