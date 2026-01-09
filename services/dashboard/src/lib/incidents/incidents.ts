@@ -1,5 +1,5 @@
 import type { EntryPoint, IS, IS_Event, ListIncidentsElement } from "@fire/common";
-import { entryPoint, incidentAnalysis, rotation, userIntegration } from "@fire/db/schema";
+import { entryPoint, incidentAnalysis, integration, rotation, user, userIntegration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { authMiddleware } from "../auth/auth-middleware";
@@ -111,32 +111,62 @@ export const updateStatus = createServerFn({ method: "POST" })
 	});
 
 export const sendSlackMessage = createServerFn({ method: "POST" })
-	.inputValidator((data: { id: string; message: string; thread_ts: string; channel: string }) => data)
+	.inputValidator((data: { id: string; message: string; lastEventId: number; sendAsBot?: boolean; dashboardOnly?: boolean }) => data)
 	.middleware([authMiddleware])
 	.handler(async ({ data, context }) => {
-		const [slackUserIntegration] = await db
-			.select()
-			.from(userIntegration)
-			.where(and(eq(userIntegration.userId, context.userId), eq(userIntegration.platform, "slack")))
-			.limit(1);
-		if (!slackUserIntegration) {
-			throw new Error("Slack user integration not found");
+		let slackUserToken: string | undefined;
+		let slackUserId: string;
+
+		if (data.dashboardOnly) {
+			const [currentUser] = await db.select().from(user).where(eq(user.id, context.userId)).limit(1);
+			if (!currentUser?.slackId) {
+				throw new Error("Slack user ID not found");
+			}
+			slackUserId = currentUser.slackId;
+		} else if (!data.sendAsBot) {
+			const [slackUserIntegration] = await db
+				.select()
+				.from(userIntegration)
+				.where(and(eq(userIntegration.userId, context.userId), eq(userIntegration.platform, "slack")))
+				.limit(1);
+
+			if (!slackUserIntegration) {
+				throw new Error("Slack user integration not found");
+			}
+			slackUserToken = slackUserIntegration.data.userToken;
+			slackUserId = slackUserIntegration.data.userId;
+		} else {
+			const [slackIntegration] = await db
+				.select()
+				.from(integration)
+				.where(and(eq(integration.clientId, context.clientId), eq(integration.platform, "slack")))
+				.limit(1);
+
+			if (!slackIntegration) {
+				throw new Error("Slack integration not found");
+			}
+			slackUserId = slackIntegration.data.botUserId;
 		}
-		const { userToken } = slackUserIntegration.data;
-		const response = await fetch(`https://slack.com/api/chat.postMessage`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${userToken}`,
+
+		const messageId = `dashboard-${data.lastEventId + 1}`;
+
+		const response = await signedFetch(
+			`${process.env.INCIDENTS_URL}/${data.id}/message`,
+			{ clientId: context.clientId, userId: context.userId },
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					message: data.message,
+					slackUserId,
+					messageId,
+					slackUserToken,
+				}),
 			},
-			body: JSON.stringify({ channel: data.channel, text: data.message, thread_ts: data.thread_ts }),
-		});
+		);
+
 		if (!response.ok) {
-			throw new Error("Failed to send message to Slack");
-		}
-		const responseData = await response.json();
-		if (!responseData.ok) {
-			return { error: responseData.error };
+			throw new Error("Failed to send message");
 		}
 		return { success: true };
 	});

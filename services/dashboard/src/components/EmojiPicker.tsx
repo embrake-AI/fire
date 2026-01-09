@@ -4,7 +4,6 @@ import { searchEmojis } from "~/lib/emoji/emoji";
 interface EmojiPickerProps {
 	query: string;
 	onSelect: (shortcode: string, emoji: string) => void;
-	position: { top: number; left: number };
 }
 
 export function EmojiPicker(props: EmojiPickerProps) {
@@ -17,14 +16,7 @@ export function EmojiPicker(props: EmojiPickerProps) {
 
 	return (
 		<Show when={props.query.length >= 2}>
-			<div
-				class="absolute z-50 bg-popover border border-border rounded-md shadow-md max-h-75 overflow-y-auto"
-				style={{
-					top: `${props.position.top}px`,
-					left: `${props.position.left}px`,
-					width: "280px",
-				}}
-			>
+			<div class="absolute z-50 bg-popover border border-border rounded-md shadow-md max-h-75 overflow-y-auto bottom-full left-0 mb-1" style={{ width: "280px" }}>
 				<Show when={hasResults()} fallback={<div class="px-4 py-2 text-sm text-muted-foreground">No emojis found</div>}>
 					<div class="py-1">
 						<For each={results()}>

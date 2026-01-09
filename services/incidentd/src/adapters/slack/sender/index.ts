@@ -402,6 +402,43 @@ function incidentBlocks({
 	return blocks;
 }
 
-// TODO: We could post dashboard messages to slack. Now from dashboard we post directly to slack.
-// (Not done yet because it requires passing userToken, and I need to think how to pass additional context)
-export const messageAdded = undefined;
+export async function messageAdded(stepDo: StepDo, _env: Env, _id: string, message: string, _userId: string, _messageId: string, metadata: Metadata, slackUserToken?: string) {
+	const { botToken, channel, postedMessageTs } = metadata;
+	if (!channel || !postedMessageTs) {
+		// No Slack thread context, skip posting
+		return;
+	}
+
+	const token = slackUserToken ?? botToken;
+	if (!token) {
+		return;
+	}
+
+	await stepDo(
+		"slack.post-message",
+		{
+			retries: {
+				limit: 3,
+				delay: "1 second",
+			},
+		},
+		async () => {
+			const response = await fetch("https://slack.com/api/chat.postMessage", {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${token}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					channel,
+					thread_ts: postedMessageTs,
+					text: message,
+				}),
+			});
+			const payload = await response.json<SlackApiResponse>();
+			if (!response.ok || payload.ok === false) {
+				throw new Error(`Slack postMessage failed: ${payload.error ?? response.status}`);
+			}
+		},
+	);
+}

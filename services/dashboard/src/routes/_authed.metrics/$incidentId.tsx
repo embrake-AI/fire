@@ -4,15 +4,15 @@ import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft, ChartColumn, Clock, FileText, Sparkles } from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, Index, Match, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
+import { UserDisplay } from "~/components/MaybeUser";
 import { Timeline } from "~/components/Timeline";
-import { UserAvatar } from "~/components/UserAvatar";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { getSeverity, getStatus } from "~/lib/incident-config";
 import { computeIncidentMetrics, getAnalysisById, getIncidents, type IncidentAnalysis } from "~/lib/incidents/incidents";
-import { useUsers } from "~/lib/users/users.hooks";
+import { useUserBySlackId } from "~/lib/users/users.hooks";
 
 function AnalysisSkeleton() {
 	return (
@@ -162,8 +162,7 @@ function AnalysisHeader(props: { analysis: Accessor<IncidentAnalysis> }) {
 	const analysis = () => props.analysis();
 	const severityConfig = () => getSeverity(analysis().severity);
 	const status = getStatus("resolved");
-	const usersQuery = useUsers();
-	const assignee = createMemo(() => usersQuery.data?.find((user) => user.id === analysis().assignee));
+	const user = useUserBySlackId(() => analysis().assignee);
 
 	const formatDuration = () => {
 		const start = new Date(analysis().createdAt);
@@ -196,7 +195,7 @@ function AnalysisHeader(props: { analysis: Accessor<IncidentAnalysis> }) {
 				<span class="text-muted-foreground/40">·</span>
 
 				<div class="flex items-center gap-2">
-					<UserAvatar name={() => assignee()?.name ?? analysis().assignee} withName />
+					<UserDisplay user={user} withName />
 				</div>
 
 				<span class="text-muted-foreground/40">·</span>

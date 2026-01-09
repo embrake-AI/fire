@@ -77,6 +77,7 @@ export class Incident extends DurableObject<Env> {
 				incident_id: state.id,
 			},
 			metadata: state.metadata,
+			eventMetadata: event.event_metadata ? JSON.parse(event.event_metadata) : undefined,
 		};
 	}
 
@@ -194,6 +195,7 @@ export class Incident extends DurableObject<Env> {
 				id INTEGER PRIMARY KEY,
 				event_type TEXT NOT NULL,
 				event_data TEXT NOT NULL CHECK (json_valid(event_data)) NOT NULL,
+				event_metadata TEXT DEFAULT NULL CHECK (event_metadata IS NULL OR json_valid(event_metadata)),
 				created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
 				published_at TEXT DEFAULT NULL,
 				attempts INTEGER NOT NULL DEFAULT 0,
@@ -222,11 +224,20 @@ export class Incident extends DurableObject<Env> {
 	 * Outbox pattern
 	 * Atomically: commits the new state to the DO, enqueues an event to the event log and schedules an alarm to ensure eventual consistency.
 	 */
-	private async commit({ state, event, adapter }: { state: DOState; event?: IS_Event; adapter?: "slack" | "dashboard" }, { skipAlarm = false }: { skipAlarm?: boolean } = {}) {
+	private async commit(
+		{ state, event, adapter, eventMetadata }: { state: DOState; event?: IS_Event; adapter?: "slack" | "dashboard"; eventMetadata?: Record<string, string> },
+		{ skipAlarm = false }: { skipAlarm?: boolean } = {},
+	) {
 		await this.ctx.storage.transaction(async () => {
 			this.ctx.storage.kv.put<DOState>(STATE_KEY, state);
 			if (event) {
-				this.ctx.storage.sql.exec("INSERT INTO event_log (event_type, event_data, adapter) VALUES (?, ?, ?)", event.event_type, JSON.stringify(event.event_data), adapter);
+				this.ctx.storage.sql.exec(
+					"INSERT INTO event_log (event_type, event_data, event_metadata, adapter) VALUES (?, ?, ?, ?)",
+					event.event_type,
+					JSON.stringify(event.event_data),
+					eventMetadata ? JSON.stringify(eventMetadata) : null,
+					adapter,
+				);
 				if (!skipAlarm) {
 					await this.scheduleAlarmAtMost(Date.now());
 				}
@@ -236,7 +247,11 @@ export class Incident extends DurableObject<Env> {
 
 	private async persistAnalysis() {
 		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
-		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log ORDER BY id ASC").toArray();
+		const events = this.ctx.storage.sql
+			.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "adapter" | "created_at">>(
+				"SELECT id, event_type, event_data, adapter, created_at FROM event_log ORDER BY id ASC",
+			)
+			.toArray();
 
 		const eventsForStorage = events.map((e) => ({
 			id: e.id,
@@ -354,7 +369,7 @@ export class Incident extends DurableObject<Env> {
 		await this.commit({ state, event: { event_type: "STATUS_UPDATE", event_data: { status, message } }, adapter });
 	}
 
-	async addMessage(message: string, userId: string, messageId: string, adapter: "slack" | "dashboard") {
+	async addMessage(message: string, userId: string, messageId: string, adapter: "slack" | "dashboard", slackUserToken?: string) {
 		const state = this.getState();
 		if ("error" in state) {
 			return state;
@@ -365,7 +380,12 @@ export class Incident extends DurableObject<Env> {
 		if (existingMessage.length) {
 			return;
 		}
-		await this.commit({ state, event: { event_type: "MESSAGE_ADDED", event_data: { message, userId, messageId } }, adapter });
+		await this.commit({
+			state,
+			event: { event_type: "MESSAGE_ADDED", event_data: { message, userId, messageId } },
+			adapter,
+			eventMetadata: slackUserToken ? { slackUserToken } : undefined,
+		});
 	}
 
 	async get() {
@@ -380,7 +400,9 @@ export class Incident extends DurableObject<Env> {
 			_initialized,
 			...rest
 		} = state;
-		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log ORDER BY id ASC").toArray();
+		const events = this.ctx.storage.sql
+			.exec<Omit<EventLog, "event_metadata">>("SELECT id, event_type, event_data, created_at, published_at, attempts, adapter FROM event_log ORDER BY id ASC")
+			.toArray();
 		return { state: rest, events, context: { channel, thread } };
 	}
 

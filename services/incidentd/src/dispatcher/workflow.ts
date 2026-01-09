@@ -16,6 +16,7 @@ export type Incident = {
 export type IncidentWorkflowPayload = {
 	event: IS_Event & { incident_id: string; event_id: number };
 	metadata: Metadata;
+	eventMetadata?: Record<string, string>;
 };
 
 export const INCIDENT_WORKFLOW_EVENT_TYPE = "incident-event";
@@ -27,7 +28,9 @@ interface Sender {
 	incidentSeverityUpdated: ((step: StepDo, env: Env, id: string, incident: Incident, metadata: Metadata) => Promise<void>) | undefined;
 	incidentAssigneeUpdated: ((step: StepDo, env: Env, id: string, incident: Incident, metadata: Metadata) => Promise<void>) | undefined;
 	incidentStatusUpdated: ((step: StepDo, env: Env, id: string, incident: Incident, message: string, metadata: Metadata) => Promise<void>) | undefined;
-	messageAdded: ((step: StepDo, env: Env, id: string, message: string, userId: string, messageId: string, metadata: Metadata) => Promise<void>) | undefined;
+	messageAdded:
+		| ((step: StepDo, env: Env, id: string, message: string, userId: string, messageId: string, metadata: Metadata, slackUserToken?: string) => Promise<void>)
+		| undefined;
 }
 
 interface DashboardSender {
@@ -97,12 +100,12 @@ async function dispatchIncidentStatusUpdatedEvent(step: StepDo, env: Env, id: st
 	await settleDispatch("incident-status-updated", [...adapters.senders.map((sender) => sender.incidentStatusUpdated?.(step, env, id, incident, message, metadata))]);
 }
 
-async function dispatchMessageAddedEvent(step: StepDo, env: Env, id: string, message: string, userId: string, messageId: string, metadata: Metadata) {
+async function dispatchMessageAddedEvent(step: StepDo, env: Env, id: string, message: string, userId: string, messageId: string, metadata: Metadata, slackUserToken?: string) {
 	const incident = await adapters.dashboard.messageAdded?.(step, env, id, message, userId, messageId, metadata);
 	if (!incident) {
 		return;
 	}
-	await settleDispatch("message-added", [...adapters.senders.map((sender) => sender.messageAdded?.(step, env, id, message, userId, messageId, metadata))]);
+	await settleDispatch("message-added", [...adapters.senders.map((sender) => sender.messageAdded?.(step, env, id, message, userId, messageId, metadata, slackUserToken))]);
 }
 
 async function dispatchEvent(step: WorkflowStep, env: Env, payload: IncidentWorkflowPayload) {
@@ -138,6 +141,7 @@ async function dispatchEvent(step: WorkflowStep, env: Env, payload: IncidentWork
 				payload.event.event_data.userId,
 				payload.event.event_data.messageId,
 				payload.metadata,
+				payload.eventMetadata?.slackUserToken,
 			);
 		}
 		default: {

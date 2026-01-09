@@ -1,6 +1,6 @@
 import type { EntryPoint } from "@fire/common";
 import { Hono } from "hono";
-import { type BasicContext, getIncident, listIncidents, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
+import { addMessage, type BasicContext, getIncident, listIncidents, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
 import { verifyDashboardRequestMiddleware } from "./middleware";
 
 type DashboardContext = BasicContext & { Variables: { auth: { clientId: string; userId: string } } };
@@ -79,6 +79,22 @@ dashboardRoutes.post("/:id/status", async (c) => {
 
 	const incident = await updateStatus({ c, id, status, message, adapter: "dashboard" });
 	return c.json({ incident });
+});
+
+dashboardRoutes.post("/:id/message", async (c) => {
+	const id = c.req.param("id");
+	if (!id) {
+		return c.json({ error: "ID is required" }, 400);
+	}
+	const { message, slackUserId, messageId, slackUserToken } = await c.req.json<{
+		message: string;
+		slackUserId: string;
+		messageId: string;
+		slackUserToken?: string;
+	}>();
+
+	await addMessage({ c, id, message, userId: slackUserId, messageId, adapter: "dashboard", slackUserToken });
+	return c.json({ success: true });
 });
 
 export { dashboardRoutes };

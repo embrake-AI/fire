@@ -112,14 +112,16 @@ export async function addMessage<E extends BasicContext>({
 	userId,
 	messageId,
 	adapter,
+	slackUserToken,
 }: {
 	c: Context<E>;
 	message: string;
 	userId: string;
 	messageId: string;
 	adapter: "slack" | "dashboard";
+	slackUserToken?: string;
 } & ({ identifier: string; id?: never } | { id: string; identifier?: never })) {
 	const incidentId = id ? c.env.INCIDENT.idFromString(id) : c.env.INCIDENT.idFromName(identifier!);
 	const incident = c.env.INCIDENT.get(incidentId);
-	await incident.addMessage(message, userId, messageId, adapter);
+	await incident.addMessage(message, userId, messageId, adapter, slackUserToken);
 }

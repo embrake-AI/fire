@@ -63,6 +63,7 @@ export type EventLog = {
 	created_at: string;
 	event_type: IS_Event["event_type"];
 	event_data: string;
+	event_metadata: string | null;
 	published_at: string | null;
 	attempts: number;
 	adapter: "slack" | "dashboard";

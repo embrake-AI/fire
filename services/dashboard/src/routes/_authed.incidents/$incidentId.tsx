@@ -100,6 +100,7 @@ function IncidentDetail() {
 		refetchInterval: 5_000,
 	}));
 	const incident = () => incidentQuery.data;
+	const hasSlackContext = createMemo(() => !!incident()?.context?.thread && !!incident()?.context?.channel);
 
 	createEffect(() => {
 		if (incidentQuery.data?.error === "NOT_FOUND") {
@@ -139,8 +140,12 @@ function IncidentDetail() {
 							<div class="space-y-6">
 								<IncidentHeader incident={state} />
 								<Show when={incident()?.events}>{(events) => <Timeline events={events()} />}</Show>
-								<Show when={incident()?.context?.thread}>
-									{(thread) => <Show when={incident()?.context?.channel}>{(channel) => <SlackMessageInput incidentId={state().id} thread={thread()} channel={channel()} />}</Show>}
+								<Show when={incident()?.events}>
+									{(_) => {
+										const events = incident()?.events ?? [];
+										const lastEventId = events.length > 0 ? events[events.length - 1].id : 0;
+										return <SlackMessageInput incidentId={state().id} lastEventId={lastEventId} hasSlackContext={hasSlackContext()} />;
+									}}
 								</Show>
 							</div>
 						)}
