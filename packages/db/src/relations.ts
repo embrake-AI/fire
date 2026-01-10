@@ -35,9 +35,37 @@ export const relations = defineRelations(schema, (r) => ({
 			from: r.rotation.id,
 			to: r.rotationWithAssignee.id,
 		}),
+		members: r.many.rotationMember({
+			from: r.rotation.id,
+			to: r.rotationMember.rotationId,
+		}),
+		overrides: r.many.rotationOverride({
+			from: r.rotation.id,
+			to: r.rotationOverride.rotationId,
+		}),
 		team: r.one.team({
 			from: r.rotation.teamId,
 			to: r.team.id,
+		}),
+	},
+	rotationMember: {
+		rotation: r.one.rotation({
+			from: r.rotationMember.rotationId,
+			to: r.rotation.id,
+		}),
+		assignee: r.one.user({
+			from: r.rotationMember.assigneeId,
+			to: r.user.id,
+		}),
+	},
+	rotationOverride: {
+		rotation: r.one.rotation({
+			from: r.rotationOverride.rotationId,
+			to: r.rotation.id,
+		}),
+		assignee: r.one.user({
+			from: r.rotationOverride.assigneeId,
+			to: r.user.id,
 		}),
 	},
 	entryPoint: {

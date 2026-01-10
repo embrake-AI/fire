@@ -11,9 +11,6 @@ export const rotation = pgTable("rotation", {
 	teamId: uuid("team_id").references(() => team.id, { onDelete: "cascade" }),
 	anchorAt: timestamp("anchor_at", { withTimezone: true }).notNull(),
 	shiftLength: interval("shift_length").notNull(),
-	assignees: text("assignees").array().notNull().default([]),
-	assigneeOverwrite: text("assignee_overwrite"),
-	overrideForShiftStart: timestamp("override_for_shift_start", { withTimezone: true }),
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp("updated_at", { withTimezone: true })
 		.notNull()

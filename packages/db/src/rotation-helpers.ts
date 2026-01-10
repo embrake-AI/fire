@@ -1,129 +1,142 @@
-/**
- * Raw SQL helpers for rotation operations.
- *
- * All helpers use epoch-based shift index calculation:
- * - shift_start = date_bin(shift_length, at_ts, anchor_at)
- * - k = floor((shift_start - anchor_at) / shift_length)
- * - i = ((k % n) + n) % n  -- 0-based index (handles negatives)
- * - base_assignee = assignees[i + 1]  -- Postgres arrays are 1-based
- *
- * Note: shift_length should only use hours/days/weeks (fixed seconds).
- * Avoid months/years as epoch math becomes approximate (30 days, etc.).
- */
-
 import { type SQL, sql } from "drizzle-orm";
-import type { rotation } from "./schema";
+import { rotation, rotationMember, rotationOverride } from "./schema";
 
 type RotationRow = typeof rotation.$inferSelect;
 
 /**
  * Get the current assignee for a rotation at a given timestamp.
- *
- * Parameters:
- * - $1: rotation_id (uuid)
- * - $2: at_ts (timestamptz) - the timestamp to evaluate
- *
- * Returns:
- * - rotation_id
- * - shift_start, shift_end
- * - base_assignee (from rotation order)
- * - effective_assignee (override if applicable)
- * - is_overridden (boolean)
- * - assignee_count
  */
 export function getCurrentAssigneeSQL(rotationId: string): SQL<{
 	rotation_id: string;
 	shift_start: Date;
 	shift_end: Date;
-	base_assignee: string;
-	effective_assignee: string;
+	base_assignee: string | null;
+	effective_assignee: string | null;
 	is_overridden: boolean;
 	assignee_count: number;
 }> {
 	const atTs = new Date();
-	return sql`
-WITH r AS (
-  SELECT id, anchor_at, shift_length, assignees, assignee_overwrite, override_for_shift_start
-  FROM rotation
+	const ctes: SQL[] = [];
+
+	ctes.push(sql`
+r AS (
+  SELECT id, anchor_at, shift_length
+  FROM ${rotation}
   WHERE id = ${rotationId}
-),
-b AS (
+)
+`);
+
+	ctes.push(sql`
+member_count AS (
+  SELECT count(*)::int AS n
+  FROM ${rotationMember}
+  WHERE rotation_id = ${rotationId}
+)
+`);
+
+	ctes.push(sql`
+calc AS (
   SELECT
     r.*,
-    cardinality(r.assignees) AS n,
+    member_count.n,
     date_bin(r.shift_length, ${atTs}::timestamptz, r.anchor_at) AS shift_start
-  FROM r
-),
-k AS (
+  FROM r, member_count
+)
+`);
+
+	ctes.push(sql`
+idx AS (
   SELECT
-    b.*,
-    CASE
-      WHEN b.n = 0 THEN NULL
-      ELSE floor(
-        extract(epoch from (b.shift_start - b.anchor_at)) /
-        extract(epoch from b.shift_length)
-      )::bigint
-    END AS shift_index
-  FROM b
-),
-p AS (
-  SELECT
-    k.*,
+    calc.*,
     CASE
       WHEN n = 0 THEN NULL
-      ELSE ((((shift_index % n) + n) % n)::int + 1)
-    END AS pos1
-  FROM k
+      ELSE floor(
+        extract(epoch from (shift_start - anchor_at)) /
+        extract(epoch from shift_length)
+      )::bigint
+    END AS shift_index
+  FROM calc
+)
+`);
+
+	ctes.push(sql`
+pos AS (
+  SELECT
+    idx.*,
+    CASE
+      WHEN n = 0 THEN NULL
+      ELSE (((shift_index % n) + n) % n)::int
+    END AS base_pos
+  FROM idx
+)
+`);
+
+	const shiftCte = sql.join(ctes, sql`,`);
+	return sql`
+WITH ${shiftCte}
+,base AS (
+  SELECT rm.assignee_id AS base_assignee
+  FROM ${rotationMember} rm, pos
+  WHERE rm.rotation_id = ${rotationId}
+    AND rm.position = pos.base_pos
+  LIMIT 1
+),
+override AS (
+  SELECT ro.assignee_id AS override_assignee
+  FROM ${rotationOverride} ro
+  WHERE ro.rotation_id = ${rotationId}
+    AND ro.start_at <= ${atTs}::timestamptz
+    AND ro.end_at > ${atTs}::timestamptz
+  ORDER BY ro.created_at DESC, ro.id DESC
+  LIMIT 1
 )
 SELECT
-  id AS rotation_id,
-  shift_start,
-  shift_start + shift_length AS shift_end,
-  assignees[pos1] AS base_assignee,
-  CASE
-    WHEN assignee_overwrite IS NOT NULL
-         AND override_for_shift_start = shift_start
-    THEN assignee_overwrite
-    ELSE assignees[pos1]
-  END AS effective_assignee,
-  (assignee_overwrite IS NOT NULL AND override_for_shift_start = shift_start) AS is_overridden,
-  n AS assignee_count
-FROM p;
+  ${rotationId}::uuid AS rotation_id,
+  pos.shift_start AS shift_start,
+  pos.shift_start + pos.shift_length AS shift_end,
+  base.base_assignee AS base_assignee,
+  COALESCE(override.override_assignee, base.base_assignee) AS effective_assignee,
+  (override.override_assignee IS NOT NULL) AS is_overridden,
+  pos.n AS assignee_count
+FROM pos
+LEFT JOIN base ON true
+LEFT JOIN override ON true;
 `;
 }
 
 /**
  * Update the anchor timestamp while keeping the current base assignee stable.
- *
- * Parameters:
- * - $1: rotation_id (uuid)
- * - $2: new_anchor_at (timestamptz)
- * - $3: at_ts (timestamptz) - reference time for current assignee calculation
- *
- * This rotates the assignees array left so that the same person remains
- * the current base assignee after the anchor change. If an override is active
- * for the current shift, it updates override_for_shift_start to the new shift_start.
  */
 export function getUpdateAnchorSQL(rotationId: string, newAnchorAt: Date): SQL<RotationRow> {
 	const atTs = new Date();
 	return sql`
 WITH locked AS (
   SELECT *
-  FROM rotation
+  FROM ${rotation}
   WHERE id = ${rotationId}
   FOR UPDATE
+),
+members AS (
+  SELECT *
+  FROM ${rotationMember}
+  WHERE rotation_id = ${rotationId}
+  FOR UPDATE
+),
+member_count AS (
+  SELECT count(*)::int AS n
+  FROM members
 ),
 calc AS (
   SELECT
     locked.*,
-    cardinality(assignees) AS n,
-    date_bin(shift_length, ${atTs}::timestamptz, anchor_at) AS old_shift_start,
-    date_bin(shift_length, ${atTs}::timestamptz, ${newAnchorAt}::timestamptz) AS new_shift_start
-  FROM locked
+    member_count.n,
+    date_bin(locked.shift_length, ${atTs}::timestamptz, locked.anchor_at) AS old_shift_start,
+    date_bin(locked.shift_length, ${atTs}::timestamptz, ${newAnchorAt}::timestamptz) AS new_shift_start
+  FROM locked, member_count
 ),
 idx AS (
   SELECT
-    *,
+    calc.*,
     CASE WHEN n = 0 THEN NULL ELSE floor(
       extract(epoch from (old_shift_start - anchor_at)) /
       extract(epoch from shift_length)
@@ -147,66 +160,58 @@ rot AS (
     CASE WHEN n = 0 THEN 0 ELSE (((i_old - i_new) % n) + n) % n END AS s
   FROM pos
 ),
-next AS (
-  SELECT
-    id,
-    ${newAnchorAt}::timestamptz AS anchor_new,
-    CASE
-      WHEN n = 0 THEN assignees
-      WHEN s = 0 THEN assignees
-      ELSE (assignees[(s+1):n] || assignees[1:s])
-    END AS assignees_new,
-    CASE
-      WHEN assignee_overwrite IS NOT NULL
-           AND override_for_shift_start = old_shift_start
-      THEN new_shift_start
-      ELSE override_for_shift_start
-    END AS override_for_shift_start_new
+shifted AS (
+  UPDATE ${rotationMember} rm
+  SET position = CASE
+    WHEN rot.n = 0 THEN rm.position
+    ELSE (((rm.position - rot.s) % rot.n) + rot.n) % rot.n
+  END
   FROM rot
+  WHERE rm.rotation_id = rot.id
+  RETURNING rm.*
+),
+updated AS (
+  UPDATE ${rotation} r
+  SET anchor_at = ${newAnchorAt}::timestamptz,
+      updated_at = now()
+  FROM rot
+  WHERE r.id = rot.id
+  RETURNING r.*
 )
-UPDATE rotation r
-SET anchor_at = next.anchor_new,
-    assignees = next.assignees_new,
-    override_for_shift_start = next.override_for_shift_start_new,
-    updated_at = now()
-FROM next
-WHERE r.id = next.id
-RETURNING r.*;
+SELECT * FROM updated;
 `;
 }
 
-/**
- * Update the shift interval while keeping the current base assignee stable.
- *
- * Parameters:
- * - $1: rotation_id (uuid)
- * - $2: new_shift_length (interval)
- * - $3: at_ts (timestamptz) - reference time for current assignee calculation
- *
- * This rotates the assignees array left so that the same person remains
- * the current base assignee after the interval change. If an override is active
- * for the current shift, it updates override_for_shift_start to the new shift_start.
- */
 export function getUpdateIntervalSQL(rotationId: string, newShiftLength: string): SQL<RotationRow> {
 	const atTs = new Date();
 	return sql`
 WITH locked AS (
   SELECT *
-  FROM rotation
+  FROM ${rotation}
   WHERE id = ${rotationId}
   FOR UPDATE
+),
+members AS (
+  SELECT *
+  FROM ${rotationMember}
+  WHERE rotation_id = ${rotationId}
+  FOR UPDATE
+),
+member_count AS (
+  SELECT count(*)::int AS n
+  FROM members
 ),
 calc AS (
   SELECT
     locked.*,
-    cardinality(assignees) AS n,
-    date_bin(shift_length, ${atTs}::timestamptz, anchor_at) AS old_shift_start,
-    date_bin(${newShiftLength}::interval, ${atTs}::timestamptz, anchor_at) AS new_shift_start
-  FROM locked
+    member_count.n,
+    date_bin(locked.shift_length, ${atTs}::timestamptz, locked.anchor_at) AS old_shift_start,
+    date_bin(${newShiftLength}::interval, ${atTs}::timestamptz, locked.anchor_at) AS new_shift_start
+  FROM locked, member_count
 ),
 idx AS (
   SELECT
-    *,
+    calc.*,
     CASE WHEN n = 0 THEN NULL ELSE floor(
       extract(epoch from (old_shift_start - anchor_at)) /
       extract(epoch from shift_length)
@@ -230,244 +235,204 @@ rot AS (
     CASE WHEN n = 0 THEN 0 ELSE (((i_old - i_new) % n) + n) % n END AS s
   FROM pos
 ),
-next AS (
-  SELECT
-    id,
-    CASE
-      WHEN n = 0 THEN assignees
-      WHEN s = 0 THEN assignees
-      ELSE (assignees[(s+1):n] || assignees[1:s])
-    END AS assignees_new,
-    CASE
-      WHEN assignee_overwrite IS NOT NULL
-           AND override_for_shift_start = old_shift_start
-      THEN new_shift_start
-      ELSE override_for_shift_start
-    END AS override_for_shift_start_new,
-    ${newShiftLength}::interval AS shift_length_new
+shifted AS (
+  UPDATE ${rotationMember} rm
+  SET position = CASE
+    WHEN rot.n = 0 THEN rm.position
+    ELSE (((rm.position - rot.s) % rot.n) + rot.n) % rot.n
+  END
   FROM rot
+  WHERE rm.rotation_id = rot.id
+  RETURNING rm.*
+),
+updated AS (
+  UPDATE ${rotation} r
+  SET shift_length = ${newShiftLength}::interval,
+      updated_at = now()
+  FROM rot
+  WHERE r.id = rot.id
+  RETURNING r.*
 )
-UPDATE rotation r
-SET shift_length = next.shift_length_new,
-    assignees = next.assignees_new,
-    override_for_shift_start = next.override_for_shift_start_new,
-    updated_at = now()
-FROM next
-WHERE r.id = next.id
-RETURNING r.*;
+SELECT * FROM updated;
+`;
+}
+
+export function getAddAssigneeSQL(rotationId: string, assigneeId: string): SQL<void> {
+	return sql`
+WITH locked AS (
+  SELECT 1
+  FROM ${rotation}
+  WHERE id = ${rotationId}
+  FOR UPDATE
+),
+members AS (
+  SELECT
+    position
+  FROM ${rotationMember}
+  WHERE rotation_id = ${rotationId}
+  FOR UPDATE
+),
+member_count AS (
+  SELECT count(*)::int AS n
+  FROM members
+),
+inserted AS (
+  INSERT INTO ${rotationMember} (rotation_id, assignee_id, position)
+  SELECT
+    ${rotationId}::uuid,
+    ${assigneeId}::text,
+    member_count.n
+  FROM member_count
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM ${rotationMember} rm
+    WHERE rm.rotation_id = ${rotationId}
+      AND rm.assignee_id = ${assigneeId}::text
+  )
+)
+UPDATE ${rotation}
+SET updated_at = now()
+WHERE id = ${rotationId};
 `;
 }
 
 /**
- * Add an assignee to the rotation while keeping the current base assignee stable,
- * except when newPosition === 0, which makes the new assignee the BASE immediately.
+ * Move an existing assignee to a new absolute position.
  *
- * newPosition semantics (relative to normalized array):
- * - 0 => make new assignee BASE now (insert at front)
- * - 1 => insert AFTER current base
- * - 2 => insert 2 places after current base
+ * newPosition semantics (0-based):
+ * - 0 => first
+ * - 1 => second
  * - ...
+ *
+ * NOTE: Must run inside a transaction that defers the
+ * "rotation_member_rotation_position_idx" constraint.
  */
-export function getAddAssigneeSQL(rotationId: string, assigneeId: string, newPosition?: number | null): SQL<RotationRow> {
-	newPosition ??= null;
-	const atTs = new Date();
-
+export function getMoveAssigneeSQL(rotationId: string, assigneeId: string, newPosition: number): SQL<void> {
 	return sql`
-WITH locked AS (
-  SELECT *
-  FROM rotation
-  WHERE id = ${rotationId}
+WITH target AS (
+  SELECT
+    rm.position
+  FROM ${rotationMember} rm
+  WHERE rm.rotation_id = ${rotationId}
+    AND rm.assignee_id = ${assigneeId}::text
   FOR UPDATE
+  LIMIT 1
 ),
-calc AS (
-  SELECT
-    locked.*,
-    cardinality(assignees) AS n,
-    date_bin(shift_length, ${atTs}::timestamptz, anchor_at) AS shift_start,
-    CASE WHEN cardinality(assignees) = 0 THEN NULL ELSE floor(
-      extract(epoch from (date_bin(shift_length, ${atTs}::timestamptz, anchor_at) - anchor_at)) /
-      extract(epoch from shift_length)
-    )::bigint END AS k
-  FROM locked
+stats AS (
+  SELECT count(*)::int AS n
+  FROM ${rotationMember}
+  WHERE rotation_id = ${rotationId}
 ),
-pos AS (
+target_pos AS (
   SELECT
-    *,
+    target.position AS curr_pos,
     CASE
-      WHEN n = 0 THEN 0
-      ELSE (((k % n) + n) % n)::int
-    END AS i
-  FROM calc
+      WHEN target.position IS NULL THEN NULL
+      WHEN ${newPosition}::int < 0 THEN NULL
+      WHEN ${newPosition}::int >= stats.n THEN NULL
+      ELSE ${newPosition}::int
+    END AS target_pos
+  FROM stats
+  LEFT JOIN target ON true
 ),
--- Normalize so current base is first
-norm AS (
+guard AS (
   SELECT
-    id,
-    shift_start,
-    n,
     CASE
-      WHEN n = 0 OR i = 0 THEN assignees
-      ELSE assignees[(i+1):n] || assignees[1:i]
-    END AS a
-  FROM pos
+      WHEN target_pos.curr_pos IS NULL THEN 'assignee_not_found'
+      WHEN target_pos.target_pos IS NULL THEN 'position_out_of_bounds'
+      ELSE '1'
+    END::int AS ok
+  FROM target_pos
 ),
-ins AS (
-  SELECT
-    id,
-    shift_start,
-    n,
-    a,
-    -- insertion position (1-based)
-    CASE
-      WHEN ${newPosition}::int IS NULL THEN n + 1
-      WHEN ${newPosition}::int <= 0 THEN 1
-      ELSE ${newPosition}::int + 1
-    END AS raw_pos
-  FROM norm
-),
-next AS (
-  SELECT
-    id,
-    shift_start,
-    CASE
-      WHEN n = 0 THEN ARRAY[${assigneeId}::text]
-      WHEN array_position(a, ${assigneeId}::text) IS NOT NULL THEN a
-      ELSE (
-        a[1:GREATEST(0, LEAST(raw_pos, n + 1) - 1)]
-        || ARRAY[${assigneeId}::text]::text[]
-        || a[LEAST(raw_pos, n + 1):n]
-      )
-    END AS assignees_new,
-    raw_pos
-  FROM ins
+updated AS (
+  UPDATE ${rotationMember} rm
+  SET position = CASE
+    WHEN rm.assignee_id = ${assigneeId}::text THEN target_pos.target_pos
+    WHEN target_pos.target_pos < target_pos.curr_pos
+      AND rm.position >= target_pos.target_pos
+      AND rm.position < target_pos.curr_pos
+      THEN rm.position + 1
+    WHEN target_pos.target_pos > target_pos.curr_pos
+      AND rm.position > target_pos.curr_pos
+      AND rm.position <= target_pos.target_pos
+      THEN rm.position - 1
+    ELSE rm.position
+  END
+  FROM target_pos, guard
+  WHERE rm.rotation_id = ${rotationId}
+    AND target_pos.curr_pos IS NOT NULL
+    AND target_pos.target_pos IS NOT NULL
 )
-UPDATE rotation r
-SET
-  assignees = next.assignees_new,
-  updated_at = now()
-FROM next
-WHERE r.id = next.id
-RETURNING r.*;
+UPDATE ${rotation}
+SET updated_at = now()
+WHERE id = ${rotationId};
 `;
 }
 
 /**
  * Remove an assignee from the rotation.
  *
- * Parameters:
- * - $1: rotation_id (uuid)
- * - $2: assignee_id (text) - the assignee to remove
- * - $3: at_ts (timestamptz) - reference time for current assignee calculation
- *
- * The array is first "normalized" by rotating so the current base is at the front,
- * then the assignee is removed. If the removed assignee is the current base,
- * the next person becomes the new base. If the removed assignee is the active override,
- * the override is cleared.
+ * NOTE: Must run inside a transaction that defers the
+ * "rotation_member_rotation_position_idx" constraint.
  */
-export function getRemoveAssigneeSQL(rotationId: string, assigneeId: string, clearOverride = true): SQL<RotationRow> {
+export function getRemoveAssigneeSQL(rotationId: string, assigneeId: string, shouldDeleteOverride = true): SQL<void> {
 	const atTs = new Date();
 	return sql`
-WITH locked AS (
-  SELECT *
-  FROM rotation
-  WHERE id = ${rotationId}
-  FOR UPDATE
-),
-calc AS (
+WITH target AS (
   SELECT
-    locked.*,
-    cardinality(assignees) AS n,
-    date_bin(shift_length, ${atTs}::timestamptz, anchor_at) AS shift_start,
-    CASE WHEN cardinality(assignees) = 0 THEN NULL ELSE floor(
-      extract(epoch from (date_bin(shift_length, ${atTs}::timestamptz, anchor_at) - anchor_at)) /
-      extract(epoch from shift_length)
-    )::bigint END AS k
-  FROM locked
+    rm.id,
+    rm.position
+  FROM ${rotationMember} rm
+  WHERE rm.rotation_id = ${rotationId}
+    AND rm.assignee_id = ${assigneeId}::text
+  LIMIT 1
 ),
-pos AS (
-  SELECT
-    *,
-    CASE
-      WHEN n = 0 THEN 0
-      ELSE (((k % n) + n) % n)::int
-    END AS i
-  FROM calc
+deleted AS (
+  DELETE FROM ${rotationMember}
+  WHERE id IN (SELECT id FROM target)
+  RETURNING position
 ),
-rotated AS (
-  SELECT
-    id,
-    shift_start,
-    assignee_overwrite,
-    override_for_shift_start,
-    CASE
-      WHEN n = 0 THEN assignees
-      WHEN i = 0 THEN assignees
-      ELSE (assignees[(i+1):n] || assignees[1:i])
-    END AS a
-  FROM pos
+shifted AS (
+  UPDATE ${rotationMember} rm
+  SET position = rm.position - 1
+  WHERE rm.rotation_id = ${rotationId}
+    AND rm.position > (SELECT position FROM deleted)
 ),
-next AS (
-  SELECT
-    id,
-    shift_start,
-    array_remove(a, ${assigneeId}::text) AS assignees_new,
-    CASE
-      WHEN assignee_overwrite = ${assigneeId}::text AND override_for_shift_start = shift_start AND ${clearOverride} = true
-      THEN NULL
-      ELSE assignee_overwrite
-    END AS assignee_overwrite_new,
-    CASE
-      WHEN assignee_overwrite = ${assigneeId}::text AND override_for_shift_start = shift_start AND ${clearOverride} = true
-      THEN NULL
-      ELSE override_for_shift_start
-    END AS override_for_shift_start_new
-  FROM rotated
+cleared_override AS (
+  DELETE FROM ${rotationOverride}
+  WHERE ${shouldDeleteOverride}::boolean
+    AND rotation_id = ${rotationId}
+    AND assignee_id = ${assigneeId}::text
+    AND start_at <= ${atTs}::timestamptz
+    AND end_at > ${atTs}::timestamptz
 )
-UPDATE rotation r
-SET assignees = next.assignees_new,
-    assignee_overwrite = next.assignee_overwrite_new,
-    override_for_shift_start = next.override_for_shift_start_new,
-    updated_at = now()
-FROM next
-WHERE r.id = next.id
-RETURNING r.*;
+UPDATE ${rotation}
+SET updated_at = now()
+WHERE id = ${rotationId};
 `;
 }
 
 /**
- * Set the override for a rotation at a given timestamp.
- *
- * Parameters:
- * - $1: rotation_id (uuid)
- * - $2: assignee_id (text) - the assignee to override
- * - $3: at_ts (timestamptz) - reference time for current assignee calculation
- *
- * This sets the override for the current shift.
+ * Set the override for a rotation's current shift.
  */
 export function getSetOverrideSQL(rotationId: string, assigneeId: string) {
-	return sql<{
-		id: string;
-		override_assignee: string | null;
-		override_for_shift_start: Date | null;
-	}>`
+	return sql<void>`
 WITH locked AS (
   SELECT
     id,
+    anchor_at,
+    shift_length,
     date_bin(shift_length, now(), anchor_at) AS shift_start
-  FROM rotation
+  FROM ${rotation}
   WHERE id = ${rotationId}
   FOR UPDATE
 )
-UPDATE rotation r
-SET
-  assignee_overwrite = ${assigneeId}::text,
-  override_for_shift_start = locked.shift_start,
-  updated_at = now()
-FROM locked
-WHERE r.id = locked.id
-RETURNING
-  r.id,
-  r.assignee_overwrite,
-  r.override_for_shift_start;
+INSERT INTO ${rotationOverride} (rotation_id, assignee_id, start_at, end_at)
+SELECT
+  locked.id,
+  ${assigneeId}::text,
+  locked.shift_start,
+  locked.shift_start + locked.shift_length
+FROM locked;
 `;
 }

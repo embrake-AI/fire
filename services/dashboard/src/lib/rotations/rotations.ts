@@ -1,8 +1,8 @@
 import { emailInDomains, type SHIFT_LENGTH_OPTIONS } from "@fire/common";
-import { getAddAssigneeSQL, getRemoveAssigneeSQL, getSetOverrideSQL, getUpdateIntervalSQL } from "@fire/db/rotation-helpers";
+import { getAddAssigneeSQL, getMoveAssigneeSQL, getRemoveAssigneeSQL, getSetOverrideSQL, getUpdateIntervalSQL } from "@fire/db/rotation-helpers";
 import { client, entryPoint, integration, rotation, rotationWithAssignee, user } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
-import { and, desc, eq, exists, type SQL } from "drizzle-orm";
+import { and, desc, eq, exists, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { authMiddleware } from "../auth/auth-middleware";
 import { uploadImageFromUrl } from "../blob";
@@ -91,7 +91,6 @@ export const createRotation = createServerFn({ method: "POST" })
 				name: data.name,
 				shiftLength: data.shiftLength,
 				anchorAt: data.anchorAt,
-				assignees: [],
 				teamId: data.teamId,
 			})
 			.returning();
@@ -182,10 +181,9 @@ export const addRotationAssignee = createServerFn({ method: "POST" })
 			throw new Error("Rotation not found");
 		}
 
-		const { rows } = await db.execute<InferFromSQL<ReturnType<typeof getAddAssigneeSQL>>>(getAddAssigneeSQL(data.rotationId, data.assigneeId));
-		const result = rows[0];
+		await db.execute(getAddAssigneeSQL(data.rotationId, data.assigneeId));
 
-		return { success: true, assignees: result?.assignees ?? [] };
+		return { success: true };
 	});
 
 export const addSlackUserAsRotationAssignee = createServerFn({ method: "POST" })
@@ -260,7 +258,7 @@ export const addSlackUserAsRotationAssignee = createServerFn({ method: "POST" })
 				});
 			}
 
-			await tx.execute<InferFromSQL<ReturnType<typeof getAddAssigneeSQL>>>(getAddAssigneeSQL(data.rotationId, userId));
+			await tx.execute(getAddAssigneeSQL(data.rotationId, userId));
 		});
 
 		return { success: true, userId };
@@ -279,13 +277,12 @@ export const reorderRotationAssignee = createServerFn({ method: "POST" })
 			throw new Error("Rotation not found");
 		}
 
-		const result = await db.transaction(async (tx) => {
-			await tx.execute(getRemoveAssigneeSQL(data.rotationId, data.assigneeId, false));
-			const { rows } = await tx.execute<InferFromSQL<ReturnType<typeof getAddAssigneeSQL>>>(getAddAssigneeSQL(data.rotationId, data.assigneeId, data.newPosition));
-			return rows[0];
+		await db.transaction(async (tx) => {
+			await tx.execute(sql`set constraints "rotation_member_rotation_position_idx" deferred`);
+			await tx.execute(getMoveAssigneeSQL(data.rotationId, data.assigneeId, data.newPosition));
 		});
 
-		return { success: true, assignees: result?.assignees ?? [] };
+		return { success: true };
 	});
 
 export const removeRotationAssignee = createServerFn({ method: "POST" })
@@ -301,10 +298,12 @@ export const removeRotationAssignee = createServerFn({ method: "POST" })
 			throw new Error("Rotation not found");
 		}
 
-		const { rows } = await db.execute<InferFromSQL<ReturnType<typeof getRemoveAssigneeSQL>>>(getRemoveAssigneeSQL(data.rotationId, data.assigneeId));
-		const result = rows[0];
+		await db.transaction(async (tx) => {
+			await tx.execute(sql`set constraints "rotation_member_rotation_position_idx" deferred`);
+			await tx.execute(getRemoveAssigneeSQL(data.rotationId, data.assigneeId, true));
+		});
 
-		return { success: true, assignees: result?.assignees ?? [] };
+		return { success: true };
 	});
 
 export const setRotationOverride = createServerFn({ method: "POST" })
@@ -320,15 +319,12 @@ export const setRotationOverride = createServerFn({ method: "POST" })
 			throw new Error("Rotation not found");
 		}
 
-		const { rows } = await db.execute<InferFromSQL<ReturnType<typeof getSetOverrideSQL>>>(getSetOverrideSQL(data.rotationId, data.assigneeId));
-		const result = rows[0];
-		if (!result) {
-			throw new Error("Failed to set rotation override");
-		}
+		await db.execute(getSetOverrideSQL(data.rotationId, data.assigneeId));
 
-		return { success: true, assigneeOverwrite: "" };
+		return { success: true };
 	});
 
+// TODO: This now clears `a` override, but we should target a specific one
 export const clearRotationOverride = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { rotationId: string }) => data)
@@ -342,10 +338,19 @@ export const clearRotationOverride = createServerFn({ method: "POST" })
 			throw new Error("Rotation not found");
 		}
 
-		await db
-			.update(rotation)
-			.set({ assigneeOverwrite: null, overrideForShiftStart: null })
-			.where(and(eq(rotation.id, data.rotationId), eq(rotation.clientId, context.clientId)));
+		await db.execute(sql`
+			with target as (
+				select id
+				from rotation_override
+				where rotation_id = ${data.rotationId}
+					and start_at <= now()
+					and end_at > now()
+				order by created_at desc, id desc
+				limit 1
+			)
+			delete from rotation_override
+			where id in (select id from target)
+		`);
 
 		return { success: true };
 	});

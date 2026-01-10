@@ -1,36 +1,9 @@
 import { sql } from "drizzle-orm";
-import { interval, json, pgView, text, timestamp, uuid } from "drizzle-orm/pg-core";
-import { userIntegration } from "./integration";
+import { interval, pgView, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { rotation } from "./rotation";
+import { rotationMember } from "./rotation-member";
+import { rotationOverride } from "./rotation-override";
 
-export const shiftStart = sql`date_bin(${rotation.shiftLength}, now(), ${rotation.anchorAt})`;
-
-export const baseAssignee = sql<string>`
-  CASE
-    WHEN cardinality(${rotation.assignees}) = 0 THEN NULL
-    ELSE ${rotation.assignees}[(
-      (
-        (
-          floor(
-            extract(epoch from (${shiftStart} - ${rotation.anchorAt})) /
-            extract(epoch from ${rotation.shiftLength})
-          )::bigint % cardinality(${rotation.assignees})
-        ) + cardinality(${rotation.assignees})
-      ) % cardinality(${rotation.assignees})
-    )::int + 1]
-  END
-`;
-
-export const effectiveAssignee = sql<string>`
-  CASE
-    WHEN ${rotation.assigneeOverwrite} IS NOT NULL
-     AND ${rotation.overrideForShiftStart} = ${shiftStart}
-    THEN ${rotation.assigneeOverwrite}
-    ELSE ${baseAssignee}
-  END
-`;
-
-// Not ideal that we have to redefine this, but else it doesn't work well with relations
 export const rotationWithAssignee = pgView("rotationWithAssignee", {
 	id: uuid("id").notNull(),
 	name: text("name").notNull(),
@@ -43,41 +16,53 @@ export const rotationWithAssignee = pgView("rotationWithAssignee", {
 	baseAssignee: text("base_assignee"),
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
-	userIntegrations: json("user_integrations").$type<Array<{ platform: string; userId: string }>>(),
 }).as(sql`
 	select
-		${rotation.id} as "id",
-		${rotation.name} as "name",
-		${rotation.clientId} as "client_id",
-		${shiftStart} as "shift_start",
-		${rotation.shiftLength} as "shift_length",
-		${rotation.assignees} as "assignees",
-		${effectiveAssignee} as "effective_assignee",
-		${baseAssignee} as "base_assignee",
-		${rotation.createdAt} as "created_at",
-		${rotation.updatedAt} as "updated_at",
-		${rotation.teamId} as "team_id",
-		COALESCE(
-			json_agg(
-				json_build_object(
-					'platform', ${userIntegration.platform},
-					'userId', ${userIntegration.data} ->> 'userId'
-				)
-			) FILTER (WHERE ${userIntegration.platform} IS NOT NULL),
-			'[]'::json
-		) as "user_integrations"
-	from ${rotation}
-	left join ${userIntegration} on ${effectiveAssignee} = ${userIntegration.userId}
-	group by
-		${rotation.id},
-		${rotation.name},
-		${rotation.clientId},
-		${rotation.shiftLength},
-		${rotation.assignees},
-		${rotation.anchorAt},
-		${rotation.assigneeOverwrite},
-		${rotation.overrideForShiftStart},
-		${rotation.createdAt},
-		${rotation.updatedAt},
-		${rotation.teamId}
+		r.id as "id",
+		r.name as "name",
+		r.client_id as "client_id",
+		date_bin(r.shift_length, now(), r.anchor_at) as "shift_start",
+		r.shift_length as "shift_length",
+		coalesce(m.assignees, '{}'::text[]) as "assignees",
+		coalesce(o.assignee_id, b.base_assignee) as "effective_assignee",
+		b.base_assignee as "base_assignee",
+		r.created_at as "created_at",
+		r.updated_at as "updated_at",
+		r.team_id as "team_id"
+	from ${rotation} r
+	left join lateral (
+		select
+			count(*)::int as n,
+			array_agg(rm.assignee_id order by rm.position) as assignees
+		from ${rotationMember} rm
+		where rm.rotation_id = r.id
+	) m on true
+	left join lateral (
+		select rm.assignee_id as base_assignee
+		from ${rotationMember} rm
+		where rm.rotation_id = r.id
+			and rm.position = case
+				when m.n = 0 then null
+				else (
+					(
+						(
+							floor(
+								extract(epoch from (date_bin(r.shift_length, now(), r.anchor_at) - r.anchor_at)) /
+								extract(epoch from r.shift_length)
+							)::bigint % m.n
+						) + m.n
+					) % m.n
+				)::int
+			end
+		limit 1
+	) b on true
+	left join lateral (
+		select ro.assignee_id
+		from ${rotationOverride} ro
+		where ro.rotation_id = r.id
+			and ro.start_at <= now()
+			and ro.end_at > now()
+		order by ro.created_at desc, ro.id desc
+		limit 1
+	) o on true
 `);

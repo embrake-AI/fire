@@ -5,5 +5,7 @@ export * from "./ignore";
 export * from "./incident";
 export * from "./integration";
 export * from "./rotation";
+export * from "./rotation-member";
+export * from "./rotation-override";
 export * from "./rotation-with-assignee";
 export * from "./team";

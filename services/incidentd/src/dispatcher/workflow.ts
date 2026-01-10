@@ -1,4 +1,4 @@
-import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
+import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep, type WorkflowStepConfig } from "cloudflare:workers";
 import type { IS, IS_Event } from "@fire/common";
 import * as dashboardSender from "../adapters/dashboard/sender";
 import * as slackSender from "../adapters/slack/sender";
@@ -59,13 +59,15 @@ async function settleDispatch(label: string, tasks: Array<Promise<unknown> | und
 	}
 }
 
+type Callback = <T>() => Promise<T>;
 function createStepDo(step: WorkflowStep, eventId: number): StepDo {
-	return ((name: string, configOrCallback: any, callback?: any) => {
+	return ((name: string, configOrCallback: WorkflowStepConfig | Callback, callback?: Callback) => {
 		const prefixedName = `${name}:${eventId}`;
-		if (callback !== undefined) {
+		if (callback !== undefined && typeof configOrCallback !== "function") {
 			return step.do(prefixedName, configOrCallback, callback);
+		} else if (typeof configOrCallback === "function") {
+			return step.do(prefixedName, configOrCallback);
 		}
-		return step.do(prefixedName, configOrCallback);
 	}) as StepDo;
 }
 
