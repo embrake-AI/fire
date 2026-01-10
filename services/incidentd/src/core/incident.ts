@@ -382,7 +382,7 @@ export class Incident extends DurableObject<Env> {
 			state,
 			event: { event_type: "MESSAGE_ADDED", event_data: { message, userId, messageId } },
 			adapter,
-			eventMetadata: slackUserToken ? { slackUserToken } : undefined,
+			eventMetadata: { adapter, ...(slackUserToken ? { slackUserToken } : {}) },
 		});
 	}
 

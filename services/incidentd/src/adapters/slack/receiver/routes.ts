@@ -140,6 +140,11 @@ slackRoutes.post("/events", async (c) => {
 				return c.text("OK");
 			}
 
+			// Ignore system messages like "X has joined the channel"
+			if (event.subtype) {
+				return c.text("OK");
+			}
+
 			if (thread) {
 				const botOriginated = message.parent_user_id && message.parent_user_id === slackIntegration.data.botUserId;
 				if (botOriginated) {

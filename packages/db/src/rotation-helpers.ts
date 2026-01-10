@@ -1,6 +1,21 @@
 import { type SQL, sql } from "drizzle-orm";
 import { rotation, rotationMember, rotationOverride } from "./schema";
 
+/**
+ * Rotation position management.
+ *
+ * Each member has a storage position (0 to n-1). The current on-call is
+ * determined by: base_pos = shift_index % n, where shift_index counts
+ * shifts since anchor_at.
+ *
+ * When adding/removing members, we preserve the current assignee by:
+ * 1. Converting storage positions to display positions (relative to current on-call)
+ * 2. Inserting/removing in display order
+ * 3. Converting back to storage positions with the new member count
+ *
+ * This ensures the on-call person stays on-call despite the modulo base changing.
+ */
+
 type RotationRow = typeof rotation.$inferSelect;
 
 /**
@@ -260,46 +275,99 @@ SELECT * FROM updated;
 export function getAddAssigneeSQL(rotationId: string, assigneeId: string): SQL<void> {
 	return sql`
 WITH locked AS (
-  SELECT 1
+  SELECT id, anchor_at, shift_length
   FROM ${rotation}
   WHERE id = ${rotationId}
   FOR UPDATE
 ),
 members AS (
-  SELECT
-    position
-  FROM ${rotationMember}
-  WHERE rotation_id = ${rotationId}
+  SELECT rm.id, rm.position, rm.assignee_id
+  FROM ${rotationMember} rm
+  WHERE rm.rotation_id = ${rotationId}
   FOR UPDATE
 ),
-member_count AS (
-  SELECT count(*)::int AS n
+existing_check AS (
+  SELECT 1 AS already_exists
   FROM members
+  WHERE assignee_id = ${assigneeId}::text
+  LIMIT 1
+),
+member_count AS (
+  SELECT count(*)::int AS n_old
+  FROM members
+),
+calc AS (
+  SELECT
+    locked.*,
+    member_count.n_old,
+    CASE WHEN existing_check.already_exists IS NULL THEN 1 ELSE 0 END AS will_insert,
+    member_count.n_old + CASE WHEN existing_check.already_exists IS NULL THEN 1 ELSE 0 END AS n_new,
+    date_bin(locked.shift_length, now(), locked.anchor_at) AS shift_start
+  FROM locked, member_count
+  LEFT JOIN existing_check ON true
+),
+idx AS (
+  SELECT
+    calc.*,
+    floor(
+      extract(epoch from (shift_start - anchor_at)) /
+      extract(epoch from shift_length)
+    )::bigint AS shift_index
+  FROM calc
+),
+base AS (
+  SELECT
+    idx.*,
+    CASE
+      WHEN n_old = 0 THEN 0
+      ELSE (((shift_index % n_old) + n_old) % n_old)::int
+    END AS base_pos_old,
+    CASE
+      WHEN n_new = 0 THEN 0
+      ELSE (((shift_index % n_new) + n_new) % n_new)::int
+    END AS base_pos_new
+  FROM idx
 ),
 inserted AS (
   INSERT INTO ${rotationMember} (rotation_id, assignee_id, position)
   SELECT
     ${rotationId}::uuid,
     ${assigneeId}::text,
-    member_count.n
-  FROM member_count
-  WHERE NOT EXISTS (
-    SELECT 1
-    FROM ${rotationMember} rm
-    WHERE rm.rotation_id = ${rotationId}
-      AND rm.assignee_id = ${assigneeId}::text
-  )
+    ((base.n_old + base.base_pos_new) % base.n_new)::int
+  FROM base
+  WHERE base.will_insert = 1
+  RETURNING id
+),
+shifted AS (
+  UPDATE ${rotationMember} rm
+  SET position = CASE
+    WHEN base.will_insert = 0 THEN rm.position
+    WHEN base.n_old = 0 THEN rm.position
+    ELSE ((((rm.position - base.base_pos_old + base.n_old) % base.n_old) + base.base_pos_new) % base.n_new)::int
+  END
+  FROM base
+  WHERE rm.rotation_id = ${rotationId}
+    AND rm.assignee_id != ${assigneeId}::text
+  RETURNING rm.*
+),
+touch AS (
+  UPDATE ${rotation}
+  SET updated_at = now()
+  WHERE id = ${rotationId}
+  RETURNING 1
 )
-UPDATE ${rotation}
-SET updated_at = now()
-WHERE id = ${rotationId};
+SELECT
+  (SELECT count(*) FROM inserted) +
+  (SELECT count(*) FROM shifted) +
+  (SELECT count(*) FROM touch);
 `;
 }
 
 /**
- * Move an existing assignee to a new absolute position.
+ * Move an existing assignee to a new position in the rotation order,
+ * with the current assignee treated as position 0.
  *
- * newPosition semantics (0-based):
+ * newPosition semantics (0-based, relative to current assignee):
  * - 0 => first
  * - 1 => second
  * - ...
@@ -311,29 +379,78 @@ export function getMoveAssigneeSQL(rotationId: string, assigneeId: string, newPo
 	return sql`
 WITH target AS (
   SELECT
-    rm.position
+    rm.position,
+    rm.assignee_id
   FROM ${rotationMember} rm
   WHERE rm.rotation_id = ${rotationId}
-    AND rm.assignee_id = ${assigneeId}::text
   FOR UPDATE
-  LIMIT 1
 ),
 stats AS (
-  SELECT count(*)::int AS n
-  FROM ${rotationMember}
-  WHERE rotation_id = ${rotationId}
+  SELECT
+    r.anchor_at,
+    r.shift_length,
+    (SELECT count(*)::int FROM target) AS n
+  FROM ${rotation} r
+  WHERE r.id = ${rotationId}
+),
+calc AS (
+  SELECT
+    stats.*,
+    date_bin(stats.shift_length, now(), stats.anchor_at) AS shift_start
+  FROM stats
+),
+idx AS (
+  SELECT
+    calc.*,
+    CASE
+      WHEN n = 0 THEN NULL
+      ELSE floor(
+        extract(epoch from (shift_start - anchor_at)) /
+        extract(epoch from shift_length)
+      )::bigint
+    END AS shift_index
+  FROM calc
+),
+base AS (
+  SELECT
+    idx.*,
+    CASE
+      WHEN n = 0 THEN NULL
+      ELSE (((shift_index % n) + n) % n)::int
+    END AS base_pos
+  FROM idx
+),
+target_row AS (
+  SELECT position AS curr_pos
+  FROM target
+  WHERE assignee_id = ${assigneeId}::text
+  LIMIT 1
 ),
 target_pos AS (
   SELECT
-    target.position AS curr_pos,
     CASE
-      WHEN target.position IS NULL THEN NULL
+      WHEN target_row.curr_pos IS NULL THEN NULL
+      WHEN base.n = 0 THEN NULL
       WHEN ${newPosition}::int < 0 THEN NULL
-      WHEN ${newPosition}::int >= stats.n THEN NULL
+      WHEN ${newPosition}::int >= base.n THEN NULL
       ELSE ${newPosition}::int
-    END AS target_pos
-  FROM stats
-  LEFT JOIN target ON true
+    END AS target_pos,
+    CASE
+      WHEN target_row.curr_pos IS NULL THEN NULL
+      WHEN base.n = 0 THEN NULL
+      ELSE (((target_row.curr_pos - base.base_pos) % base.n + base.n) % base.n)::int
+    END AS curr_pos,
+    base.n,
+    base.base_pos
+  FROM base
+  LEFT JOIN target_row ON true
+),
+display AS (
+  SELECT
+    t.assignee_id,
+    (((t.position - target_pos.base_pos) % target_pos.n + target_pos.n) % target_pos.n)::int AS display_pos
+  FROM target t, target_pos
+  WHERE target_pos.n > 0
 ),
 guard AS (
   SELECT
@@ -347,19 +464,21 @@ guard AS (
 updated AS (
   UPDATE ${rotationMember} rm
   SET position = CASE
-    WHEN rm.assignee_id = ${assigneeId}::text THEN target_pos.target_pos
+    WHEN rm.assignee_id = ${assigneeId}::text
+      THEN ((target_pos.target_pos + target_pos.base_pos) % target_pos.n)
     WHEN target_pos.target_pos < target_pos.curr_pos
-      AND rm.position >= target_pos.target_pos
-      AND rm.position < target_pos.curr_pos
-      THEN rm.position + 1
+      AND display.display_pos >= target_pos.target_pos
+      AND display.display_pos < target_pos.curr_pos
+      THEN ((display.display_pos + 1 + target_pos.base_pos) % target_pos.n)
     WHEN target_pos.target_pos > target_pos.curr_pos
-      AND rm.position > target_pos.curr_pos
-      AND rm.position <= target_pos.target_pos
-      THEN rm.position - 1
+      AND display.display_pos > target_pos.curr_pos
+      AND display.display_pos <= target_pos.target_pos
+      THEN ((display.display_pos - 1 + target_pos.n + target_pos.base_pos) % target_pos.n)
     ELSE rm.position
   END
-  FROM target_pos, guard
+  FROM target_pos, guard, display
   WHERE rm.rotation_id = ${rotationId}
+    AND rm.assignee_id = display.assignee_id
     AND target_pos.curr_pos IS NOT NULL
     AND target_pos.target_pos IS NOT NULL
 )
@@ -378,25 +497,88 @@ WHERE id = ${rotationId};
 export function getRemoveAssigneeSQL(rotationId: string, assigneeId: string, shouldDeleteOverride = true): SQL<void> {
 	const atTs = new Date();
 	return sql`
-WITH target AS (
-  SELECT
-    rm.id,
-    rm.position
+WITH locked AS (
+  SELECT id, anchor_at, shift_length
+  FROM ${rotation}
+  WHERE id = ${rotationId}
+  FOR UPDATE
+),
+members AS (
+  SELECT rm.id, rm.position, rm.assignee_id
   FROM ${rotationMember} rm
   WHERE rm.rotation_id = ${rotationId}
-    AND rm.assignee_id = ${assigneeId}::text
+  FOR UPDATE
+),
+member_count AS (
+  SELECT count(*)::int AS n_old
+  FROM members
+),
+target AS (
+  SELECT id, position
+  FROM members
+  WHERE assignee_id = ${assigneeId}::text
   LIMIT 1
+),
+calc AS (
+  SELECT
+    locked.*,
+    member_count.n_old,
+    member_count.n_old - CASE WHEN target.id IS NOT NULL THEN 1 ELSE 0 END AS n_new,
+    target.position AS deleted_pos,
+    date_bin(locked.shift_length, ${atTs}::timestamptz, locked.anchor_at) AS shift_start
+  FROM locked, member_count
+  LEFT JOIN target ON true
+),
+idx AS (
+  SELECT
+    calc.*,
+    floor(
+      extract(epoch from (shift_start - anchor_at)) /
+      extract(epoch from shift_length)
+    )::bigint AS shift_index
+  FROM calc
+),
+base AS (
+  SELECT
+    idx.*,
+    CASE
+      WHEN n_old = 0 THEN 0
+      ELSE (((shift_index % n_old) + n_old) % n_old)::int
+    END AS base_pos_old,
+    CASE
+      WHEN n_new = 0 THEN 0
+      ELSE (((shift_index % n_new) + n_new) % n_new)::int
+    END AS base_pos_new,
+    CASE
+      WHEN n_old = 0 THEN NULL
+      ELSE (((deleted_pos - (((shift_index % n_old) + n_old) % n_old)::int + n_old) % n_old))::int
+    END AS deleted_display
+  FROM idx
 ),
 deleted AS (
   DELETE FROM ${rotationMember}
   WHERE id IN (SELECT id FROM target)
-  RETURNING position
+  RETURNING id
 ),
 shifted AS (
   UPDATE ${rotationMember} rm
-  SET position = rm.position - 1
+  SET position = CASE
+    WHEN base.n_new = 0 THEN rm.position
+    WHEN base.deleted_pos IS NULL THEN rm.position
+    ELSE (
+      (
+        CASE
+          WHEN (((rm.position - base.base_pos_old + base.n_old) % base.n_old)) > base.deleted_display
+          THEN (((rm.position - base.base_pos_old + base.n_old) % base.n_old) - 1 + base.base_pos_new) % base.n_new
+          ELSE (((rm.position - base.base_pos_old + base.n_old) % base.n_old) + base.base_pos_new) % base.n_new
+        END
+      )::int
+    )
+  END
+  FROM base
   WHERE rm.rotation_id = ${rotationId}
-    AND rm.position > (SELECT position FROM deleted)
+    AND rm.assignee_id != ${assigneeId}::text
+  RETURNING rm.id
 ),
 cleared_override AS (
   DELETE FROM ${rotationOverride}
@@ -405,10 +587,19 @@ cleared_override AS (
     AND assignee_id = ${assigneeId}::text
     AND start_at <= ${atTs}::timestamptz
     AND end_at > ${atTs}::timestamptz
+  RETURNING id
+),
+touch AS (
+  UPDATE ${rotation}
+  SET updated_at = now()
+  WHERE id = ${rotationId}
+  RETURNING 1
 )
-UPDATE ${rotation}
-SET updated_at = now()
-WHERE id = ${rotationId};
+SELECT
+  (SELECT count(*) FROM deleted) +
+  (SELECT count(*) FROM shifted) +
+  (SELECT count(*) FROM cleared_override) +
+  (SELECT count(*) FROM touch);
 `;
 }
 

@@ -281,7 +281,8 @@ export const addSlackUserAsRotationAssignee = createServerFn({ method: "POST" })
 				});
 			}
 
-			await tx.execute(getAddAssigneeSQL(data.rotationId, userId));
+			const result = await tx.execute(getAddAssigneeSQL(data.rotationId, userId));
+			console.log(JSON.stringify(result.rows));
 		});
 
 		return { success: true, userId };
