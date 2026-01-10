@@ -2,6 +2,7 @@ import { IS_SEVERITY } from "@fire/common";
 import type { ActionsBlock, KnownBlock } from "@slack/types";
 import type { Incident, StepDo } from "../../../dispatcher/workflow";
 import type { Metadata } from "../../../handler";
+import { incidentChannelNameFromIdentifier } from "../shared";
 
 type SlackApiResponse = {
 	ok?: boolean;
@@ -9,26 +10,280 @@ type SlackApiResponse = {
 	error?: string;
 };
 
+type SlackChannelResponse = {
+	ok: boolean;
+	channel?: { id: string; name: string };
+	error?: string;
+};
+
+type ChannelResult = { channelId: string; channelName?: string };
+
+/**
+ * Creates a public Slack channel for an incident.
+ * Channel name format: inc-{identifier}
+ */
+async function createIncidentChannel(stepDo: StepDo, botToken: string, identifier: string): Promise<ChannelResult | null> {
+	const channelName = incidentChannelNameFromIdentifier(identifier);
+
+	return stepDo(
+		"slack.conversations.create",
+		{
+			retries: {
+				limit: 3,
+				delay: "1 second",
+			},
+		},
+		async () => {
+			const response = await fetch("https://slack.com/api/conversations.create", {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${botToken}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					name: channelName,
+					is_private: false,
+				}),
+			});
+			const payload = await response.json<SlackChannelResponse>();
+			if (!payload.ok) {
+				throw new Error(`Failed to create channel: ${payload.error}`);
+			}
+			return { channelId: payload.channel!.id, channelName: payload.channel!.name };
+		},
+	);
+}
+
+/**
+ * Invites a user to a Slack channel.
+ */
+async function inviteToChannel(stepDo: StepDo, botToken: string, channelId: string, userId: string): Promise<void> {
+	await stepDo(
+		"slack.conversations.invite",
+		{
+			retries: {
+				limit: 3,
+				delay: "1 second",
+			},
+		},
+		async () => {
+			const response = await fetch("https://slack.com/api/conversations.invite", {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${botToken}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					channel: channelId,
+					users: userId,
+				}),
+			});
+			const payload = await response.json<{ ok: boolean; error?: string }>();
+			// Ignore already_in_channel error
+			if (!payload.ok && payload.error !== "already_in_channel") {
+				throw new Error(`Failed to invite user: ${payload.error}`);
+			}
+		},
+	);
+}
+
+/**
+ * Archives a Slack channel.
+ */
+async function archiveChannel(stepDo: StepDo, botToken: string, channelId: string): Promise<void> {
+	await stepDo(
+		"slack.conversations.archive",
+		{
+			retries: {
+				limit: 3,
+				delay: "1 second",
+			},
+		},
+		async () => {
+			const response = await fetch("https://slack.com/api/conversations.archive", {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${botToken}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({ channel: channelId }),
+			});
+			const payload = await response.json<{ ok: boolean; error?: string }>();
+			// Ignore already_archived error
+			if (!payload.ok && payload.error !== "already_archived") {
+				throw new Error(`Failed to archive channel: ${payload.error}`);
+			}
+		},
+	);
+}
+
+/**
+ * Posts a message to a Slack channel.
+ */
+async function postToChannel(stepDo: StepDo, botToken: string, channelId: string, text: string, stepName: string): Promise<void> {
+	await stepDo(
+		stepName,
+		{
+			retries: {
+				limit: 3,
+				delay: "1 second",
+			},
+		},
+		async () => {
+			const response = await fetch("https://slack.com/api/chat.postMessage", {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${botToken}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					channel: channelId,
+					text,
+				}),
+			});
+			const payload = await response.json<SlackApiResponse>();
+			if (!response.ok || payload.ok === false) {
+				throw new Error(`Slack postMessage failed: ${payload.error ?? response.status}`);
+			}
+		},
+	);
+}
+
+async function pinMessage(stepDo: StepDo, botToken: string, channelId: string, messageTs: string): Promise<void> {
+	await stepDo(
+		"slack.pins.add",
+		{
+			retries: {
+				limit: 3,
+				delay: "1 second",
+			},
+		},
+		async () => {
+			const response = await fetch("https://slack.com/api/pins.add", {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${botToken}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					channel: channelId,
+					timestamp: messageTs,
+				}),
+			});
+			const payload = await response.json<SlackApiResponse>();
+			if (!response.ok || payload.ok === false) {
+				throw new Error(`Slack pin failed: ${payload.error ?? response.status}`);
+			}
+		},
+	);
+}
+
 /**
  * Useful guide to create Slack messages (has sub-routes for each type of message):
  *   - https://docs.slack.dev/messaging/
  */
 
 export async function incidentStarted(stepDo: StepDo, env: Env, id: string, { severity, status, assignee, title }: Incident, metadata: Metadata) {
-	const { botToken, channel, thread } = metadata;
+	const { botToken, channel, thread, identifier, incidentChannelId, incidentChannelMessageTs: existingIncidentChannelMessageTs, postedMessageTs } = metadata;
 	if (!botToken || !channel) {
 		// Thread is optional, if we have a channel and no thread, we'll post in the channel directly
 		return;
 	}
-	if (metadata.postedMessageTs) {
-		// Already posted, so no need to send again
+
+	if (postedMessageTs && incidentChannelId && existingIncidentChannelMessageTs) {
+		// Already posted and channel created, so no need to send again
 		return;
 	}
+
+	const channelResult = incidentChannelId
+		? { channelId: incidentChannelId, channelName: metadata.incidentChannelName }
+		: await createIncidentChannel(stepDo, botToken, identifier).catch((err) => {
+				console.error("Failed to create incident channel", err);
+				return null;
+			});
+
+	if (channelResult && assignee) {
+		await inviteToChannel(stepDo, botToken, channelResult.channelId, assignee).catch((err) => {
+			console.warn("Failed to invite assignee to channel", err);
+		});
+	}
+
 	const blocks = incidentBlocks({ frontendUrl: env.FRONTEND_URL, incidentId: id, severity, status, assigneeUserId: assignee, title });
 	const shouldBroadcast = severity === "high" && !!thread;
-	const [postResult] = await Promise.allSettled([
-		stepDo(
-			`slack.post-message`,
+
+	let threadPostResult: PromiseSettledResult<{ ts: string }> | null = null;
+	if (!postedMessageTs) {
+		const [postResult] = await Promise.allSettled([
+			stepDo(
+				`slack.post-message`,
+				{
+					retries: {
+						limit: 3,
+						delay: "1 second",
+					},
+				},
+				async () => {
+					const response = await fetch(`https://slack.com/api/chat.postMessage`, {
+						method: "POST",
+						headers: {
+							Authorization: `Bearer ${botToken}`,
+							"Content-Type": "application/json",
+						},
+						body: JSON.stringify({
+							text: "Incident created 🔴",
+							channel,
+							thread_ts: thread,
+							...(shouldBroadcast && { reply_broadcast: true }),
+							blocks,
+							metadata: {
+								event_type: "incident",
+								event_payload: { id },
+							},
+						}),
+					});
+					const payload = await response.json<SlackApiResponse>();
+					if (!response.ok || payload.ok === false || !payload.ts) {
+						throw new Error(`Slack postMessage failed: ${payload.error ?? response.status}`);
+					}
+					return { ts: payload.ts };
+				},
+			),
+			stepDo(
+				"slack.remove-reaction",
+				{
+					retries: {
+						limit: 3,
+						delay: "1 second",
+					},
+				},
+				async () => {
+					const response = await fetch(`https://slack.com/api/reactions.remove`, {
+						method: "POST",
+						headers: {
+							Authorization: `Bearer ${botToken}`,
+							"Content-Type": "application/json",
+						},
+						body: JSON.stringify({
+							name: "fire",
+							channel,
+							timestamp: thread,
+						}),
+					});
+					const payload = await response.json<SlackApiResponse>().catch(() => ({}) as SlackApiResponse);
+					if (!response.ok || payload.ok === false) {
+						throw new Error(`Slack remove reaction failed: ${payload.error ?? response.status}`);
+					}
+				},
+			),
+		]);
+		threadPostResult = postResult;
+	}
+
+	let incidentChannelMessageTs: string | undefined = existingIncidentChannelMessageTs;
+	let postedIncidentChannelMessage = false;
+	if (channelResult && !existingIncidentChannelMessageTs) {
+		const channelPostResult = await stepDo(
+			"slack.post-incident-channel-message",
 			{
 				retries: {
 					limit: 3,
@@ -43,10 +298,8 @@ export async function incidentStarted(stepDo: StepDo, env: Env, id: string, { se
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({
-						text: "Incident created 🔴",
-						channel,
-						thread_ts: thread,
-						...(shouldBroadcast && { reply_broadcast: true }),
+						text: `Incident: ${title}`,
+						channel: channelResult.channelId,
 						blocks,
 						metadata: {
 							event_type: "incident",
@@ -56,41 +309,44 @@ export async function incidentStarted(stepDo: StepDo, env: Env, id: string, { se
 				});
 				const payload = await response.json<SlackApiResponse>();
 				if (!response.ok || payload.ok === false || !payload.ts) {
-					throw new Error(`Slack postMessage failed: ${payload.error ?? response.status}`);
+					throw new Error(`Slack postMessage to incident channel failed: ${payload.error ?? response.status}`);
 				}
 				return { ts: payload.ts };
 			},
-		),
-		stepDo(
-			"slack.remove-reaction",
-			{
-				retries: {
-					limit: 3,
-					delay: "1 second",
-				},
-			},
-			async () => {
-				const response = await fetch(`https://slack.com/api/reactions.remove`, {
-					method: "POST",
-					headers: {
-						Authorization: `Bearer ${botToken}`,
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({
-						name: "fire",
-						channel,
-						timestamp: thread,
-					}),
-				});
-				const payload = await response.json<SlackApiResponse>().catch(() => ({}) as SlackApiResponse);
-				if (!response.ok || payload.ok === false) {
-					throw new Error(`Slack remove reaction failed: ${payload.error ?? response.status}`);
-				}
-			},
-		),
-	]);
-	if (postResult.status === "fulfilled") {
-		const { ts } = postResult.value;
+		).catch((err) => {
+			console.error("Failed to post to incident channel", err);
+			return null;
+		});
+		incidentChannelMessageTs = channelPostResult?.ts;
+		postedIncidentChannelMessage = !!incidentChannelMessageTs;
+	}
+	if (channelResult && postedIncidentChannelMessage && incidentChannelMessageTs) {
+		await pinMessage(stepDo, botToken, channelResult.channelId, incidentChannelMessageTs).catch((err) => {
+			console.warn("Failed to pin incident message", err);
+		});
+	}
+
+	const metadataUpdates: Record<string, string> = {};
+	if (channelResult) {
+		if (channelResult.channelId !== incidentChannelId) {
+			metadataUpdates.incidentChannelId = channelResult.channelId;
+		}
+		if (channelResult.channelName && channelResult.channelName !== metadata.incidentChannelName) {
+			metadataUpdates.incidentChannelName = channelResult.channelName;
+		}
+	}
+	if (incidentChannelMessageTs && incidentChannelMessageTs !== existingIncidentChannelMessageTs) {
+		metadataUpdates.incidentChannelMessageTs = incidentChannelMessageTs;
+	}
+	if (threadPostResult?.status === "fulfilled") {
+		const { ts } = threadPostResult.value;
+		metadataUpdates.postedMessageTs = ts;
+		metadataUpdates.channel = channel;
+		metadataUpdates.thread = thread ?? ts;
+	} else if (threadPostResult) {
+		console.error("Failed to create incident", threadPostResult.reason);
+	}
+	if (Object.keys(metadataUpdates).length) {
 		await stepDo(
 			"incident.addMetadata",
 			{
@@ -101,82 +357,164 @@ export async function incidentStarted(stepDo: StepDo, env: Env, id: string, { se
 			},
 			async () => {
 				const incident = env.INCIDENT.get(env.INCIDENT.idFromString(id));
-				await incident.addMetadata({ postedMessageTs: ts, channel, thread: thread ?? ts });
+				await incident.addMetadata(metadataUpdates);
 			},
 		);
-	} else {
-		console.error("Failed to create incident", postResult.reason);
 	}
 }
 
 export async function incidentSeverityUpdated(stepDo: StepDo, env: Env, id: string, incident: Incident, metadata: Metadata) {
 	const { severity, status, assignee, title } = incident;
-	const { botToken, channel, thread, postedMessageTs } = metadata;
-	if (!botToken || !channel || !postedMessageTs) {
-		// Not created through Slack, so no message to send
+	const { botToken, channel, thread, postedMessageTs, incidentChannelId, incidentChannelMessageTs } = metadata;
+	if (!botToken) {
 		return;
 	}
 	const shouldBroadcast = severity === "high" && !!thread;
-	await updateIncidentMessage({
-		stepDo,
-		frontendUrl: env.FRONTEND_URL,
-		botToken,
-		channel,
-		postedMessageTs,
-		id,
-		severity,
-		status,
-		assignee,
-		broadcast: shouldBroadcast,
-		incidentName: title,
-	});
+
+	if (channel && postedMessageTs) {
+		await updateIncidentMessage({
+			stepDo,
+			stepName: "slack.update-message.thread",
+			frontendUrl: env.FRONTEND_URL,
+			botToken,
+			channel,
+			postedMessageTs,
+			id,
+			severity,
+			status,
+			assignee,
+			broadcast: shouldBroadcast,
+			incidentName: title,
+		});
+	}
+
+	if (incidentChannelId) {
+		if (incidentChannelMessageTs) {
+			await updateIncidentMessage({
+				stepDo,
+				stepName: "slack.update-message.incident-channel",
+				frontendUrl: env.FRONTEND_URL,
+				botToken,
+				channel: incidentChannelId,
+				postedMessageTs: incidentChannelMessageTs,
+				id,
+				severity,
+				status,
+				assignee,
+				incidentName: title,
+			});
+		}
+		await postToChannel(stepDo, botToken, incidentChannelId, `Severity changed to *${severity}*`, "slack.post-severity-update");
+	}
 }
 
 export async function incidentAssigneeUpdated(stepDo: StepDo, env: Env, id: string, incident: Incident, metadata: Metadata) {
 	const { severity, status, assignee, title } = incident;
-	const { botToken, channel, postedMessageTs } = metadata;
-	if (!botToken || !channel || !postedMessageTs) {
-		// Not created through Slack, so no message to send
+	const { botToken, channel, postedMessageTs, incidentChannelId, incidentChannelMessageTs } = metadata;
+	if (!botToken) {
 		return;
 	}
-	await updateIncidentMessage({
-		stepDo,
-		frontendUrl: env.FRONTEND_URL,
-		botToken,
-		channel,
-		postedMessageTs,
-		id,
-		severity,
-		status,
-		assignee,
-		incidentName: title,
-	});
+
+	if (channel && postedMessageTs) {
+		await updateIncidentMessage({
+			stepDo,
+			stepName: "slack.update-message.thread",
+			frontendUrl: env.FRONTEND_URL,
+			botToken,
+			channel,
+			postedMessageTs,
+			id,
+			severity,
+			status,
+			assignee,
+			incidentName: title,
+		});
+	}
+
+	if (incidentChannelId) {
+		if (assignee) {
+			await inviteToChannel(stepDo, botToken, incidentChannelId, assignee).catch((err) => {
+				console.warn("Failed to invite new assignee to channel", err);
+			});
+		}
+		if (incidentChannelMessageTs) {
+			await updateIncidentMessage({
+				stepDo,
+				stepName: "slack.update-message.incident-channel",
+				frontendUrl: env.FRONTEND_URL,
+				botToken,
+				channel: incidentChannelId,
+				postedMessageTs: incidentChannelMessageTs,
+				id,
+				severity,
+				status,
+				assignee,
+				incidentName: title,
+			});
+		}
+		const assigneeText = assignee ? `Assignee changed to <@${assignee}>` : "Assignee cleared";
+		await postToChannel(stepDo, botToken, incidentChannelId, assigneeText, "slack.post-assignee-update");
+	}
 }
 
 export async function incidentStatusUpdated(stepDo: StepDo, env: Env, id: string, incident: Incident, message: string, metadata: Metadata) {
 	const { severity, status, assignee, title } = incident;
-	const { botToken, channel, postedMessageTs } = metadata;
-	if (!botToken || !channel || !postedMessageTs) {
-		// Not created through Slack, so no message to send
+	const { botToken, channel, postedMessageTs, incidentChannelId, incidentChannelMessageTs } = metadata;
+	if (!botToken) {
 		return;
 	}
-	await updateIncidentMessage({
-		stepDo,
-		frontendUrl: env.FRONTEND_URL,
-		botToken,
-		channel,
-		postedMessageTs,
-		id,
-		severity,
-		status,
-		assignee,
-		statusMessage: message,
-		incidentName: title,
-	});
+
+	if (channel && postedMessageTs) {
+		await updateIncidentMessage({
+			stepDo,
+			stepName: "slack.update-message.thread",
+			frontendUrl: env.FRONTEND_URL,
+			botToken,
+			channel,
+			postedMessageTs,
+			id,
+			severity,
+			status,
+			assignee,
+			statusMessage: message,
+			incidentName: title,
+		});
+	}
+
+	if (incidentChannelId) {
+		if (incidentChannelMessageTs) {
+			await updateIncidentMessage({
+				stepDo,
+				stepName: "slack.update-message.incident-channel",
+				frontendUrl: env.FRONTEND_URL,
+				botToken,
+				channel: incidentChannelId,
+				postedMessageTs: incidentChannelMessageTs,
+				id,
+				severity,
+				status,
+				assignee,
+				statusMessage: message,
+				incidentName: title,
+			});
+		}
+
+		const statusEmoji = status === "resolved" ? "✅" : status === "mitigating" ? "🟡" : "🔴";
+		const statusText = message ? `Status: ${statusEmoji} *${status}*\n${message}` : `Status: ${statusEmoji} *${status}*`;
+		await postToChannel(stepDo, botToken, incidentChannelId, statusText, "slack.post-status-update");
+
+		if (status === "resolved") {
+			await postToChannel(stepDo, botToken, incidentChannelId, "This channel will now be archived.", "slack.post-archive-notice");
+			await archiveChannel(stepDo, botToken, incidentChannelId).catch((err) => {
+				console.warn("Failed to archive incident channel", err);
+			});
+		}
+	}
 }
 
 async function updateIncidentMessage({
 	stepDo,
+	stepName,
 	frontendUrl,
 	botToken,
 	channel,
@@ -190,6 +528,7 @@ async function updateIncidentMessage({
 	incidentName,
 }: {
 	stepDo: StepDo;
+	stepName: string;
 	frontendUrl: string;
 	botToken: string;
 	channel: string;
@@ -197,7 +536,7 @@ async function updateIncidentMessage({
 	id: string;
 	severity: Incident["severity"];
 	status: Incident["status"];
-	assignee: string;
+	assignee?: string;
 	statusMessage?: string;
 	broadcast?: boolean;
 	incidentName: string;
@@ -205,7 +544,7 @@ async function updateIncidentMessage({
 	const blocks = incidentBlocks({ frontendUrl, incidentId: id, severity, status, assigneeUserId: assignee, statusMessage, title: incidentName });
 	const textFallback = `${incidentName} - ${status === "resolved" ? "resolved ✅" : status === "mitigating" ? "mitigating 🟡" : "open 🔴"}`;
 	await stepDo(
-		`slack.update-message`,
+		stepName,
 		{
 			retries: {
 				limit: 3,

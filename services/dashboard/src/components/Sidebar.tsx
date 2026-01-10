@@ -174,6 +174,16 @@ function WorkspaceSelector(props: { collapsed: Accessor<boolean>; onToggleCollap
 	const [open, setOpen] = createSignal(false);
 	const [isSigningOut, setIsSigningOut] = createSignal(false);
 
+	// Delay the expand button appearance to avoid flash during collapse transition
+	const [showExpandButton, setShowExpandButton] = createSignal(false);
+	createEffect(() => {
+		if (props.collapsed()) {
+			const timeout = setTimeout(() => setShowExpandButton(true), 200);
+			return () => clearTimeout(timeout);
+		}
+		setShowExpandButton(false);
+	});
+
 	const handleSignOut = async () => {
 		if (isSigningOut()) return;
 		setIsSigningOut(true);
@@ -238,7 +248,7 @@ function WorkspaceSelector(props: { collapsed: Accessor<boolean>; onToggleCollap
 					</PopoverContent>
 				</Popover>
 
-				<Show when={props.collapsed()}>
+				<Show when={showExpandButton()}>
 					<button
 						type="button"
 						onClick={(e) => {

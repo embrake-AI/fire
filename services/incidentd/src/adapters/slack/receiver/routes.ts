@@ -3,8 +3,9 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { type AuthContext, addMessage, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
 import { ASSERT_NEVER } from "../../../lib/utils";
+import { extractIdentifierFromChannelName, normalizeIncidentIdentifier } from "../shared";
 import { verifySlackRequestMiddleware } from "./middleware";
-import { getIncidentIdFromMessageMetadata, getSlackIntegration, handleStatusUpdate, type SlackEventPayload, type SlackInteractionPayload } from "./utils";
+import { getChannelInfo, getIncidentIdFromMessageMetadata, getSlackIntegration, handleStatusUpdate, type SlackEventPayload, type SlackInteractionPayload } from "./utils";
 
 type SlackContext = { Bindings: Env };
 
@@ -38,6 +39,7 @@ slackRoutes.post("/events", async (c) => {
 			const text = event.text;
 			const user = event.user!; // It's not a bot message, so user is required
 			const thread = event.thread_ts ?? event.ts;
+			const identifier = normalizeIncidentIdentifier(thread);
 			const teamId = body.team_id ?? event.team;
 
 			const channel = event.channel;
@@ -87,7 +89,7 @@ slackRoutes.post("/events", async (c) => {
 
 			await startIncident({
 				c: c as Context<AuthContext>,
-				identifier: thread,
+				identifier,
 				prompt,
 				createdBy: user,
 				source: "slack",
@@ -116,8 +118,8 @@ slackRoutes.post("/events", async (c) => {
 			const thread = message.thread_ts;
 			const channel = event.channel;
 			const teamId = body.team_id ?? message.team;
-			if (!text || !user || !thread || !teamId || !channel) {
-				// likely the message is not in the thread or it's a bot message
+
+			if (!text || !user || !teamId || !channel) {
 				return c.text("OK");
 			}
 
@@ -138,17 +140,29 @@ slackRoutes.post("/events", async (c) => {
 				return c.text("OK");
 			}
 
-			const botOriginated = message.parent_user_id && message.parent_user_id === slackIntegration.data.botUserId;
-			if (botOriginated) {
-				const incidentIdFromMetadata = await getIncidentIdFromMessageMetadata({
-					botToken: slackIntegration.data.botToken,
-					channel,
-					messageTs: thread,
-				});
-				if (incidentIdFromMetadata) {
+			if (thread) {
+				const botOriginated = message.parent_user_id && message.parent_user_id === slackIntegration.data.botUserId;
+				if (botOriginated) {
+					const incidentIdFromMetadata = await getIncidentIdFromMessageMetadata({
+						botToken: slackIntegration.data.botToken,
+						channel,
+						messageTs: thread,
+					});
+					if (incidentIdFromMetadata) {
+						await addMessage({
+							c: c as Context<AuthContext>,
+							id: incidentIdFromMetadata,
+							message: text,
+							userId: user,
+							messageId: message.ts,
+							adapter: "slack",
+						});
+					}
+				} else {
+					const identifier = normalizeIncidentIdentifier(thread);
 					await addMessage({
 						c: c as Context<AuthContext>,
-						id: incidentIdFromMetadata,
+						identifier,
 						message: text,
 						userId: user,
 						messageId: message.ts,
@@ -156,14 +170,23 @@ slackRoutes.post("/events", async (c) => {
 					});
 				}
 			} else {
-				await addMessage({
-					c: c as Context<AuthContext>,
-					identifier: thread,
-					message: text,
-					userId: user,
-					messageId: message.ts,
-					adapter: "slack",
+				const channelInfo = await getChannelInfo({
+					botToken: slackIntegration.data.botToken,
+					channelId: channel,
 				});
+				if (channelInfo) {
+					const identifier = extractIdentifierFromChannelName(channelInfo.name);
+					if (identifier) {
+						await addMessage({
+							c: c as Context<AuthContext>,
+							identifier,
+							message: text,
+							userId: user,
+							messageId: message.ts,
+							adapter: "slack",
+						});
+					}
+				}
 			}
 		}
 
