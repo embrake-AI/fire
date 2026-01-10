@@ -116,7 +116,8 @@ export function RotationCard(props: RotationCardProps) {
 	};
 
 	const handleClearOverride = () => {
-		clearOverrideMutation.mutate({ rotationId: props.rotation.id });
+		if (!props.rotation.currentOverrideId) return;
+		clearOverrideMutation.mutate({ rotationId: props.rotation.id, overrideId: props.rotation.currentOverrideId });
 	};
 
 	const handleReorderAssignee = (assigneeId: string, newPosition: number) => {

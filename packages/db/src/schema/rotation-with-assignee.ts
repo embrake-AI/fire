@@ -57,7 +57,7 @@ export const rotationWithAssignee = pgView("rotationWithAssignee", {
 		limit 1
 	) b on true
 	left join lateral (
-		select ro.assignee_id
+		select ro.id, ro.assignee_id
 		from ${rotationOverride} ro
 		where ro.rotation_id = r.id
 			and ro.start_at <= now()

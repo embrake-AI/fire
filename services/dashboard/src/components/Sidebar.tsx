@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/solid-router";
-import { ArrowLeft, BarChart3, BookOpen, Building2, ChevronDown, Flame, Key, LogOut, PanelLeftClose, PanelLeftOpen, Plug, Settings, User, Users } from "lucide-solid";
+import { ArrowLeft, BarChart3, BookOpen, Building2, ChevronDown, Flame, Key, LogOut, PanelLeftClose, PanelLeftOpen, Plug, RefreshCw, Settings, User, Users } from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, For, on, onMount, Show, Suspense } from "solid-js";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
@@ -9,6 +9,7 @@ import { authClient } from "~/lib/auth/auth-client";
 import { useAuth } from "~/lib/auth/auth-store";
 import { useClient } from "~/lib/client/client.hooks";
 import { useIncidents } from "~/lib/incidents/incidents.hooks";
+import { useRotations } from "~/lib/rotations/rotations.hooks";
 import { useTeams } from "~/lib/teams/teams.hooks";
 import { useUsers } from "~/lib/users/users.hooks";
 import { cn } from "~/lib/utils/client";
@@ -95,6 +96,12 @@ export default function Sidebar() {
 
 							<Suspense fallback={<MyTeamsSectionSkeleton collapsed={collapsed} />}>
 								<MyTeamsSection collapsed={collapsed} />
+							</Suspense>
+
+							<div class="flex-1" />
+
+							<Suspense fallback={<CurrentRotationSkeleton collapsed={collapsed} />}>
+								<CurrentRotationSection collapsed={collapsed} />
 							</Suspense>
 						</>
 					}
@@ -457,5 +464,70 @@ function SettingsNavItem(props: { item: SettingsNavItemType; collapsed: Accessor
 			</TooltipTrigger>
 			<TooltipContent class="bg-zinc-800 text-white border-zinc-700 px-2 py-1 text-xs">{props.item.label}</TooltipContent>
 		</Tooltip>
+	);
+}
+
+function CurrentRotationSection(props: { collapsed: Accessor<boolean> }) {
+	const auth = useAuth();
+	const rotationsQuery = useRotations();
+
+	const currentRotation = createMemo(() => {
+		if (!auth.userId || !rotationsQuery.data) return null;
+		return rotationsQuery.data.find((r) => r.currentAssignee === auth.userId);
+	});
+
+	return (
+		<Show when={currentRotation()}>
+			{(rotation) => (
+				<div class="px-2 pb-2">
+					<div class="border-t border-zinc-200 pt-3">
+						<Tooltip placement="right" openDelay={0} disabled={!props.collapsed()}>
+							<TooltipTrigger as="div" class="flex w-full">
+								<Link
+									to="/rotations/$rotationId"
+									params={{ rotationId: rotation().id }}
+									class={cn(
+										"flex items-center py-2 rounded-lg bg-violet-50 border border-violet-200 transition-all duration-200 overflow-hidden hover:bg-violet-100",
+										props.collapsed() ? "w-10 px-2 mx-auto" : "w-full px-3 gap-2",
+									)}
+								>
+									<div class="w-6 h-6 rounded-md bg-violet-100 border border-violet-200 flex items-center justify-center shrink-0">
+										<RefreshCw class="w-3.5 h-3.5 text-violet-600" />
+									</div>
+									<div class={cn("flex flex-col min-w-0 transition-opacity duration-200", props.collapsed() ? "opacity-0 w-0" : "opacity-100")}>
+										<span class="text-[10px] font-medium text-violet-600 uppercase tracking-wider whitespace-nowrap">On Call</span>
+										<span class="text-sm font-medium text-zinc-900 truncate whitespace-nowrap">{rotation().name}</span>
+									</div>
+								</Link>
+							</TooltipTrigger>
+							<TooltipContent class="bg-zinc-800 text-white border-zinc-700 px-2 py-1 text-xs">
+								<span class="text-violet-300">On Call:</span> {rotation().name}
+							</TooltipContent>
+						</Tooltip>
+					</div>
+				</div>
+			)}
+		</Show>
+	);
+}
+
+function CurrentRotationSkeleton(props: { collapsed: Accessor<boolean> }) {
+	return (
+		<div class="px-2 pb-2">
+			<div class="border-t border-zinc-200 pt-3 flex w-full">
+				<div
+					class={cn(
+						"flex items-center py-2 rounded-lg bg-zinc-50 border border-zinc-200 transition-all duration-200 overflow-hidden",
+						props.collapsed() ? "w-10 px-2 mx-auto" : "w-full px-3 gap-2",
+					)}
+				>
+					<Skeleton class="w-6 h-6 rounded-md shrink-0" />
+					<div class={cn("flex flex-col gap-1 transition-opacity duration-200", props.collapsed() ? "opacity-0 w-0" : "opacity-100")}>
+						<Skeleton class="h-2.5 w-12" />
+						<Skeleton class="h-4 w-20" />
+					</div>
+				</div>
+			</div>
+		</div>
 	);
 }

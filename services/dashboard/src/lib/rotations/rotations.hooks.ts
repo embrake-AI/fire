@@ -8,17 +8,46 @@ import {
 	addSlackUserAsRotationAssignee,
 	clearRotationOverride,
 	createRotation,
+	createRotationOverride,
 	deleteRotation,
+	getRotationOverrides,
 	getRotations,
 	removeRotationAssignee,
 	reorderRotationAssignee,
 	setRotationOverride,
+	updateRotationAnchor,
 	updateRotationName,
+	updateRotationOverride,
 	updateRotationShiftLength,
 } from "./rotations";
 
 type GetRotationsResponse = Awaited<ReturnType<typeof getRotations>>;
+type GetRotationOverridesResponse = Awaited<ReturnType<typeof getRotationOverrides>>;
 type GetUsersResponse = Awaited<ReturnType<typeof getUsers>>;
+
+type OverrideCacheEntry = [readonly unknown[], GetRotationOverridesResponse | undefined];
+
+const sortOverrides = (overrides: GetRotationOverridesResponse) => {
+	return [...overrides].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+};
+
+const getOverrideRangeFromKey = (key: readonly unknown[]) => {
+	const startIso = key[2];
+	const endIso = key[3];
+	if (typeof startIso !== "string" || typeof endIso !== "string") return null;
+	const start = new Date(startIso);
+	const end = new Date(endIso);
+	if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+	return { start, end };
+};
+
+const updateOverridesCache = (queryClient: ReturnType<typeof useQueryClient>, rotationId: string, updater: (entry: OverrideCacheEntry) => GetRotationOverridesResponse) => {
+	const entries = queryClient.getQueriesData<GetRotationOverridesResponse>({ queryKey: ["rotation-overrides", rotationId] }) as OverrideCacheEntry[];
+	for (const entry of entries) {
+		queryClient.setQueryData(entry[0], updater(entry));
+	}
+	return entries;
+};
 
 export function useRotations(options?: { enabled?: Accessor<boolean> }) {
 	const getRotationsFn = useServerFn(getRotations);
@@ -48,11 +77,13 @@ export function useCreateRotation(options?: { onMutate?: (tempId: string) => voi
 			const optimisticRotation = {
 				id: tempId,
 				name: newData.name,
+				shiftStart: new Date(),
 				shiftLength: newData.shiftLength,
 				assignees: [],
 				createdAt: new Date(),
 				isInUse: false,
 				currentAssignee: tempId,
+				currentOverrideId: null,
 				teamId: newData.teamId ?? null,
 			};
 
@@ -158,6 +189,37 @@ export function useUpdateRotationShiftLength(options?: { onSuccess?: () => void;
 			const previousRotations = queryClient.getQueryData<GetRotationsResponse>(["rotations"]);
 
 			queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) => old?.map((r) => (r.id === id ? { ...r, shiftLength } : r)));
+
+			return { previousRotations };
+		},
+
+		onSuccess: () => {
+			options?.onSuccess?.();
+			queryClient.invalidateQueries({ queryKey: ["rotations"] });
+		},
+
+		onError: (_err, _variables, context) => {
+			if (context?.previousRotations) {
+				queryClient.setQueryData(["rotations"], context.previousRotations);
+			}
+			options?.onError?.();
+		},
+	}));
+}
+
+export function useUpdateRotationAnchor(options?: { onSuccess?: () => void; onError?: () => void }) {
+	const queryClient = useQueryClient();
+	const updateRotationAnchorFn = useServerFn(updateRotationAnchor);
+
+	return useMutation(() => ({
+		mutationFn: (data: { id: string; anchorAt: Date }) => updateRotationAnchorFn({ data }),
+
+		onMutate: async ({ id, anchorAt }) => {
+			await queryClient.cancelQueries({ queryKey: ["rotations"] });
+
+			const previousRotations = queryClient.getQueryData<GetRotationsResponse>(["rotations"]);
+
+			queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) => old?.map((r) => (r.id === id ? { ...r, shiftStart: anchorAt } : r)));
 
 			return { previousRotations };
 		},
@@ -335,6 +397,113 @@ export function useRemoveRotationAssignee(options?: { onSuccess?: () => void; on
 	}));
 }
 
+export function useRotationOverrides(options: { rotationId: Accessor<string | null>; startAt: Accessor<Date>; endAt: Accessor<Date>; enabled?: Accessor<boolean> }) {
+	const getRotationOverridesFn = useServerFn(getRotationOverrides);
+
+	return useQuery(() => {
+		const rotationId = options.rotationId();
+		const startAt = options.startAt();
+		const endAt = options.endAt();
+
+		return {
+			queryKey: ["rotation-overrides", rotationId, startAt.toISOString(), endAt.toISOString()],
+			queryFn: () => getRotationOverridesFn({ data: { rotationId: rotationId!, startAt, endAt } }),
+			enabled: (options.enabled?.() ?? true) && !!rotationId,
+			staleTime: 60_000,
+			suspense: false,
+			placeholderData: (previous) => previous ?? [],
+		};
+	});
+}
+
+export function useCreateRotationOverride(options?: { onSuccess?: () => void; onError?: () => void }) {
+	const queryClient = useQueryClient();
+	const createRotationOverrideFn = useServerFn(createRotationOverride);
+
+	return useMutation(() => ({
+		mutationFn: (data: { rotationId: string; assigneeId: string; startAt: Date; endAt: Date }) => createRotationOverrideFn({ data }),
+
+		onMutate: async ({ rotationId, assigneeId, startAt, endAt }) => {
+			await queryClient.cancelQueries({ queryKey: ["rotation-overrides", rotationId] });
+			await queryClient.cancelQueries({ queryKey: ["rotations"] });
+
+			const previousRotations = queryClient.getQueryData<GetRotationsResponse>(["rotations"]);
+			const tempId = `temp-override-${Date.now()}`;
+			const optimisticOverride = {
+				id: tempId,
+				assigneeId,
+				startAt,
+				endAt,
+				createdAt: new Date(),
+			};
+
+			const previousOverrides = updateOverridesCache(queryClient, rotationId, ([key, data]) => {
+				const range = getOverrideRangeFromKey(key);
+				if (!range) return data ?? [];
+				const intersects = startAt < range.end && endAt > range.start;
+				if (!intersects) return data ?? [];
+				return sortOverrides([...(data ?? []), optimisticOverride]);
+			});
+
+			const now = new Date();
+			if (startAt <= now && endAt > now) {
+				queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) =>
+					old?.map((rotation) => {
+						if (rotation.id !== rotationId) return rotation;
+						return {
+							...rotation,
+							currentOverrideId: tempId,
+							assignees: rotation.assignees.map((assignee) => ({
+								...assignee,
+								isOverride: assignee.id === assigneeId,
+							})),
+						};
+					}),
+				);
+			}
+
+			return { previousOverrides, previousRotations, tempId };
+		},
+
+		onSuccess: (result, variables, context) => {
+			const newId = result?.id;
+			if (newId && context?.tempId) {
+				updateOverridesCache(queryClient, variables.rotationId, ([key, data]) => {
+					const range = getOverrideRangeFromKey(key);
+					if (!range) return data ?? [];
+					return (data ?? []).map((override) => (override.id === context.tempId ? { ...override, id: newId } : override));
+				});
+				queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) =>
+					old?.map((rotation) => {
+						if (rotation.id !== variables.rotationId) return rotation;
+						if (rotation.currentOverrideId !== context.tempId) return rotation;
+						return {
+							...rotation,
+							currentOverrideId: newId,
+						};
+					}),
+				);
+			}
+
+			queryClient.invalidateQueries({ queryKey: ["rotation-overrides", variables.rotationId] });
+			queryClient.invalidateQueries({ queryKey: ["rotations"] });
+			options?.onSuccess?.();
+		},
+
+		onError: (_err, _variables, context) => {
+			if (context?.previousOverrides) {
+				for (const [key, data] of context.previousOverrides) {
+					queryClient.setQueryData(key, data);
+				}
+			}
+			if (context?.previousRotations) {
+				queryClient.setQueryData(["rotations"], context.previousRotations);
+			}
+			options?.onError?.();
+		},
+	}));
+}
+
 export function useSetRotationOverride(options?: { onSuccess?: () => void; onError?: () => void }) {
 	const queryClient = useQueryClient();
 	const setRotationOverrideFn = useServerFn(setRotationOverride);
@@ -382,35 +551,123 @@ export function useClearRotationOverride(options?: { onSuccess?: () => void; onE
 	const clearRotationOverrideFn = useServerFn(clearRotationOverride);
 
 	return useMutation(() => ({
-		mutationFn: (data: { rotationId: string }) => clearRotationOverrideFn({ data }),
+		mutationFn: (data: { rotationId: string; overrideId: string }) => clearRotationOverrideFn({ data }),
 
-		onMutate: async ({ rotationId }) => {
+		onMutate: async ({ rotationId, overrideId }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
+			await queryClient.cancelQueries({ queryKey: ["rotation-overrides", rotationId] });
 
 			const previousRotations = queryClient.getQueryData<GetRotationsResponse>(["rotations"]);
+			const previousOverrides = updateOverridesCache(queryClient, rotationId, ([, data]) => (data ?? []).filter((override) => override.id !== overrideId));
 
 			queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) =>
-				old?.map((r) => {
-					if (r.id !== rotationId) return r;
+				old?.map((rotation) => {
+					if (rotation.id !== rotationId) return rotation;
+					if (rotation.currentOverrideId !== overrideId) return rotation;
 					return {
-						...r,
-						assignees: r.assignees.map((a) => ({
-							...a,
+						...rotation,
+						assignees: rotation.assignees.map((assignee) => ({
+							...assignee,
 							isOverride: false,
 						})),
+						currentOverrideId: null,
 					};
 				}),
 			);
 
-			return { previousRotations };
+			return { previousRotations, previousOverrides };
 		},
 
-		onSuccess: () => {
+		onSuccess: (_result, variables) => {
 			options?.onSuccess?.();
+			queryClient.invalidateQueries({ queryKey: ["rotations"] });
+			queryClient.invalidateQueries({ queryKey: ["rotation-overrides", variables.rotationId] });
+		},
+
+		onError: (_err, _variables, context) => {
+			if (context?.previousOverrides) {
+				for (const [key, data] of context.previousOverrides) {
+					queryClient.setQueryData(key, data);
+				}
+			}
+			if (context?.previousRotations) {
+				queryClient.setQueryData(["rotations"], context.previousRotations);
+			}
+			options?.onError?.();
+		},
+	}));
+}
+
+export function useUpdateRotationOverride(options?: { onSuccess?: () => void; onError?: () => void }) {
+	const queryClient = useQueryClient();
+	const updateRotationOverrideFn = useServerFn(updateRotationOverride);
+
+	return useMutation(() => ({
+		mutationFn: (data: { rotationId: string; overrideId: string; assigneeId: string; startAt: Date; endAt: Date }) => updateRotationOverrideFn({ data }),
+
+		onMutate: async ({ rotationId, overrideId, assigneeId, startAt, endAt }) => {
+			await queryClient.cancelQueries({ queryKey: ["rotation-overrides", rotationId] });
+			await queryClient.cancelQueries({ queryKey: ["rotations"] });
+
+			const previousRotations = queryClient.getQueryData<GetRotationsResponse>(["rotations"]);
+			const previousOverrides = updateOverridesCache(queryClient, rotationId, ([key, data]) => {
+				const range = getOverrideRangeFromKey(key);
+				if (!range) return data ?? [];
+				const intersects = startAt < range.end && endAt > range.start;
+				const current = data ?? [];
+				const hasOverride = current.some((override) => override.id === overrideId);
+				if (!intersects) {
+					return hasOverride ? current.filter((override) => override.id !== overrideId) : current;
+				}
+				const next = hasOverride
+					? current.map((override) => (override.id === overrideId ? { ...override, assigneeId, startAt, endAt } : override))
+					: [...current, { id: overrideId, assigneeId, startAt, endAt, createdAt: new Date() }];
+				return sortOverrides(next);
+			});
+
+			const now = new Date();
+			queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) =>
+				old?.map((rotation) => {
+					if (rotation.id !== rotationId) return rotation;
+					if (startAt <= now && endAt > now) {
+						return {
+							...rotation,
+							currentOverrideId: overrideId,
+							assignees: rotation.assignees.map((assignee) => ({
+								...assignee,
+								isOverride: assignee.id === assigneeId,
+							})),
+						};
+					}
+					if (rotation.currentOverrideId === overrideId) {
+						return {
+							...rotation,
+							currentOverrideId: null,
+							assignees: rotation.assignees.map((assignee) => ({
+								...assignee,
+								isOverride: false,
+							})),
+						};
+					}
+					return rotation;
+				}),
+			);
+
+			return { previousOverrides, previousRotations };
+		},
+
+		onSuccess: (_result, variables) => {
+			options?.onSuccess?.();
+			queryClient.invalidateQueries({ queryKey: ["rotation-overrides", variables.rotationId] });
 			queryClient.invalidateQueries({ queryKey: ["rotations"] });
 		},
 
 		onError: (_err, _variables, context) => {
+			if (context?.previousOverrides) {
+				for (const [key, data] of context.previousOverrides) {
+					queryClient.setQueryData(key, data);
+				}
+			}
 			if (context?.previousRotations) {
 				queryClient.setQueryData(["rotations"], context.previousRotations);
 			}

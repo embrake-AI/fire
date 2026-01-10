@@ -1,8 +1,8 @@
 import { emailInDomains, type SHIFT_LENGTH_OPTIONS } from "@fire/common";
-import { getAddAssigneeSQL, getMoveAssigneeSQL, getRemoveAssigneeSQL, getSetOverrideSQL, getUpdateIntervalSQL } from "@fire/db/rotation-helpers";
-import { client, entryPoint, integration, rotation, rotationWithAssignee, user } from "@fire/db/schema";
+import { getAddAssigneeSQL, getMoveAssigneeSQL, getRemoveAssigneeSQL, getSetOverrideSQL, getUpdateAnchorSQL, getUpdateIntervalSQL } from "@fire/db/rotation-helpers";
+import { client, entryPoint, integration, rotation, rotationOverride, rotationWithAssignee, user } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
-import { and, desc, eq, exists, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, exists, gt, inArray, lt, lte, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { authMiddleware } from "../auth/auth-middleware";
 import { uploadImageFromUrl } from "../blob";
@@ -22,6 +22,7 @@ export const getRotations = createServerFn({
 			.select({
 				id: rotationWithAssignee.id,
 				name: rotationWithAssignee.name,
+				shiftStart: rotationWithAssignee.shiftStart,
 				shiftLength: rotationWithAssignee.shiftLength,
 				assignees: rotationWithAssignee.assignees,
 				effectiveAssignee: rotationWithAssignee.effectiveAssignee,
@@ -36,6 +37,26 @@ export const getRotations = createServerFn({
 
 		if (rotations.length === 0) {
 			return [];
+		}
+
+		const rotationIds = rotations.map((rotation) => rotation.id);
+		const now = new Date();
+		const overridesByRotation = new Map<string, string>();
+
+		const currentOverrides = await db
+			.select({
+				id: rotationOverride.id,
+				rotationId: rotationOverride.rotationId,
+				createdAt: rotationOverride.createdAt,
+			})
+			.from(rotationOverride)
+			.where(and(inArray(rotationOverride.rotationId, rotationIds), lte(rotationOverride.startAt, now), gt(rotationOverride.endAt, now)))
+			.orderBy(desc(rotationOverride.createdAt), desc(rotationOverride.id));
+
+		for (const override of currentOverrides) {
+			if (!overridesByRotation.has(override.rotationId)) {
+				overridesByRotation.set(override.rotationId, override.id);
+			}
 		}
 
 		return rotations.map((r) => {
@@ -58,11 +79,13 @@ export const getRotations = createServerFn({
 			return {
 				id: r.id,
 				name: r.name,
+				shiftStart: r.shiftStart,
 				shiftLength: r.shiftLength,
 				assignees: reorderedAssignees,
 				createdAt: r.createdAt,
 				isInUse: r.isInUse,
 				currentAssignee: r.effectiveAssignee,
+				currentOverrideId: overridesByRotation.get(r.id) ?? null,
 				teamId: r.teamId,
 			};
 		});
@@ -306,6 +329,68 @@ export const removeRotationAssignee = createServerFn({ method: "POST" })
 		return { success: true };
 	});
 
+export const getRotationOverrides = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
+	.inputValidator((data: { rotationId: string; startAt: Date; endAt: Date }) => data)
+	.handler(async ({ data, context }) => {
+		if (data.startAt >= data.endAt) {
+			throw new Error("Invalid override range");
+		}
+
+		const [existingRotation] = await db
+			.select()
+			.from(rotation)
+			.where(and(eq(rotation.id, data.rotationId), eq(rotation.clientId, context.clientId)));
+
+		if (!existingRotation) {
+			throw new Error("Rotation not found");
+		}
+
+		const overrides = await db
+			.select({
+				id: rotationOverride.id,
+				assigneeId: rotationOverride.assigneeId,
+				startAt: rotationOverride.startAt,
+				endAt: rotationOverride.endAt,
+				createdAt: rotationOverride.createdAt,
+			})
+			.from(rotationOverride)
+			.where(and(eq(rotationOverride.rotationId, data.rotationId), lt(rotationOverride.startAt, data.endAt), gt(rotationOverride.endAt, data.startAt)))
+			.orderBy(rotationOverride.startAt);
+
+		return overrides;
+	});
+
+export const createRotationOverride = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
+	.inputValidator((data: { rotationId: string; assigneeId: string; startAt: Date; endAt: Date }) => data)
+	.handler(async ({ data, context }) => {
+		if (data.startAt >= data.endAt) {
+			throw new Error("Invalid override range");
+		}
+
+		const [existingRotation] = await db
+			.select()
+			.from(rotation)
+			.where(and(eq(rotation.id, data.rotationId), eq(rotation.clientId, context.clientId)));
+
+		if (!existingRotation) {
+			throw new Error("Rotation not found");
+		}
+
+		const [createdOverride] = await db
+			.insert(rotationOverride)
+			.values({
+				rotationId: data.rotationId,
+				assigneeId: data.assigneeId,
+				startAt: data.startAt,
+				endAt: data.endAt,
+			})
+			.returning({ id: rotationOverride.id });
+
+		return { id: createdOverride?.id };
+	});
+
 export const setRotationOverride = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { rotationId: string; assigneeId: string }) => data)
@@ -324,10 +409,9 @@ export const setRotationOverride = createServerFn({ method: "POST" })
 		return { success: true };
 	});
 
-// TODO: This now clears `a` override, but we should target a specific one
 export const clearRotationOverride = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
-	.inputValidator((data: { rotationId: string }) => data)
+	.inputValidator((data: { rotationId: string; overrideId: string }) => data)
 	.handler(async ({ data, context }) => {
 		const [existingRotation] = await db
 			.select()
@@ -338,19 +422,69 @@ export const clearRotationOverride = createServerFn({ method: "POST" })
 			throw new Error("Rotation not found");
 		}
 
-		await db.execute(sql`
-			with target as (
-				select id
-				from rotation_override
-				where rotation_id = ${data.rotationId}
-					and start_at <= now()
-					and end_at > now()
-				order by created_at desc, id desc
-				limit 1
-			)
-			delete from rotation_override
-			where id in (select id from target)
-		`);
+		const deleted = await db
+			.delete(rotationOverride)
+			.where(and(eq(rotationOverride.id, data.overrideId), eq(rotationOverride.rotationId, data.rotationId)))
+			.returning({ id: rotationOverride.id });
+
+		if (deleted.length === 0) {
+			throw new Error("Override not found");
+		}
 
 		return { success: true };
+	});
+
+export const updateRotationOverride = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
+	.inputValidator((data: { rotationId: string; overrideId: string; assigneeId: string; startAt: Date; endAt: Date }) => data)
+	.handler(async ({ data, context }) => {
+		if (data.startAt >= data.endAt) {
+			throw new Error("Invalid override range");
+		}
+
+		const [existingRotation] = await db
+			.select()
+			.from(rotation)
+			.where(and(eq(rotation.id, data.rotationId), eq(rotation.clientId, context.clientId)));
+
+		if (!existingRotation) {
+			throw new Error("Rotation not found");
+		}
+
+		const updated = await db
+			.update(rotationOverride)
+			.set({
+				assigneeId: data.assigneeId,
+				startAt: data.startAt,
+				endAt: data.endAt,
+			})
+			.where(and(eq(rotationOverride.id, data.overrideId), eq(rotationOverride.rotationId, data.rotationId)))
+			.returning({ id: rotationOverride.id });
+
+		if (updated.length === 0) {
+			throw new Error("Override not found");
+		}
+
+		return { id: updated[0]?.id };
+	});
+
+export const updateRotationAnchor = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
+	.inputValidator((data: { id: string; anchorAt: Date }) => data)
+	.handler(async ({ data, context }) => {
+		const [existingRotation] = await db
+			.select()
+			.from(rotation)
+			.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)));
+		if (!existingRotation) {
+			throw new Error("Rotation not found");
+		}
+
+		const { rows } = await db.execute<InferFromSQL<ReturnType<typeof getUpdateAnchorSQL>>>(getUpdateAnchorSQL(data.id, data.anchorAt));
+		const result = rows[0];
+		if (!result) {
+			throw new Error("Failed to update rotation anchor");
+		}
+
+		return { id: result.id, anchorAt: result.anchorAt };
 	});
