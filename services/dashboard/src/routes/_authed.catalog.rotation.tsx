@@ -2,7 +2,8 @@ import { SHIFT_LENGTH_OPTIONS, type ShiftLength } from "@fire/common";
 import { createFileRoute } from "@tanstack/solid-router";
 import { LoaderCircle, Plus, X } from "lucide-solid";
 import { type Accessor, createSignal, Index, Show, Suspense } from "solid-js";
-import { RotationCard, RotationCardSkeleton, RotationEmptyState } from "~/components/rotations/RotationCard";
+import { RotationEmptyState } from "~/components/rotations/RotationCard";
+import { RotationListCard } from "~/components/rotations/RotationListCard";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
@@ -32,15 +33,12 @@ function RotationContent() {
 	const rotations = () => rotationsQuery.data ?? [];
 
 	const [isCreating, setIsCreating] = createSignal(false);
-	const [expandedId, setExpandedId] = createSignal<string | null>(null);
+
+	const navigate = Route.useNavigate();
 
 	const createMutation = useCreateRotation({
-		onMutate: (tempId) => {
+		onMutate: () => {
 			setIsCreating(false);
-			setExpandedId(tempId);
-		},
-		onSuccess: (realId) => {
-			setExpandedId(realId);
 		},
 	});
 
@@ -51,14 +49,7 @@ function RotationContent() {
 	};
 
 	const handleDelete = (id: string) => {
-		if (expandedId() === id) {
-			setExpandedId(null);
-		}
 		deleteMutation.mutate(id);
-	};
-
-	const toggleExpanded = (id: string) => {
-		setExpandedId((current) => (current === id ? null : id));
 	};
 
 	return (
@@ -81,11 +72,11 @@ function RotationContent() {
 				<div class="space-y-3">
 					<Index each={rotations()}>
 						{(rotation) => (
-							<RotationCard
+							<RotationListCard
 								rotation={rotation()}
-								isExpanded={expandedId() === rotation().id}
-								onToggle={() => toggleExpanded(rotation().id)}
+								onOpen={() => navigate({ to: "/rotations/$rotationId", params: { rotationId: rotation().id } })}
 								onDelete={() => handleDelete(rotation().id)}
+								isDeleting={deleteMutation.isPending && deleteMutation.variables === rotation().id}
 								showTeamBadge
 							/>
 						)}
@@ -186,8 +177,8 @@ function RotationContentSkeleton() {
 		<div class="space-y-6">
 			<Skeleton class="h-10 w-36" />
 			<div class="space-y-3">
-				<RotationCardSkeleton />
-				<RotationCardSkeleton />
+				<Skeleton class="h-14 w-full" />
+				<Skeleton class="h-14 w-full" />
 			</div>
 			<Skeleton variant="text" class="h-4 w-32" />
 		</div>

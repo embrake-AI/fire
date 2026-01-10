@@ -21,6 +21,7 @@ import { Route as AuthedMetricsIndexRouteImport } from './routes/_authed.metrics
 import { Route as SlackOauthCallbackRouteImport } from './routes/slack/oauth/callback'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedTeamsTeamIdRouteImport } from './routes/_authed.teams/$teamId'
+import { Route as AuthedRotationsRotationIdRouteImport } from './routes/_authed.rotations/$rotationId'
 import { Route as AuthedMetricsIncidentIdRouteImport } from './routes/_authed.metrics/$incidentId'
 import { Route as AuthedIncidentsIncidentIdRouteImport } from './routes/_authed.incidents/$incidentId'
 import { Route as AuthedCatalogTeamsRouteImport } from './routes/_authed.catalog.teams'
@@ -95,6 +96,12 @@ const AuthedTeamsTeamIdRoute = AuthedTeamsTeamIdRouteImport.update({
   path: '/teams/$teamId',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedRotationsRotationIdRoute =
+  AuthedRotationsRotationIdRouteImport.update({
+    id: '/rotations/$rotationId',
+    path: '/rotations/$rotationId',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedMetricsIncidentIdRoute = AuthedMetricsIncidentIdRouteImport.update({
   id: '/metrics/$incidentId',
   path: '/metrics/$incidentId',
@@ -188,6 +195,7 @@ export interface FileRoutesByFullPath {
   '/catalog/teams': typeof AuthedCatalogTeamsRoute
   '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/metrics/$incidentId': typeof AuthedMetricsIncidentIdRoute
+  '/rotations/$rotationId': typeof AuthedRotationsRotationIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
@@ -215,6 +223,7 @@ export interface FileRoutesByTo {
   '/catalog/teams': typeof AuthedCatalogTeamsRoute
   '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/metrics/$incidentId': typeof AuthedMetricsIncidentIdRoute
+  '/rotations/$rotationId': typeof AuthedRotationsRotationIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
@@ -244,6 +253,7 @@ export interface FileRoutesById {
   '/_authed/catalog/teams': typeof AuthedCatalogTeamsRoute
   '/_authed/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/_authed/metrics/$incidentId': typeof AuthedMetricsIncidentIdRoute
+  '/_authed/rotations/$rotationId': typeof AuthedRotationsRotationIdRoute
   '/_authed/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
@@ -273,6 +283,7 @@ export interface FileRouteTypes {
     | '/catalog/teams'
     | '/incidents/$incidentId'
     | '/metrics/$incidentId'
+    | '/rotations/$rotationId'
     | '/teams/$teamId'
     | '/api/auth/$'
     | '/slack/oauth/callback'
@@ -300,6 +311,7 @@ export interface FileRouteTypes {
     | '/catalog/teams'
     | '/incidents/$incidentId'
     | '/metrics/$incidentId'
+    | '/rotations/$rotationId'
     | '/teams/$teamId'
     | '/api/auth/$'
     | '/slack/oauth/callback'
@@ -328,6 +340,7 @@ export interface FileRouteTypes {
     | '/_authed/catalog/teams'
     | '/_authed/incidents/$incidentId'
     | '/_authed/metrics/$incidentId'
+    | '/_authed/rotations/$rotationId'
     | '/_authed/teams/$teamId'
     | '/api/auth/$'
     | '/slack/oauth/callback'
@@ -437,6 +450,13 @@ declare module '@tanstack/solid-router' {
       path: '/teams/$teamId'
       fullPath: '/teams/$teamId'
       preLoaderRoute: typeof AuthedTeamsTeamIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/rotations/$rotationId': {
+      id: '/_authed/rotations/$rotationId'
+      path: '/rotations/$rotationId'
+      fullPath: '/rotations/$rotationId'
+      preLoaderRoute: typeof AuthedRotationsRotationIdRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/metrics/$incidentId': {
@@ -601,6 +621,7 @@ interface AuthedRouteChildren {
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedIncidentsIncidentIdRoute: typeof AuthedIncidentsIncidentIdRoute
   AuthedMetricsIncidentIdRoute: typeof AuthedMetricsIncidentIdRoute
+  AuthedRotationsRotationIdRoute: typeof AuthedRotationsRotationIdRoute
   AuthedTeamsTeamIdRoute: typeof AuthedTeamsTeamIdRouteWithChildren
   AuthedMetricsIndexRoute: typeof AuthedMetricsIndexRoute
 }
@@ -611,6 +632,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedIncidentsIncidentIdRoute: AuthedIncidentsIncidentIdRoute,
   AuthedMetricsIncidentIdRoute: AuthedMetricsIncidentIdRoute,
+  AuthedRotationsRotationIdRoute: AuthedRotationsRotationIdRoute,
   AuthedTeamsTeamIdRoute: AuthedTeamsTeamIdRouteWithChildren,
   AuthedMetricsIndexRoute: AuthedMetricsIndexRoute,
 }

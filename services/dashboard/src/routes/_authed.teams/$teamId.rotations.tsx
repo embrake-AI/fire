@@ -2,7 +2,8 @@ import { SHIFT_LENGTH_OPTIONS, type ShiftLength } from "@fire/common";
 import { createFileRoute } from "@tanstack/solid-router";
 import { LoaderCircle, Plus, X } from "lucide-solid";
 import { createSignal, For, Index, Show, Suspense } from "solid-js";
-import { RotationCard, RotationEmptyState } from "~/components/rotations/RotationCard";
+import { RotationEmptyState } from "~/components/rotations/RotationCard";
+import { RotationListCard } from "~/components/rotations/RotationListCard";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -28,28 +29,17 @@ function TeamRotations(props: { teamId: string }) {
 	const rotationsQuery = useRotations();
 	const teamRotations = () => rotationsQuery.data?.filter((r) => r.teamId === props.teamId) ?? [];
 
-	const [expandedId, setExpandedId] = createSignal<string | null>(null);
 	const [isCreating, setIsCreating] = createSignal(false);
+	const navigate = Route.useNavigate();
 	const deleteMutation = useDeleteRotation();
 	const createMutation = useCreateRotation({
-		onMutate: (tempId) => {
+		onMutate: () => {
 			setIsCreating(false);
-			setExpandedId(tempId);
-		},
-		onSuccess: (realId) => {
-			setExpandedId(realId);
 		},
 	});
 
 	const handleDelete = (id: string) => {
-		if (expandedId() === id) {
-			setExpandedId(null);
-		}
 		deleteMutation.mutate(id);
-	};
-
-	const toggleExpanded = (id: string) => {
-		setExpandedId((current) => (current === id ? null : id));
 	};
 
 	const handleCreate = (name: string, shiftLength: ShiftLength) => {
@@ -78,11 +68,11 @@ function TeamRotations(props: { teamId: string }) {
 			<div class="space-y-3">
 				<Index each={teamRotations()}>
 					{(rotation) => (
-						<RotationCard
+						<RotationListCard
 							rotation={rotation()}
-							isExpanded={expandedId() === rotation().id}
-							onToggle={() => toggleExpanded(rotation().id)}
+							onOpen={() => navigate({ to: "/rotations/$rotationId", params: { rotationId: rotation().id } })}
 							onDelete={() => handleDelete(rotation().id)}
+							isDeleting={deleteMutation.isPending && deleteMutation.variables === rotation().id}
 						/>
 					)}
 				</Index>
