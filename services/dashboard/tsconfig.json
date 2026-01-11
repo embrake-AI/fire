@@ -22,7 +22,8 @@
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedSideEffectImports": true,
 		"paths": {
-			"~/*": ["./src/*"]
-		}
-	}
+			"~/*": ["./src/*"],
+		},
+		"plugins": [{ "name": "workflow" }],
+	},
 }

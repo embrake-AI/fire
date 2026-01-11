@@ -26,6 +26,7 @@
 			"name": "incident-workflow",
 			"binding": "INCIDENT_WORKFLOW",
 			"class_name": "IncidentWorkflow",
+			"retention_days": 1,
 		},
 	],
 	"observability": {

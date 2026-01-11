@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "bun --bun vite dev --port 3000",
+		"dev": "bun --bun vite dev --force --port 3000",
 		"build": "bun --bun vite build",
 		"preview": "bun --bun vite preview",
 		"test": "bun --bun vitest run",
@@ -33,10 +33,11 @@
 		"drizzle-orm": "catalog:",
 		"lucide-solid": "^0.562.0",
 		"nanoid": "^5.1.6",
-		"nitro": "^3.0.1-alpha.1",
+		"nitro": "3.0.1-alpha.1",
 		"pg": "catalog:",
 		"solid-js": "^1.9.10",
-		"tailwind-merge": "^3.4.0"
+		"tailwind-merge": "^3.4.0",
+		"workflow": "4.0.1-beta.35"
 	},
 	"devDependencies": {
 		"@tailwindcss/vite": "^4.1.18",
@@ -46,7 +47,7 @@
 		"tailwindcss-animate": "^1.0.7",
 		"typescript": "catalog:",
 		"@types/pg": "catalog:",
-		"vite": "^7.3.0",
+		"vite": "7.3.0",
 		"vite-plugin-solid": "^2.11.10",
 		"vite-tsconfig-paths": "^6.0.3"
 	}

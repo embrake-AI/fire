@@ -9,3 +9,4 @@ dist-ssr
 .wrangler
 .output
 .vercel
+.workflow-data

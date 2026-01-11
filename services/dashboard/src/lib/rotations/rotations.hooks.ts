@@ -466,25 +466,20 @@ export function useCreateRotationOverride(options?: { onSuccess?: () => void; on
 		},
 
 		onSuccess: (result, variables, context) => {
-			const newId = result?.id;
-			if (newId && context?.tempId) {
-				updateOverridesCache(queryClient, variables.rotationId, ([key, data]) => {
-					const range = getOverrideRangeFromKey(key);
-					if (!range) return data ?? [];
-					return (data ?? []).map((override) => (override.id === context.tempId ? { ...override, id: newId } : override));
-				});
+			// Replace temp ID with real ID from workflow result
+			if (result?.id && context?.tempId) {
+				updateOverridesCache(queryClient, variables.rotationId, ([, data]) =>
+					(data ?? []).map((override) => (override.id === context.tempId ? { ...override, id: result.id! } : override)),
+				);
+
 				queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) =>
 					old?.map((rotation) => {
 						if (rotation.id !== variables.rotationId) return rotation;
 						if (rotation.currentOverrideId !== context.tempId) return rotation;
-						return {
-							...rotation,
-							currentOverrideId: newId,
-						};
+						return { ...rotation, currentOverrideId: result.id! };
 					}),
 				);
 			}
-
 			queryClient.invalidateQueries({ queryKey: ["rotation-overrides", variables.rotationId] });
 			queryClient.invalidateQueries({ queryKey: ["rotations"] });
 			options?.onSuccess?.();
