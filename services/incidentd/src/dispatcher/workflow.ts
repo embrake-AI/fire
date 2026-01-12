@@ -15,7 +15,9 @@ export type Incident = {
 
 export type IncidentWorkflowPayload = {
 	event: IS_Event & { incident_id: string; event_id: number };
+	incident: Incident;
 	metadata: Metadata;
+	adapter: "slack" | "dashboard";
 	eventMetadata?: Record<string, string>;
 };
 
@@ -23,28 +25,62 @@ export const INCIDENT_WORKFLOW_EVENT_TYPE = "incident-event";
 
 export type StepDo = WorkflowStep["do"];
 
-interface Sender {
-	incidentStarted: ((step: StepDo, env: Env, id: string, incident: Incident, metadata: Metadata) => Promise<void>) | undefined;
-	incidentSeverityUpdated: ((step: StepDo, env: Env, id: string, incident: Incident, metadata: Metadata) => Promise<void>) | undefined;
-	incidentAssigneeUpdated: ((step: StepDo, env: Env, id: string, incident: Incident, metadata: Metadata) => Promise<void>) | undefined;
-	incidentStatusUpdated: ((step: StepDo, env: Env, id: string, incident: Incident, message: string, metadata: Metadata) => Promise<void>) | undefined;
-	messageAdded:
-		| ((step: StepDo, env: Env, id: string, message: string, userId: string, messageId: string, metadata: Metadata, slackUserToken?: string) => Promise<void>)
-		| undefined;
-}
-
-interface DashboardSender {
-	incidentStarted: ((step: StepDo, env: Env, id: string, incident: Incident, metadata: Metadata) => Promise<Incident>) | undefined;
-	incidentSeverityUpdated: ((step: StepDo, env: Env, id: string, severity: IS["severity"], metadata: Metadata) => Promise<Incident | null>) | undefined;
-	incidentAssigneeUpdated: ((step: StepDo, env: Env, id: string, assignee: IS["assignee"], metadata: Metadata) => Promise<Incident | null>) | undefined;
-	incidentStatusUpdated: ((step: StepDo, env: Env, id: string, status: Exclude<IS["status"], "open">, message: string, metadata: Metadata) => Promise<Incident | null>) | undefined;
-	messageAdded: ((step: StepDo, env: Env, id: string, message: string, userId: string, messageId: string, metadata: Metadata) => Promise<Incident | null>) | undefined;
-}
-
-const adapters = {
-	dashboard: dashboardSender as DashboardSender,
-	senders: [slackSender] as Sender[],
+export type SenderParams = {
+	incidentStarted: {
+		step: StepDo;
+		env: Env;
+		id: string;
+		incident: Incident;
+		metadata: Metadata;
+		sourceAdapter: "slack" | "dashboard";
+	};
+	incidentSeverityUpdated: {
+		step: StepDo;
+		env: Env;
+		id: string;
+		incident: Incident;
+		metadata: Metadata;
+		sourceAdapter: "slack" | "dashboard";
+	};
+	incidentAssigneeUpdated: {
+		step: StepDo;
+		env: Env;
+		id: string;
+		incident: Incident;
+		metadata: Metadata;
+		sourceAdapter: "slack" | "dashboard";
+	};
+	incidentStatusUpdated: {
+		step: StepDo;
+		env: Env;
+		id: string;
+		incident: Incident;
+		message: string;
+		metadata: Metadata;
+		sourceAdapter: "slack" | "dashboard";
+	};
+	messageAdded: {
+		step: StepDo;
+		env: Env;
+		id: string;
+		message: string;
+		userId: string;
+		messageId: string;
+		metadata: Metadata;
+		sourceAdapter: "slack" | "dashboard";
+		slackUserToken?: string;
+	};
 };
+
+interface Sender {
+	incidentStarted: ((params: SenderParams["incidentStarted"]) => Promise<void>) | undefined;
+	incidentSeverityUpdated: ((params: SenderParams["incidentSeverityUpdated"]) => Promise<void>) | undefined;
+	incidentAssigneeUpdated: ((params: SenderParams["incidentAssigneeUpdated"]) => Promise<void>) | undefined;
+	incidentStatusUpdated: ((params: SenderParams["incidentStatusUpdated"]) => Promise<void>) | undefined;
+	messageAdded: ((params: SenderParams["messageAdded"]) => Promise<void>) | undefined;
+}
+
+const senders: Sender[] = [dashboardSender, slackSender];
 
 function isIncidentResolved(event: IS_Event) {
 	return event.event_type === "STATUS_UPDATE" && event.event_data.status === "resolved";
@@ -71,80 +107,53 @@ function createStepDo(step: WorkflowStep, eventId: number): StepDo {
 	}) as StepDo;
 }
 
-async function dispatchIncidentStartedEvent(step: StepDo, env: Env, id: string, incident: Incident, metadata: Metadata) {
-	await settleDispatch("incident-started", [
-		adapters.dashboard.incidentStarted?.(step, env, id, incident, metadata),
-		...adapters.senders.map((sender) => sender.incidentStarted?.(step, env, id, incident, metadata)),
-	]);
+async function dispatchIncidentStartedEvent(params: SenderParams["incidentStarted"]) {
+	const { step, env, id, incident, metadata, sourceAdapter } = params;
+	await settleDispatch("incident-started", [...senders.map((sender) => sender.incidentStarted?.({ step, env, id, incident, metadata, sourceAdapter }))]);
 }
 
-async function dispatchIncidentSeverityUpdatedEvent(step: StepDo, env: Env, id: string, severity: IS["severity"], metadata: Metadata) {
-	const incident = await adapters.dashboard.incidentSeverityUpdated?.(step, env, id, severity, metadata);
-	if (!incident) {
-		return;
-	}
-	await settleDispatch("incident-severity-updated", [...adapters.senders.map((sender) => sender.incidentSeverityUpdated?.(step, env, id, incident, metadata))]);
+async function dispatchIncidentSeverityUpdatedEvent(params: SenderParams["incidentSeverityUpdated"]) {
+	await settleDispatch("incident-severity-updated", [...senders.map((sender) => sender.incidentSeverityUpdated?.(params))]);
 }
 
-async function dispatchIncidentAssigneeUpdatedEvent(step: StepDo, env: Env, id: string, assignee: IS["assignee"], metadata: Metadata) {
-	const incident = await adapters.dashboard.incidentAssigneeUpdated?.(step, env, id, assignee, metadata);
-	if (!incident) {
-		return;
-	}
-	await settleDispatch("incident-assignee-updated", [...adapters.senders.map((sender) => sender.incidentAssigneeUpdated?.(step, env, id, incident, metadata))]);
+async function dispatchIncidentAssigneeUpdatedEvent(params: SenderParams["incidentAssigneeUpdated"]) {
+	await settleDispatch("incident-assignee-updated", [...senders.map((sender) => sender.incidentAssigneeUpdated?.(params))]);
 }
 
-async function dispatchIncidentStatusUpdatedEvent(step: StepDo, env: Env, id: string, status: Exclude<IS["status"], "open">, message: string, metadata: Metadata) {
-	const incident = await adapters.dashboard.incidentStatusUpdated?.(step, env, id, status, message, metadata);
-	if (!incident) {
-		return;
-	}
-	await settleDispatch("incident-status-updated", [...adapters.senders.map((sender) => sender.incidentStatusUpdated?.(step, env, id, incident, message, metadata))]);
+async function dispatchIncidentStatusUpdatedEvent(params: SenderParams["incidentStatusUpdated"]) {
+	await settleDispatch("incident-status-updated", [...senders.map((sender) => sender.incidentStatusUpdated?.(params))]);
 }
 
-async function dispatchMessageAddedEvent(step: StepDo, env: Env, id: string, message: string, userId: string, messageId: string, metadata: Metadata, slackUserToken?: string) {
-	const incident = await adapters.dashboard.messageAdded?.(step, env, id, message, userId, messageId, metadata);
-	if (!incident) {
-		return;
-	}
-	await settleDispatch("message-added", [...adapters.senders.map((sender) => sender.messageAdded?.(step, env, id, message, userId, messageId, metadata, slackUserToken))]);
+async function dispatchMessageAddedEvent(params: SenderParams["messageAdded"]) {
+	await settleDispatch("message-added", [...senders.map((sender) => sender.messageAdded?.(params))]);
 }
 
 async function dispatchEvent(step: WorkflowStep, env: Env, payload: IncidentWorkflowPayload) {
 	const eventType = payload.event.event_type;
 	const stepDo = createStepDo(step, payload.event.event_id);
+	const baseParams = { step: stepDo, env, id: payload.event.incident_id, incident: payload.incident, metadata: payload.metadata, sourceAdapter: payload.adapter };
 	switch (eventType) {
 		case "INCIDENT_CREATED": {
-			const incident: Incident = {
-				status: payload.event.event_data.status,
-				assignee: payload.event.event_data.assignee,
-				severity: payload.event.event_data.severity,
-				title: payload.event.event_data.title,
-				description: payload.event.event_data.description,
-			};
-			return dispatchIncidentStartedEvent(stepDo, env, payload.event.incident_id, incident, payload.metadata);
+			return dispatchIncidentStartedEvent(baseParams);
 		}
 		case "ASSIGNEE_UPDATE": {
-			return dispatchIncidentAssigneeUpdatedEvent(stepDo, env, payload.event.incident_id, payload.event.event_data.assignee, payload.metadata);
+			return dispatchIncidentAssigneeUpdatedEvent(baseParams);
 		}
 		case "SEVERITY_UPDATE": {
-			return dispatchIncidentSeverityUpdatedEvent(stepDo, env, payload.event.incident_id, payload.event.event_data.severity, payload.metadata);
+			return dispatchIncidentSeverityUpdatedEvent(baseParams);
 		}
 		case "STATUS_UPDATE": {
 			ASSERT(payload.event.event_data.status !== "open", "Incident cannot be opened from the dispatcher");
-			return dispatchIncidentStatusUpdatedEvent(stepDo, env, payload.event.incident_id, payload.event.event_data.status, payload.event.event_data.message, payload.metadata);
+			return dispatchIncidentStatusUpdatedEvent({ ...baseParams, message: payload.event.event_data.message });
 		}
 		case "MESSAGE_ADDED": {
-			return dispatchMessageAddedEvent(
-				stepDo,
-				env,
-				payload.event.incident_id,
-				payload.event.event_data.message,
-				payload.event.event_data.userId,
-				payload.event.event_data.messageId,
-				payload.metadata,
-				payload.eventMetadata?.slackUserToken,
-			);
+			return dispatchMessageAddedEvent({
+				...baseParams,
+				message: payload.event.event_data.message,
+				userId: payload.event.event_data.userId,
+				messageId: payload.event.event_data.messageId,
+				slackUserToken: payload.eventMetadata?.slackUserToken,
+			});
 		}
 		default: {
 			ASSERT_NEVER(eventType);

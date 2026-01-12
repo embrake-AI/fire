@@ -1,7 +1,6 @@
 import { IS_SEVERITY } from "@fire/common";
 import type { ActionsBlock, KnownBlock } from "@slack/types";
-import type { Incident, StepDo } from "../../../dispatcher/workflow";
-import type { Metadata } from "../../../handler";
+import type { Incident, SenderParams, StepDo } from "../../../dispatcher/workflow";
 import { incidentChannelNameFromIdentifier } from "../shared";
 
 type SlackApiResponse = {
@@ -183,7 +182,9 @@ async function pinMessage(stepDo: StepDo, botToken: string, channelId: string, m
  *   - https://docs.slack.dev/messaging/
  */
 
-export async function incidentStarted(stepDo: StepDo, env: Env, id: string, { severity, status, assignee, title }: Incident, metadata: Metadata) {
+export async function incidentStarted(params: SenderParams["incidentStarted"]) {
+	const { step: stepDo, env, id, incident, metadata } = params;
+	const { severity, status, assignee, title } = incident;
 	const { botToken, channel, thread, identifier, incidentChannelId, incidentChannelMessageTs: existingIncidentChannelMessageTs, postedMessageTs } = metadata;
 	if (!botToken || !channel) {
 		// Thread is optional, if we have a channel and no thread, we'll post in the channel directly
@@ -363,7 +364,8 @@ export async function incidentStarted(stepDo: StepDo, env: Env, id: string, { se
 	}
 }
 
-export async function incidentSeverityUpdated(stepDo: StepDo, env: Env, id: string, incident: Incident, metadata: Metadata) {
+export async function incidentSeverityUpdated(params: SenderParams["incidentSeverityUpdated"]) {
+	const { step: stepDo, env, id, incident, metadata } = params;
 	const { severity, status, assignee, title } = incident;
 	const { botToken, channel, thread, postedMessageTs, incidentChannelId, incidentChannelMessageTs } = metadata;
 	if (!botToken) {
@@ -408,7 +410,8 @@ export async function incidentSeverityUpdated(stepDo: StepDo, env: Env, id: stri
 	}
 }
 
-export async function incidentAssigneeUpdated(stepDo: StepDo, env: Env, id: string, incident: Incident, metadata: Metadata) {
+export async function incidentAssigneeUpdated(params: SenderParams["incidentAssigneeUpdated"]) {
+	const { step: stepDo, env, id, incident, metadata } = params;
 	const { severity, status, assignee, title } = incident;
 	const { botToken, channel, postedMessageTs, incidentChannelId, incidentChannelMessageTs } = metadata;
 	if (!botToken) {
@@ -457,7 +460,8 @@ export async function incidentAssigneeUpdated(stepDo: StepDo, env: Env, id: stri
 	}
 }
 
-export async function incidentStatusUpdated(stepDo: StepDo, env: Env, id: string, incident: Incident, message: string, metadata: Metadata) {
+export async function incidentStatusUpdated(params: SenderParams["incidentStatusUpdated"]) {
+	const { step: stepDo, env, id, incident, message, metadata } = params;
 	const { severity, status, assignee, title } = incident;
 	const { botToken, channel, postedMessageTs, incidentChannelId, incidentChannelMessageTs } = metadata;
 	if (!botToken) {
@@ -741,10 +745,20 @@ function incidentBlocks({
 	return blocks;
 }
 
-export async function messageAdded(stepDo: StepDo, _env: Env, _id: string, message: string, _userId: string, _messageId: string, metadata: Metadata, slackUserToken?: string) {
-	const { botToken, channel, postedMessageTs } = metadata;
-	if (!channel || !postedMessageTs) {
-		// No Slack thread context, skip posting
+export async function messageAdded(params: SenderParams["messageAdded"]) {
+	const { step: stepDo, message, metadata, sourceAdapter, slackUserToken } = params;
+
+	if (sourceAdapter === "slack") {
+		return;
+	}
+
+	const { botToken, channel, postedMessageTs, incidentChannelId, incidentChannelMessageTs } = metadata;
+
+	// Determine target: prefer inc-xxx channel, fallback to original thread
+	const targetChannel = incidentChannelId ?? channel;
+	const targetThreadTs = incidentChannelId ? incidentChannelMessageTs : postedMessageTs;
+
+	if (!targetChannel || !targetThreadTs) {
 		return;
 	}
 
@@ -769,8 +783,8 @@ export async function messageAdded(stepDo: StepDo, _env: Env, _id: string, messa
 					"Content-Type": "application/json",
 				},
 				body: JSON.stringify({
-					channel,
-					thread_ts: postedMessageTs,
+					channel: targetChannel,
+					thread_ts: targetThreadTs,
 					text: message,
 				}),
 			});

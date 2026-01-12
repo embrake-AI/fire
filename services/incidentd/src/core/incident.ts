@@ -76,7 +76,15 @@ export class Incident extends DurableObject<Env> {
 				event_id: event.id,
 				incident_id: state.id,
 			},
+			incident: {
+				status: state.status,
+				assignee: state.assignee.slackId,
+				severity: state.severity,
+				title: state.title,
+				description: state.description,
+			},
 			metadata: state.metadata,
+			adapter: event.adapter,
 			eventMetadata: event.event_metadata ? JSON.parse(event.event_metadata) : undefined,
 		};
 	}
