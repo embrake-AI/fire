@@ -742,7 +742,9 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 					value={String(rangeDays())}
 					onChange={(value) => value && setRangeDays(Number(value))}
 					options={rangeOptions.map((option) => String(option.days))}
-					itemComponent={(selectItemProps) => <SelectItem item={selectItemProps.item}>{rangeOptions.find((option) => String(option.days) === selectItemProps.item.rawValue)?.label}</SelectItem>}
+					itemComponent={(selectItemProps) => (
+						<SelectItem item={selectItemProps.item}>{rangeOptions.find((option) => String(option.days) === selectItemProps.item.rawValue)?.label}</SelectItem>
+					)}
 				>
 					<SelectTrigger class="w-28 h-8 text-xs">
 						<SelectValue<string>>{() => selectedRange().label}</SelectValue>
@@ -773,11 +775,7 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 						>
 							<div class="grid text-xs text-muted-foreground" style={{ "grid-template-columns": `repeat(${hourLabels().length}, minmax(0, 1fr))` }}>
 								<For each={hourLabels()}>
-									{(hour, index) => (
-										<div class={cn("px-1 py-1.5", index() === 0 && "pl-0")}>
-											{hour.toLocaleTimeString(undefined, { hour: "numeric" })}
-										</div>
-									)}
+									{(hour, index) => <div class={cn("px-1 py-1.5", index() === 0 && "pl-0")}>{hour.toLocaleTimeString(undefined, { hour: "numeric" })}</div>}
 								</For>
 							</div>
 						</Show>

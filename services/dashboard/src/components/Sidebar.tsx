@@ -80,7 +80,12 @@ export default function Sidebar() {
 	};
 
 	return (
-		<aside class={cn("flex flex-col bg-zinc-50 border-r border-zinc-200 transition-[width] duration-200 ease-in-out shrink-0", collapsed() ? "w-[60px]" : "w-[200px]")}>
+		<aside
+			class={cn(
+				"flex flex-col bg-zinc-50 border-r border-zinc-200 transition-[width] duration-200 ease-in-out shrink-0 sticky top-0 h-screen overflow-y-auto",
+				collapsed() ? "w-[60px]" : "w-[200px]",
+			)}
+		>
 			<div class="flex-1 flex flex-col py-4">
 				<Show
 					when={isSettingsPage()}
