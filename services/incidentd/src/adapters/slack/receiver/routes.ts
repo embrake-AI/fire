@@ -71,6 +71,16 @@ slackRoutes.post("/events", async (c) => {
 			c.set("auth", { clientId });
 
 			const botToken = integrationData.botToken;
+			const channelInfo = await getChannelInfo({
+				botToken,
+				channelId: channel,
+			});
+			if (channelInfo) {
+				const incidentId = extractIdentifierFromChannelName(channelInfo.name);
+				if (incidentId) {
+					return c.text("OK");
+				}
+			}
 
 			c.executionCtx.waitUntil(
 				fetch(`https://slack.com/api/reactions.add`, {
