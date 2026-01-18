@@ -1,5 +1,17 @@
 import type { EntryPoint, IS, ListIncidentsElement } from "@fire/common";
 import type { Context } from "hono";
+import { decidePromptAction } from "../core/idontknowhowtonamethisitswhereillplacecallstoai";
+
+function getValidStatusTransitions(currentStatus: IS["status"]): Array<Exclude<IS["status"], "open">> {
+	switch (currentStatus) {
+		case "open":
+			return ["mitigating", "resolved"];
+		case "mitigating":
+			return ["resolved"];
+		case "resolved":
+			return [];
+	}
+}
 
 export type BasicContext = { Bindings: Env };
 export type AuthContext = BasicContext & { Variables: { auth: { clientId: string } } };
@@ -131,7 +143,7 @@ export async function addPrompt<E extends BasicContext>({
 	identifier,
 	id,
 	prompt,
-	userId,
+	userId: _userId,
 	ts,
 	channel,
 	threadTs,
@@ -147,5 +159,47 @@ export async function addPrompt<E extends BasicContext>({
 } & ({ identifier: string; id?: never } | { id: string; identifier?: never })) {
 	const incidentId = id ? c.env.INCIDENT.idFromString(id) : c.env.INCIDENT.idFromName(identifier!);
 	const incident = c.env.INCIDENT.get(incidentId);
-	await incident.addPrompt(prompt, userId, ts, adapter, channel, threadTs);
+	const incidentInfo = await incident.get();
+	if ("error" in incidentInfo || !("state" in incidentInfo)) {
+		return;
+	}
+
+	const validStatusTransitions = getValidStatusTransitions(incidentInfo.state.status);
+	const decision = await decidePromptAction(
+		{
+			prompt,
+			incident: {
+				status: incidentInfo.state.status,
+				severity: incidentInfo.state.severity,
+				title: incidentInfo.state.title,
+			},
+			validStatusTransitions,
+		},
+		c.env.OPENAI_API_KEY,
+	);
+
+	// TODO: Handle decision noop, should change to answer user
+
+	if (decision.action === "update_status") {
+		const status = decision.status;
+		if (!status || !validStatusTransitions.includes(status)) {
+			return;
+		}
+		await incident.updateStatus(status, decision.message ?? prompt, adapter);
+		return;
+	}
+
+	if (decision.action === "update_severity") {
+		const severity = decision.severity;
+		if (!severity) {
+			return;
+		}
+		await incident.setSeverity(severity, adapter);
+		return;
+	}
+
+	if (decision.action === "summarize") {
+		await incident.respondSummary({ ts, adapter, channel, threadTs });
+		return;
+	}
 }

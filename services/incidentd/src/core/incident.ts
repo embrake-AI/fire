@@ -4,7 +4,7 @@ import { incidentAnalysis } from "@fire/db/schema";
 import { INCIDENT_WORKFLOW_EVENT_TYPE, type IncidentWorkflowPayload, type SummaryResponsePayload } from "../dispatcher/workflow";
 import type { Metadata } from "../handler";
 import { getDB } from "../lib/db";
-import { calculateIncidentInfo, decidePromptAction, generateIncidentSummary } from "./idontknowhowtonamethisitswhereillplacecallstoai";
+import { calculateIncidentInfo, generateIncidentSummary } from "./idontknowhowtonamethisitswhereillplacecallstoai";
 
 export type DOState = IS & {
 	metadata: Metadata;
@@ -19,31 +19,17 @@ const ALARM_INTERVAL_MS = 200;
 const MAX_ATTEMPTS = 3;
 const SUMMARY_CACHE_TTL_MS = 60_000;
 
-type PromptQueueRow = {
-	id: number;
-	prompt: string;
-	userId: string;
+type SummaryRequestContext = {
 	ts: string;
 	adapter: "slack" | "dashboard";
 	channel: string;
-	threadTs: string | null;
+	threadTs?: string;
 };
 
 type SummaryCache = {
 	summary: string;
 	generatedAt: number;
 };
-
-function getValidStatusTransitions(currentStatus: DOState["status"]): Array<Exclude<DOState["status"], "open">> {
-	switch (currentStatus) {
-		case "open":
-			return ["mitigating", "resolved"];
-		case "mitigating":
-			return ["resolved"];
-		case "resolved":
-			return [];
-	}
-}
 
 /**
  * An Incident is the source of truth for an incident. It is agnostic of the communication channel(s).
@@ -67,8 +53,6 @@ function getValidStatusTransitions(currentStatus: DOState["status"]): Array<Excl
  * - Easier to code (no need to check if in local state or refetch)
  */
 export class Incident extends DurableObject<Env> {
-	private promptFlushPromise?: Promise<void>;
-
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		this.ctx.blockConcurrencyWhile(() => this.migrate());
@@ -96,26 +80,6 @@ export class Incident extends DurableObject<Env> {
 			return;
 		}
 		await this.ctx.storage.setAlarm(time);
-	}
-
-	private async flushPromptQueue() {
-		while (true) {
-			const next = this.ctx.storage.sql.exec<PromptQueueRow>(`SELECT id, prompt, userId, ts, adapter, channel, threadTs FROM prompts ORDER BY id ASC LIMIT 1`).toArray()[0];
-			if (!next) {
-				return;
-			}
-			await this.processPrompt(next);
-			this.ctx.storage.sql.exec(`DELETE FROM prompts WHERE id = ?`, next.id);
-		}
-	}
-
-	private async startPromptFlush() {
-		if (this.promptFlushPromise) {
-			return;
-		}
-		this.promptFlushPromise = this.flushPromptQueue().finally(() => {
-			this.promptFlushPromise = undefined;
-		});
 	}
 
 	private getSummaryEvents() {
@@ -288,16 +252,7 @@ export class Incident extends DurableObject<Env> {
 				adapter TEXT NOT NULL
 			);
 			CREATE INDEX idx_event_log_published_at ON event_log(published_at);
-			CREATE TABLE prompts (
-				id INTEGER PRIMARY KEY,
-				prompt TEXT NOT NULL,
-				userId TEXT NOT NULL,
-				ts TEXT NOT NULL UNIQUE,
-				adapter TEXT NOT NULL,
-				channel TEXT NOT NULL,
-				threadTs TEXT DEFAULT NULL,
-				created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
-			);`);
+			`);
 			this.ctx.storage.kv.put(EVENTLOGVERSION_KEY, "1");
 			await this.commit(
 				{
@@ -491,83 +446,31 @@ export class Incident extends DurableObject<Env> {
 		await this.commit({ state, event: { event_type: "STATUS_UPDATE", event_data: { status, message } }, adapter });
 	}
 
-	private async processPrompt(promptItem: PromptQueueRow) {
+	async respondSummary(context: SummaryRequestContext) {
 		const state = this.getState();
 		if ("error" in state) {
 			return state;
 		}
 
-		const validStatusTransitions = getValidStatusTransitions(state.status);
-		const decision = await decidePromptAction(
-			{
-				prompt: promptItem.prompt,
-				incident: {
-					status: state.status,
-					severity: state.severity,
-					title: state.title,
-				},
-				validStatusTransitions,
-			},
-			this.env.OPENAI_API_KEY,
-		);
-
-		if (decision.action === "update_status") {
-			const status = decision.status;
-			if (!status || !validStatusTransitions.includes(status)) {
-				return;
-			}
-			await this.updateStatus(status, decision.message ?? promptItem.prompt, promptItem.adapter);
+		// TODO: This is wrong. If description is not cached, this should be an event part of commit so that it is atomic and the alarm dispatches it
+		const summaryResult = await this.getSummary();
+		if ("error" in summaryResult || !("summary" in summaryResult)) {
 			return;
 		}
 
-		if (decision.action === "update_severity") {
-			const severity = decision.severity;
-			if (!severity) {
-				return;
-			}
-			await this.setSeverity(severity, promptItem.adapter);
-			return;
-		}
+		state.description = summaryResult.summary;
+		await this.commit({ state });
 
-		if (decision.action === "summarize") {
-			const summaryResult = await this.getSummary();
-			if ("error" in summaryResult || !("summary" in summaryResult)) {
-				return;
-			}
+		const summaryPayload: SummaryResponsePayload = {
+			incidentId: state.id,
+			description: summaryResult.summary,
+			channel: context.channel,
+			threadTs: context.threadTs ?? undefined,
+			ts: context.ts,
+			adapter: context.adapter,
+		};
 
-			state.description = summaryResult.summary;
-			await this.commit({ state });
-
-			const summaryPayload: SummaryResponsePayload = {
-				incidentId: state.id,
-				description: summaryResult.summary,
-				channel: promptItem.channel,
-				threadTs: promptItem.threadTs ?? undefined,
-				ts: promptItem.ts,
-				adapter: promptItem.adapter,
-			};
-
-			await this.sendWorkflowEvent(state.id, this.buildSummaryResponsePayload(state, summaryPayload));
-		}
-	}
-
-	async addPrompt(prompt: string, userId: string, ts: string, adapter: "slack" | "dashboard", channel: string, threadTs?: string) {
-		const state = this.getState();
-		if ("error" in state) {
-			return state;
-		}
-
-		this.ctx.storage.sql.exec(
-			`INSERT INTO prompts (prompt, userId, ts, adapter, channel, threadTs) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(ts) DO NOTHING`,
-			prompt,
-			userId,
-			ts,
-			adapter,
-			channel,
-			threadTs ?? null,
-		);
-
-		await this.startPromptFlush();
+		await this.sendWorkflowEvent(state.id, this.buildSummaryResponsePayload(state, summaryPayload));
 	}
 
 	async addMessage(message: string, userId: string, messageId: string, adapter: "slack" | "dashboard", slackUserToken?: string) {

@@ -24,8 +24,8 @@ const SYSTEM_PROMPT = `You are an incident triage assistant. Given an incident r
 4. Write a brief description explaining the incident and why you chose that entry point
 
 Guidelines for severity:
-- high: System down, data loss, security breach, or major customer impact
-- medium: Degraded performance, partial outage, or significant functionality issues
+- high: System down, data loss, security breach, or major customer impact. Affects multiple clients
+- medium: Degraded performance, partial outage, or significant functionality issues. Affects one or more clients
 - low: Minor issues, questions/missunderstandings, cosmetic problems, or low-impact bugs`;
 
 const RESPONSE_SCHEMA = (indices: number[]) =>
@@ -124,33 +124,70 @@ const PROMPT_DECISION_SYSTEM_PROMPT = `You are an incident operations assistant.
 
 - update_status: only if the user explicitly asks to mark the incident as mitigating or resolved.
 - update_severity: only if the user explicitly asks to change severity to low/medium/high.
-- summarize: only if the user explicitly asks for a summary or recap.
+- summarize: if the user asks for a summary or recap either directly, or indirectly by asking for context or wondering what's going on.
 - noop: if the intent is unclear or doesn't match the options.
 
-Return only the action and any required fields. Do not guess missing values.`;
+Use exactly one tool to respond. Do not guess missing values. If required details are missing, use noop.`;
 
-const PROMPT_DECISION_SCHEMA = {
-	type: "object",
-	properties: {
-		action: {
-			type: "string",
-			enum: ["update_status", "update_severity", "summarize", "noop"],
-		},
-		status: {
-			type: "string",
-			enum: ["mitigating", "resolved"],
-		},
-		severity: {
-			type: "string",
-			enum: ["low", "medium", "high"],
-		},
-		message: {
-			type: "string",
+const PROMPT_DECISION_TOOLS = [
+	{
+		type: "function",
+		function: {
+			name: "update_status",
+			description: "Update the incident status when explicitly requested. Setting status: 'resolved' completes the incident.",
+			parameters: {
+				type: "object",
+				properties: {
+					status: { type: "string", enum: ["mitigating", "resolved"] },
+					message: { type: "string" },
+				},
+				required: ["status"],
+				additionalProperties: false,
+			},
 		},
 	},
-	required: ["action"],
-	additionalProperties: false,
-} as const;
+	{
+		type: "function",
+		function: {
+			name: "update_severity",
+			description: "Update the incident severity when explicitly requested.",
+			parameters: {
+				type: "object",
+				properties: {
+					severity: { type: "string", enum: ["low", "medium", "high"] },
+				},
+				required: ["severity"],
+				additionalProperties: false,
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "summarize",
+			description: "Provide a summary or recap when the user asks for context.",
+			parameters: {
+				type: "object",
+				properties: {},
+				required: [],
+				additionalProperties: false,
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "noop",
+			description: "Use when intent is unclear or does not match supported actions.",
+			parameters: {
+				type: "object",
+				properties: {},
+				required: [],
+				additionalProperties: false,
+			},
+		},
+	},
+] as const;
 
 export async function generateIncidentSummary(
 	incident: { title: string; description: string; severity: IS["severity"]; prompt: string },
@@ -234,14 +271,8 @@ Decide the best single action.`;
 				{ role: "system", content: PROMPT_DECISION_SYSTEM_PROMPT },
 				{ role: "user", content: userMessage },
 			],
-			response_format: {
-				type: "json_schema",
-				json_schema: {
-					name: "prompt_decision",
-					strict: true,
-					schema: PROMPT_DECISION_SCHEMA,
-				},
-			},
+			tools: PROMPT_DECISION_TOOLS,
+			tool_choice: "required",
 		}),
 	});
 
@@ -251,11 +282,35 @@ Decide the best single action.`;
 	}
 
 	const data = (await response.json()) as {
-		choices: Array<{ message: { content: string } }>;
+		choices: Array<{
+			message: {
+				content: string | null;
+				tool_calls?: Array<{ function: { name: string; arguments: string } }>;
+			};
+		}>;
 	};
 
-	const content = data.choices[0]?.message?.content;
-	ASSERT(content, "No response content from OpenAI");
+	const toolCall = data.choices[0]?.message?.tool_calls?.[0];
+	if (!toolCall) {
+		return { action: "noop" };
+	}
 
-	return JSON.parse(content) as PromptDecision;
+	const args = toolCall.function.arguments ? (JSON.parse(toolCall.function.arguments) as Record<string, unknown>) : {};
+	switch (toolCall.function.name) {
+		case "update_status":
+			return {
+				action: "update_status",
+				status: args.status as PromptDecision["status"],
+				message: typeof args.message === "string" ? args.message : undefined,
+			};
+		case "update_severity":
+			return {
+				action: "update_severity",
+				severity: args.severity as PromptDecision["severity"],
+			};
+		case "summarize":
+			return { action: "summarize" };
+		default:
+			return { action: "noop" };
+	}
 }
