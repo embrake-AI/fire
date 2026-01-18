@@ -346,34 +346,6 @@ export async function getSlackIntegration(opts: {
 }
 
 /**
- * Fetches channel info from Slack, including the channel name.
- * Used to identify incident channels (those named inc-{identifier}).
- */
-export async function getChannelInfo({ botToken, channelId }: { botToken: string; channelId: string }): Promise<{ id: string; name: string } | null> {
-	try {
-		const response = await fetch(`https://slack.com/api/conversations.info?channel=${channelId}`, {
-			headers: {
-				Authorization: `Bearer ${botToken}`,
-			},
-		});
-		const data = await response.json<{
-			ok: boolean;
-			channel?: {
-				id: string;
-				name: string;
-			};
-		}>();
-		if (!data.ok || !data.channel) {
-			return null;
-		}
-		return { id: data.channel.id, name: data.channel.name };
-	} catch (error) {
-		console.error("Failed to fetch channel info from Slack", error);
-		return null;
-	}
-}
-
-/**
  * Fetches the incident ID from a Slack message's metadata.
  * This is used to identify incidents created from the dashboard that were posted to Slack.
  *
@@ -410,6 +382,19 @@ export async function getIncidentIdFromMessageMetadata({ botToken, channel, mess
 		return null;
 	} catch (error) {
 		console.error("Failed to fetch message metadata from Slack", error);
+		return null;
+	}
+}
+
+export async function getIncidentIdFromIdentifier({ incidents, identifier }: { incidents: Env["incidents"]; identifier: string }): Promise<string | null> {
+	try {
+		const result = await incidents
+			.prepare("SELECT id FROM incident WHERE EXISTS (SELECT 1 FROM json_each(identifier) WHERE value = ?) LIMIT 1")
+			.bind(identifier)
+			.all<{ id: string }>();
+		return result.results[0]?.id ?? null;
+	} catch (error) {
+		console.error("Failed to fetch incident by identifier", error);
 		return null;
 	}
 }

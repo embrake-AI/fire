@@ -1,12 +1,7 @@
-export function normalizeIncidentIdentifier(identifier: string): string {
-	return identifier.replace(/[.\s]/g, "-");
+export function slackThreadIdentifier(channel: string, threadTs: string): string {
+	return `slack-thread:${channel}-${threadTs}`;
 }
 
-export function incidentChannelNameFromIdentifier(identifier: string): string {
-	return `inc-${identifier}`;
-}
-
-export function extractIdentifierFromChannelName(channelName: string): string | null {
-	const match = channelName.match(/^inc-(.+)$/);
-	return match ? match[1] : null;
+export function incidentChannelIdentifier(channelId: string): string {
+	return `slack-channel:${channelId}`;
 }

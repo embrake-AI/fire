@@ -13,13 +13,31 @@ export type Incident = {
 	description: string;
 };
 
-export type IncidentWorkflowPayload = {
-	event: IS_Event & { incident_id: string; event_id: number };
-	incident: Incident;
-	metadata: Metadata;
+export type SummaryResponsePayload = {
+	incidentId: string;
+	description: string;
+	channel: string;
+	threadTs?: string;
+	ts: string;
 	adapter: "slack" | "dashboard";
-	eventMetadata?: Record<string, string>;
 };
+
+export type IncidentWorkflowPayload =
+	| {
+			kind: "event";
+			event: IS_Event & { incident_id: string; event_id: number };
+			incident: Incident;
+			metadata: Metadata;
+			adapter: "slack" | "dashboard";
+			eventMetadata?: Record<string, string>;
+	  }
+	| {
+			kind: "summary_response";
+			summary_response: SummaryResponsePayload;
+			incident: Incident;
+			metadata: Metadata;
+			adapter: "slack" | "dashboard";
+	  };
 
 export const INCIDENT_WORKFLOW_EVENT_TYPE = "incident-event";
 
@@ -70,6 +88,18 @@ export type SenderParams = {
 		sourceAdapter: "slack" | "dashboard";
 		slackUserToken?: string;
 	};
+	summaryResponse: {
+		step: StepDo;
+		env: Env;
+		id: string;
+		incident: Incident;
+		description: string;
+		channel: string;
+		threadTs?: string;
+		ts: string;
+		metadata: Metadata;
+		sourceAdapter: "slack" | "dashboard";
+	};
 };
 
 interface Sender {
@@ -78,6 +108,7 @@ interface Sender {
 	incidentAssigneeUpdated: ((params: SenderParams["incidentAssigneeUpdated"]) => Promise<void>) | undefined;
 	incidentStatusUpdated: ((params: SenderParams["incidentStatusUpdated"]) => Promise<void>) | undefined;
 	messageAdded: ((params: SenderParams["messageAdded"]) => Promise<void>) | undefined;
+	summaryResponse: ((params: SenderParams["summaryResponse"]) => Promise<void>) | undefined;
 }
 
 const senders: Sender[] = [dashboardSender, slackSender];
@@ -96,9 +127,9 @@ async function settleDispatch(label: string, tasks: Array<Promise<unknown> | und
 }
 
 type Callback = <T>() => Promise<T>;
-function createStepDo(step: WorkflowStep, eventId: number): StepDo {
+function createStepDo(step: WorkflowStep, eventId: number | string): StepDo {
 	return ((name: string, configOrCallback: WorkflowStepConfig | Callback, callback?: Callback) => {
-		const prefixedName = `${name}:${eventId}`;
+		const prefixedName = `${name}:${String(eventId)}`;
 		if (callback !== undefined && typeof configOrCallback !== "function") {
 			return step.do(prefixedName, configOrCallback, callback);
 		} else if (typeof configOrCallback === "function") {
@@ -109,7 +140,10 @@ function createStepDo(step: WorkflowStep, eventId: number): StepDo {
 
 async function dispatchIncidentStartedEvent(params: SenderParams["incidentStarted"]) {
 	const { step, env, id, incident, metadata, sourceAdapter } = params;
-	await settleDispatch("incident-started", [...senders.map((sender) => sender.incidentStarted?.({ step, env, id, incident, metadata, sourceAdapter }))]);
+	const payload = { step, env, id, incident, metadata, sourceAdapter };
+	await settleDispatch("incident-started.dashboard-first", [dashboardSender.incidentStarted?.(payload)]);
+	const otherSenders = senders.filter((sender) => sender !== dashboardSender);
+	await settleDispatch("incident-started", [...otherSenders.map((sender) => sender.incidentStarted?.(payload))]);
 }
 
 async function dispatchIncidentSeverityUpdatedEvent(params: SenderParams["incidentSeverityUpdated"]) {
@@ -128,7 +162,14 @@ async function dispatchMessageAddedEvent(params: SenderParams["messageAdded"]) {
 	await settleDispatch("message-added", [...senders.map((sender) => sender.messageAdded?.(params))]);
 }
 
-async function dispatchEvent(step: WorkflowStep, env: Env, payload: IncidentWorkflowPayload) {
+async function dispatchSummaryResponseEvent(params: SenderParams["summaryResponse"]) {
+	await settleDispatch("summary-response", [...senders.map((sender) => sender.summaryResponse?.(params))]);
+}
+
+type WorkflowEventPayload = Extract<IncidentWorkflowPayload, { kind: "event" }>;
+type SummaryResponseEventPayload = Extract<IncidentWorkflowPayload, { kind: "summary_response" }>;
+
+async function dispatchEvent(step: WorkflowStep, env: Env, payload: WorkflowEventPayload) {
 	const eventType = payload.event.event_type;
 	const stepDo = createStepDo(step, payload.event.event_id);
 	const baseParams = { step: stepDo, env, id: payload.event.incident_id, incident: payload.incident, metadata: payload.metadata, sourceAdapter: payload.adapter };
@@ -161,18 +202,40 @@ async function dispatchEvent(step: WorkflowStep, env: Env, payload: IncidentWork
 	}
 }
 
+async function dispatchSummaryResponse(step: WorkflowStep, env: Env, payload: SummaryResponseEventPayload) {
+	const stepDo = createStepDo(step, payload.summary_response.ts);
+	await dispatchSummaryResponseEvent({
+		step: stepDo,
+		env,
+		id: payload.summary_response.incidentId,
+		incident: payload.incident,
+		description: payload.summary_response.description,
+		channel: payload.summary_response.channel,
+		threadTs: payload.summary_response.threadTs,
+		ts: payload.summary_response.ts,
+		metadata: payload.metadata,
+		sourceAdapter: payload.summary_response.adapter,
+	});
+}
+
 export class IncidentWorkflow extends WorkflowEntrypoint<Env, IncidentWorkflowPayload> {
 	async run(event: WorkflowEvent<IncidentWorkflowPayload>, step: WorkflowStep) {
 		let payload = event.payload;
+		let lastEvent = payload.kind === "event" ? payload.event : undefined;
+		let waitKey = payload.kind === "event" ? payload.event.event_id : payload.summary_response.ts;
 
 		await this.dispatchWithLogging(step, payload);
 
-		while (!isIncidentResolved(payload.event)) {
-			const nextEvent = await step.waitForEvent<IncidentWorkflowPayload>(`wait-for-incident-event_${payload.event.event_id}`, {
+		while (!lastEvent || !isIncidentResolved(lastEvent)) {
+			const nextEvent = await step.waitForEvent<IncidentWorkflowPayload>(`wait-for-incident-event_${String(waitKey)}`, {
 				type: INCIDENT_WORKFLOW_EVENT_TYPE,
 				timeout: "2 days",
 			});
 			payload = nextEvent.payload;
+			if (payload.kind === "event") {
+				lastEvent = payload.event;
+			}
+			waitKey = payload.kind === "event" ? payload.event.event_id : payload.summary_response.ts;
 
 			await this.dispatchWithLogging(step, payload);
 		}
@@ -180,9 +243,13 @@ export class IncidentWorkflow extends WorkflowEntrypoint<Env, IncidentWorkflowPa
 
 	private async dispatchWithLogging(step: WorkflowStep, payload: IncidentWorkflowPayload) {
 		try {
-			await dispatchEvent(step, this.env, payload);
+			if (payload.kind === "event") {
+				await dispatchEvent(step, this.env, payload);
+			} else {
+				await dispatchSummaryResponse(step, this.env, payload);
+			}
 		} catch (error) {
-			console.error("Workflow dispatch failed", payload.event, error);
+			console.error("Workflow dispatch failed", payload, error);
 		}
 	}
 }

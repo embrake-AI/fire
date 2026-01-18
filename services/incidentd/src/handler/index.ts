@@ -125,3 +125,27 @@ export async function addMessage<E extends BasicContext>({
 	const incident = c.env.INCIDENT.get(incidentId);
 	await incident.addMessage(message, userId, messageId, adapter, slackUserToken);
 }
+
+export async function addPrompt<E extends BasicContext>({
+	c,
+	identifier,
+	id,
+	prompt,
+	userId,
+	ts,
+	channel,
+	threadTs,
+	adapter,
+}: {
+	c: Context<E>;
+	prompt: string;
+	userId: string;
+	ts: string;
+	channel: string;
+	threadTs?: string;
+	adapter: "slack" | "dashboard";
+} & ({ identifier: string; id?: never } | { id: string; identifier?: never })) {
+	const incidentId = id ? c.env.INCIDENT.idFromString(id) : c.env.INCIDENT.idFromName(identifier!);
+	const incident = c.env.INCIDENT.get(incidentId);
+	await incident.addPrompt(prompt, userId, ts, adapter, channel, threadTs);
+}

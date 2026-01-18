@@ -1,4 +1,4 @@
-import type { EntryPoint, IS, IS_Event } from "@fire/common";
+import type { EntryPoint, EventLog, IS } from "@fire/common";
 import { ASSERT } from "../lib/utils";
 
 type IncidentInfo = {
@@ -6,6 +6,13 @@ type IncidentInfo = {
 	severity: IS["severity"];
 	title: string;
 	description: string;
+};
+
+export type PromptDecision = {
+	action: "update_status" | "update_severity" | "summarize" | "noop";
+	status?: Exclude<IS["status"], "open">;
+	severity?: IS["severity"];
+	message?: string;
 };
 
 // We could allow users to tune the system prompt (when high, medium, low)
@@ -113,12 +120,44 @@ Your summary should:
 
 Keep the summary to 2-5 sentences, focusing on the most important aspects.`;
 
+const PROMPT_DECISION_SYSTEM_PROMPT = `You are an incident operations assistant. Given a user's @fire prompt and the current incident status/severity, decide the single best action:
+
+- update_status: only if the user explicitly asks to mark the incident as mitigating or resolved.
+- update_severity: only if the user explicitly asks to change severity to low/medium/high.
+- summarize: only if the user explicitly asks for a summary or recap.
+- noop: if the intent is unclear or doesn't match the options.
+
+Return only the action and any required fields. Do not guess missing values.`;
+
+const PROMPT_DECISION_SCHEMA = {
+	type: "object",
+	properties: {
+		action: {
+			type: "string",
+			enum: ["update_status", "update_severity", "summarize", "noop"],
+		},
+		status: {
+			type: "string",
+			enum: ["mitigating", "resolved"],
+		},
+		severity: {
+			type: "string",
+			enum: ["low", "medium", "high"],
+		},
+		message: {
+			type: "string",
+		},
+	},
+	required: ["action"],
+	additionalProperties: false,
+} as const;
+
 export async function generateIncidentSummary(
 	incident: { title: string; description: string; severity: IS["severity"]; prompt: string },
-	events: (IS_Event & { created_at: string })[],
+	events: Pick<EventLog, "event_type" | "event_data" | "created_at">[],
 	openaiApiKey: string,
 ): Promise<string> {
-	const eventDescriptions = events.map((e) => `[${e.created_at}] ${e.event_type}: ${JSON.stringify(e.event_data)}`).join("\n");
+	const eventDescriptions = events.map((e) => `[${e.created_at}] ${e.event_type}: ${e.event_data}`).join("\n");
 
 	const userMessage = `Incident: ${incident.title}
 Description: ${incident.description}
@@ -158,4 +197,65 @@ Generate a summary of this incident.`;
 	ASSERT(content, "No response content from OpenAI");
 
 	return content;
+}
+
+export async function decidePromptAction(
+	{
+		prompt,
+		incident,
+		validStatusTransitions,
+	}: {
+		prompt: string;
+		incident: Pick<IS, "status" | "severity" | "title">;
+		validStatusTransitions: Array<Exclude<IS["status"], "open">>;
+	},
+	openaiApiKey: string,
+): Promise<PromptDecision> {
+	const userMessage = `Incident:
+Title: ${incident.title}
+Status: ${incident.status}
+Severity: ${incident.severity}
+Valid status transitions: ${validStatusTransitions.length ? validStatusTransitions.join(", ") : "none"}
+
+User prompt:
+${prompt}
+
+Decide the best single action.`;
+
+	const response = await fetch("https://api.openai.com/v1/chat/completions", {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${openaiApiKey}`,
+		},
+		body: JSON.stringify({
+			model: "gpt-4o-mini",
+			messages: [
+				{ role: "system", content: PROMPT_DECISION_SYSTEM_PROMPT },
+				{ role: "user", content: userMessage },
+			],
+			response_format: {
+				type: "json_schema",
+				json_schema: {
+					name: "prompt_decision",
+					strict: true,
+					schema: PROMPT_DECISION_SCHEMA,
+				},
+			},
+		}),
+	});
+
+	if (!response.ok) {
+		const error = await response.text();
+		throw new Error(`OpenAI API error: ${response.status} - ${error}`);
+	}
+
+	const data = (await response.json()) as {
+		choices: Array<{ message: { content: string } }>;
+	};
+
+	const content = data.choices[0]?.message?.content;
+	ASSERT(content, "No response content from OpenAI");
+
+	return JSON.parse(content) as PromptDecision;
 }

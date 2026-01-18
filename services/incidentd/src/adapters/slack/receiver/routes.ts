@@ -1,11 +1,18 @@
 import type { IS } from "@fire/common";
 import type { Context } from "hono";
 import { Hono } from "hono";
-import { type AuthContext, addMessage, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
+import { type AuthContext, addMessage, addPrompt, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
 import { ASSERT_NEVER } from "../../../lib/utils";
-import { extractIdentifierFromChannelName, normalizeIncidentIdentifier } from "../shared";
+import { incidentChannelIdentifier, slackThreadIdentifier } from "../shared";
 import { verifySlackRequestMiddleware } from "./middleware";
-import { getChannelInfo, getIncidentIdFromMessageMetadata, getSlackIntegration, handleStatusUpdate, type SlackEventPayload, type SlackInteractionPayload } from "./utils";
+import {
+	getIncidentIdFromIdentifier,
+	getIncidentIdFromMessageMetadata,
+	getSlackIntegration,
+	handleStatusUpdate,
+	type SlackEventPayload,
+	type SlackInteractionPayload,
+} from "./utils";
 
 type SlackContext = { Bindings: Env };
 
@@ -28,18 +35,9 @@ slackRoutes.post("/events", async (c) => {
 				return c.text("OK");
 			}
 
-			//If edited, contains: "edited": { "user": "user_id", "ts": "ts" },
-			if (event.thread_ts) {
-				// either thread_ts === ts => the message was edited
-				// or thread_ts !== ts => the message was a new message in the thread
-				// TODO: handle mentions as prompts
-				return c.text("OK");
-			}
-
 			const text = event.text;
 			const user = event.user!; // It's not a bot message, so user is required
-			const thread = event.thread_ts ?? event.ts;
-			const identifier = normalizeIncidentIdentifier(thread);
+			const promptThread = event.thread_ts ?? null;
 			const teamId = body.team_id ?? event.team;
 
 			const channel = event.channel;
@@ -62,26 +60,56 @@ slackRoutes.post("/events", async (c) => {
 				console.error(`No Slack integration found for ${teamId}`);
 				return c.text("OK");
 			}
+			const { clientId, data: integrationData } = slackIntegration;
+			c.set("auth", { clientId });
+
+			const botToken = integrationData.botToken;
+
+			const isThread = !!promptThread && promptThread !== event.ts;
+			const incidentIdForChannel = await getIncidentIdFromIdentifier({
+				incidents: c.env.incidents,
+				identifier: incidentChannelIdentifier(channel),
+			});
+			if (incidentIdForChannel) {
+				await addPrompt({
+					c: c as Context<AuthContext>,
+					id: incidentIdForChannel,
+					prompt,
+					userId: user,
+					ts: event.ts,
+					channel,
+					threadTs: promptThread ?? event.ts,
+					adapter: "slack",
+				});
+				return c.text("OK");
+			}
+			if (isThread) {
+				const identifier = slackThreadIdentifier(channel, promptThread);
+				const incidentId = await getIncidentIdFromIdentifier({
+					incidents: c.env.incidents,
+					identifier,
+				});
+				if (incidentId) {
+					await addPrompt({
+						c: c as Context<AuthContext>,
+						id: incidentId,
+						prompt,
+						userId: user,
+						ts: event.ts,
+						channel,
+						threadTs: promptThread,
+						adapter: "slack",
+					});
+				}
+				return c.text("OK");
+			}
+
 			if (!slackIntegration.entryPoints.length) {
 				console.error(`No entry points found for client ${slackIntegration.clientId}`);
 				return c.text("OK");
 			}
 
-			const { clientId, data: integrationData } = slackIntegration;
-			c.set("auth", { clientId });
-
-			const botToken = integrationData.botToken;
-			const channelInfo = await getChannelInfo({
-				botToken,
-				channelId: channel,
-			});
-			if (channelInfo) {
-				const incidentId = extractIdentifierFromChannelName(channelInfo.name);
-				if (incidentId) {
-					return c.text("OK");
-				}
-			}
-
+			const threadForIncident = event.ts;
 			c.executionCtx.waitUntil(
 				fetch(`https://slack.com/api/reactions.add`, {
 					method: "POST",
@@ -92,21 +120,21 @@ slackRoutes.post("/events", async (c) => {
 					body: JSON.stringify({
 						name: "fire",
 						channel,
-						timestamp: thread,
+						timestamp: threadForIncident,
 					}),
 				}).catch(() => {}),
 			);
 
 			await startIncident({
 				c: c as Context<AuthContext>,
-				identifier,
+				identifier: threadForIncident,
 				prompt,
 				createdBy: user,
 				source: "slack",
 				m: {
 					botToken,
 					channel,
-					thread,
+					thread: threadForIncident,
 				},
 				entryPoints: slackIntegration.entryPoints,
 			});
@@ -174,7 +202,7 @@ slackRoutes.post("/events", async (c) => {
 						});
 					}
 				} else {
-					const identifier = normalizeIncidentIdentifier(thread);
+					const identifier = thread;
 					await addMessage({
 						c: c as Context<AuthContext>,
 						identifier,
@@ -185,22 +213,19 @@ slackRoutes.post("/events", async (c) => {
 					});
 				}
 			} else {
-				const channelInfo = await getChannelInfo({
-					botToken: slackIntegration.data.botToken,
-					channelId: channel,
+				const incidentId = await getIncidentIdFromIdentifier({
+					incidents: c.env.incidents,
+					identifier: incidentChannelIdentifier(channel),
 				});
-				if (channelInfo) {
-					const identifier = extractIdentifierFromChannelName(channelInfo.name);
-					if (identifier) {
-						await addMessage({
-							c: c as Context<AuthContext>,
-							identifier,
-							message: text,
-							userId: user,
-							messageId: message.ts,
-							adapter: "slack",
-						});
-					}
+				if (incidentId) {
+					await addMessage({
+						c: c as Context<AuthContext>,
+						id: incidentId,
+						message: text,
+						userId: user,
+						messageId: message.ts,
+						adapter: "slack",
+					});
 				}
 			}
 		}

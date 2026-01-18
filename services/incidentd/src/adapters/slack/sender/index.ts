@@ -1,7 +1,8 @@
 import { IS_SEVERITY } from "@fire/common";
 import type { ActionsBlock, KnownBlock } from "@slack/types";
 import type { Incident, SenderParams, StepDo } from "../../../dispatcher/workflow";
-import { incidentChannelNameFromIdentifier } from "../shared";
+import { addIncidentIdentifiers } from "../../dashboard/sender";
+import { incidentChannelIdentifier, slackThreadIdentifier } from "../shared";
 
 type SlackApiResponse = {
 	ok?: boolean;
@@ -17,12 +18,35 @@ type SlackChannelResponse = {
 
 type ChannelResult = { channelId: string; channelName?: string };
 
+const CHANNEL_NAME_MAX_LENGTH = 80;
+const CHANNEL_DATE_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function formatIncidentChannelDate(date: Date): string {
+	const day = date.getUTCDate();
+	const month = CHANNEL_DATE_MONTHS[date.getUTCMonth()];
+	return `${day}-${month}`;
+}
+
+function formatIncidentChannelName(title: string, date = new Date()): string {
+	const baseTitle = title.trim() || "incident";
+	const slug = baseTitle
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "");
+	const dateLabel = formatIncidentChannelDate(date);
+	const prefix = "inc-";
+	const suffix = `-${dateLabel}`;
+	const maxSlugLength = Math.max(1, CHANNEL_NAME_MAX_LENGTH - prefix.length - suffix.length);
+	const truncatedSlug = (slug || "incident").slice(0, maxSlugLength).replace(/-+$/g, "");
+	return `${prefix}${truncatedSlug}${suffix}`;
+}
+
 /**
  * Creates a public Slack channel for an incident.
- * Channel name format: inc-{identifier}
+ * Channel name format: inc-{incident-title}-{day-month}
  */
-async function createIncidentChannel(stepDo: StepDo, botToken: string, identifier: string): Promise<ChannelResult | null> {
-	const channelName = incidentChannelNameFromIdentifier(identifier);
+async function createIncidentChannel(stepDo: StepDo, botToken: string, title: string): Promise<ChannelResult | null> {
+	const channelName = formatIncidentChannelName(title);
 
 	return stepDo(
 		"slack.conversations.create",
@@ -185,7 +209,7 @@ async function pinMessage(stepDo: StepDo, botToken: string, channelId: string, m
 export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 	const { step: stepDo, env, id, incident, metadata } = params;
 	const { severity, status, assignee, title } = incident;
-	const { botToken, channel, thread, identifier, incidentChannelId, incidentChannelMessageTs: existingIncidentChannelMessageTs, postedMessageTs } = metadata;
+	const { botToken, channel, thread, incidentChannelId, incidentChannelMessageTs: existingIncidentChannelMessageTs, postedMessageTs } = metadata;
 	if (!botToken || !channel) {
 		// Thread is optional, if we have a channel and no thread, we'll post in the channel directly
 		return;
@@ -198,7 +222,7 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 
 	const channelResult = incidentChannelId
 		? { channelId: incidentChannelId, channelName: metadata.incidentChannelName }
-		: await createIncidentChannel(stepDo, botToken, identifier).catch((err) => {
+		: await createIncidentChannel(stepDo, botToken, title).catch((err) => {
 				console.error("Failed to create incident channel", err);
 				return null;
 			});
@@ -347,6 +371,19 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 	} else if (threadPostResult) {
 		console.error("Failed to create incident", threadPostResult.reason);
 	}
+
+	const identifiersToAdd: string[] = [];
+	if (channelResult?.channelId) {
+		identifiersToAdd.push(incidentChannelIdentifier(channelResult.channelId));
+	}
+	const threadIdentifier = thread ?? (threadPostResult?.status === "fulfilled" ? threadPostResult.value.ts : undefined);
+	if (threadIdentifier) {
+		identifiersToAdd.push(slackThreadIdentifier(channel, threadIdentifier));
+	}
+	if (identifiersToAdd.length) {
+		await addIncidentIdentifiers({ step: stepDo, env, id, identifiers: identifiersToAdd });
+	}
+
 	if (Object.keys(metadataUpdates).length) {
 		await stepDo(
 			"incident.addMetadata",
@@ -789,6 +826,49 @@ export async function messageAdded(params: SenderParams["messageAdded"]) {
 				}),
 			});
 			const payload = await response.json<SlackApiResponse>();
+			if (!response.ok || payload.ok === false) {
+				throw new Error(`Slack postMessage failed: ${payload.error ?? response.status}`);
+			}
+		},
+	);
+}
+
+export async function summaryResponse(params: SenderParams["summaryResponse"]) {
+	const { step: stepDo, description, channel, threadTs, ts, metadata, sourceAdapter } = params;
+
+	if (sourceAdapter !== "slack") {
+		return;
+	}
+
+	const { botToken } = metadata;
+	if (!botToken) {
+		return;
+	}
+
+	const replyThreadTs = threadTs ?? ts;
+
+	await stepDo(
+		"slack.post-summary-response",
+		{
+			retries: {
+				limit: 3,
+				delay: "1 second",
+			},
+		},
+		async () => {
+			const response = await fetch("https://slack.com/api/chat.postMessage", {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${botToken}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					channel,
+					text: `*Summary*\n${description}`,
+					...(replyThreadTs ? { thread_ts: replyThreadTs } : {}),
+				}),
+			});
+			const payload = await response.json<SlackApiResponse>().catch(() => ({}) as SlackApiResponse);
 			if (!response.ok || payload.ok === false) {
 				throw new Error(`Slack postMessage failed: ${payload.error ?? response.status}`);
 			}

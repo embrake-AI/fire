@@ -1,10 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import type { EntryPoint, EventLog, IS, IS_Event } from "@fire/common";
 import { incidentAnalysis } from "@fire/db/schema";
-import { INCIDENT_WORKFLOW_EVENT_TYPE, type IncidentWorkflowPayload } from "../dispatcher/workflow";
+import { INCIDENT_WORKFLOW_EVENT_TYPE, type IncidentWorkflowPayload, type SummaryResponsePayload } from "../dispatcher/workflow";
 import type { Metadata } from "../handler";
 import { getDB } from "../lib/db";
-import { calculateIncidentInfo, generateIncidentSummary } from "./idontknowhowtonamethisitswhereillplacecallstoai";
+import { calculateIncidentInfo, decidePromptAction, generateIncidentSummary } from "./idontknowhowtonamethisitswhereillplacecallstoai";
 
 export type DOState = IS & {
 	metadata: Metadata;
@@ -14,8 +14,36 @@ export type DOState = IS & {
 const STATE_KEY = "S";
 const EVENTLOGVERSION_KEY = "ELV";
 const ENTRYPOINT_KEY = "EP";
+const SUMMARY_CACHE_KEY = "SC";
 const ALARM_INTERVAL_MS = 200;
 const MAX_ATTEMPTS = 3;
+const SUMMARY_CACHE_TTL_MS = 60_000;
+
+type PromptQueueRow = {
+	id: number;
+	prompt: string;
+	userId: string;
+	ts: string;
+	adapter: "slack" | "dashboard";
+	channel: string;
+	threadTs: string | null;
+};
+
+type SummaryCache = {
+	summary: string;
+	generatedAt: number;
+};
+
+function getValidStatusTransitions(currentStatus: DOState["status"]): Array<Exclude<DOState["status"], "open">> {
+	switch (currentStatus) {
+		case "open":
+			return ["mitigating", "resolved"];
+		case "mitigating":
+			return ["resolved"];
+		case "resolved":
+			return [];
+	}
+}
 
 /**
  * An Incident is the source of truth for an incident. It is agnostic of the communication channel(s).
@@ -39,6 +67,8 @@ const MAX_ATTEMPTS = 3;
  * - Easier to code (no need to check if in local state or refetch)
  */
 export class Incident extends DurableObject<Env> {
+	private promptFlushPromise?: Promise<void>;
+
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		this.ctx.blockConcurrencyWhile(() => this.migrate());
@@ -68,8 +98,40 @@ export class Incident extends DurableObject<Env> {
 		await this.ctx.storage.setAlarm(time);
 	}
 
+	private async flushPromptQueue() {
+		while (true) {
+			const next = this.ctx.storage.sql.exec<PromptQueueRow>(`SELECT id, prompt, userId, ts, adapter, channel, threadTs FROM prompts ORDER BY id ASC LIMIT 1`).toArray()[0];
+			if (!next) {
+				return;
+			}
+			await this.processPrompt(next);
+			this.ctx.storage.sql.exec(`DELETE FROM prompts WHERE id = ?`, next.id);
+		}
+	}
+
+	private async startPromptFlush() {
+		if (this.promptFlushPromise) {
+			return;
+		}
+		this.promptFlushPromise = this.flushPromptQueue().finally(() => {
+			this.promptFlushPromise = undefined;
+		});
+	}
+
+	private getSummaryEvents() {
+		const events = this.ctx.storage.sql
+			.exec<Pick<EventLog, "event_type" | "event_data" | "created_at">>("SELECT event_type, event_data, created_at FROM event_log ORDER BY id ASC")
+			.toArray();
+		return events.map((event) => ({
+			event_type: event.event_type,
+			event_data: event.event_data,
+			created_at: event.created_at,
+		}));
+	}
+
 	private buildWorkflowPayload(event: EventLog, state: DOState): IncidentWorkflowPayload {
 		return {
+			kind: "event",
 			event: {
 				event_type: event.event_type,
 				event_data: JSON.parse(event.event_data),
@@ -86,6 +148,22 @@ export class Incident extends DurableObject<Env> {
 			metadata: state.metadata,
 			adapter: event.adapter,
 			eventMetadata: event.event_metadata ? JSON.parse(event.event_metadata) : undefined,
+		};
+	}
+
+	private buildSummaryResponsePayload(state: DOState, summaryResponse: SummaryResponsePayload): IncidentWorkflowPayload {
+		return {
+			kind: "summary_response",
+			summary_response: summaryResponse,
+			incident: {
+				status: state.status,
+				assignee: state.assignee.slackId,
+				severity: state.severity,
+				title: state.title,
+				description: state.description,
+			},
+			metadata: state.metadata,
+			adapter: summaryResponse.adapter,
 		};
 	}
 
@@ -209,7 +287,17 @@ export class Incident extends DurableObject<Env> {
 				attempts INTEGER NOT NULL DEFAULT 0,
 				adapter TEXT NOT NULL
 			);
-			CREATE INDEX idx_event_log_published_at ON event_log(published_at);`);
+			CREATE INDEX idx_event_log_published_at ON event_log(published_at);
+			CREATE TABLE prompts (
+				id INTEGER PRIMARY KEY,
+				prompt TEXT NOT NULL,
+				userId TEXT NOT NULL,
+				ts TEXT NOT NULL UNIQUE,
+				adapter TEXT NOT NULL,
+				channel TEXT NOT NULL,
+				threadTs TEXT DEFAULT NULL,
+				created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+			);`);
 			this.ctx.storage.kv.put(EVENTLOGVERSION_KEY, "1");
 			await this.commit(
 				{
@@ -251,6 +339,34 @@ export class Incident extends DurableObject<Env> {
 				}
 			}
 		});
+	}
+
+	async getSummary({ refresh = false }: { refresh?: boolean } = {}) {
+		const state = this.getState();
+		if ("error" in state) {
+			return state;
+		}
+
+		const cache = this.ctx.storage.kv.get<SummaryCache>(SUMMARY_CACHE_KEY);
+		const now = Date.now();
+		if (!refresh && cache && now - cache.generatedAt < SUMMARY_CACHE_TTL_MS) {
+			return { summary: cache.summary, cached: true, generatedAt: cache.generatedAt };
+		}
+
+		const summary = await generateIncidentSummary(
+			{
+				title: state.title,
+				description: state.description,
+				severity: state.severity,
+				prompt: state.prompt,
+			},
+			this.getSummaryEvents(),
+			this.env.OPENAI_API_KEY,
+		);
+
+		const nextCache: SummaryCache = { summary, generatedAt: now };
+		this.ctx.storage.kv.put(SUMMARY_CACHE_KEY, nextCache);
+		return { summary, cached: false, generatedAt: now };
 	}
 
 	private async persistAnalysis() {
@@ -373,6 +489,85 @@ export class Incident extends DurableObject<Env> {
 
 		state.status = status;
 		await this.commit({ state, event: { event_type: "STATUS_UPDATE", event_data: { status, message } }, adapter });
+	}
+
+	private async processPrompt(promptItem: PromptQueueRow) {
+		const state = this.getState();
+		if ("error" in state) {
+			return state;
+		}
+
+		const validStatusTransitions = getValidStatusTransitions(state.status);
+		const decision = await decidePromptAction(
+			{
+				prompt: promptItem.prompt,
+				incident: {
+					status: state.status,
+					severity: state.severity,
+					title: state.title,
+				},
+				validStatusTransitions,
+			},
+			this.env.OPENAI_API_KEY,
+		);
+
+		if (decision.action === "update_status") {
+			const status = decision.status;
+			if (!status || !validStatusTransitions.includes(status)) {
+				return;
+			}
+			await this.updateStatus(status, decision.message ?? promptItem.prompt, promptItem.adapter);
+			return;
+		}
+
+		if (decision.action === "update_severity") {
+			const severity = decision.severity;
+			if (!severity) {
+				return;
+			}
+			await this.setSeverity(severity, promptItem.adapter);
+			return;
+		}
+
+		if (decision.action === "summarize") {
+			const summaryResult = await this.getSummary();
+			if ("error" in summaryResult || !("summary" in summaryResult)) {
+				return;
+			}
+
+			state.description = summaryResult.summary;
+			await this.commit({ state });
+
+			const summaryPayload: SummaryResponsePayload = {
+				incidentId: state.id,
+				description: summaryResult.summary,
+				channel: promptItem.channel,
+				threadTs: promptItem.threadTs ?? undefined,
+				ts: promptItem.ts,
+				adapter: promptItem.adapter,
+			};
+
+			await this.sendWorkflowEvent(state.id, this.buildSummaryResponsePayload(state, summaryPayload));
+		}
+	}
+
+	async addPrompt(prompt: string, userId: string, ts: string, adapter: "slack" | "dashboard", channel: string, threadTs?: string) {
+		const state = this.getState();
+		if ("error" in state) {
+			return state;
+		}
+
+		this.ctx.storage.sql.exec(
+			`INSERT INTO prompts (prompt, userId, ts, adapter, channel, threadTs) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(ts) DO NOTHING`,
+			prompt,
+			userId,
+			ts,
+			adapter,
+			channel,
+			threadTs ?? null,
+		);
+
+		await this.startPromptFlush();
 	}
 
 	async addMessage(message: string, userId: string, messageId: string, adapter: "slack" | "dashboard", slackUserToken?: string) {
