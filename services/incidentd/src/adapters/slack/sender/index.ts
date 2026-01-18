@@ -19,7 +19,7 @@ type SlackChannelResponse = {
 type ChannelResult = { channelId: string; channelName?: string };
 
 const CHANNEL_NAME_MAX_LENGTH = 80;
-const CHANNEL_DATE_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const CHANNEL_DATE_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
 function formatIncidentChannelDate(date: Date): string {
 	const day = date.getUTCDate();
@@ -29,15 +29,13 @@ function formatIncidentChannelDate(date: Date): string {
 
 function formatIncidentChannelName(title: string, date = new Date()): string {
 	const baseTitle = title.trim() || "incident";
-	const slug = baseTitle
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "");
+	const rawSlug = baseTitle.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+	const slug = rawSlug.replace(/^[-_]+|[-_]+$/g, "") || "incident";
 	const dateLabel = formatIncidentChannelDate(date);
 	const prefix = "inc-";
 	const suffix = `-${dateLabel}`;
 	const maxSlugLength = Math.max(1, CHANNEL_NAME_MAX_LENGTH - prefix.length - suffix.length);
-	const truncatedSlug = (slug || "incident").slice(0, maxSlugLength).replace(/-+$/g, "");
+	const truncatedSlug = slug.slice(0, maxSlugLength).replace(/[-_]+$/g, "") || "incident";
 	return `${prefix}${truncatedSlug}${suffix}`;
 }
 
