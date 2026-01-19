@@ -697,7 +697,7 @@ function incidentBlocks({
 	const validTransitions = getValidStatusTransitions(status);
 
 	const headerText = isResolved
-		? `<${frontendUrl}/analysis/${incidentId}|${title}> - ✅ resolved`
+		? `<${frontendUrl}/metrics/${incidentId}|${title}> - ✅ resolved`
 		: isMitigating
 			? `<${frontendUrl}/incidents/${incidentId}|${title}> - 🟡 mitigating`
 			: `<${frontendUrl}/incidents/${incidentId}|${title}> - 🚨`;
