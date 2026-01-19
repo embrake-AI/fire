@@ -31,6 +31,11 @@ type SummaryCache = {
 	generatedAt: number;
 };
 
+type PendingSummaryRow = {
+	id: number;
+	context: string;
+};
+
 /**
  * An Incident is the source of truth for an incident. It is agnostic of the communication channel(s).
  * All operations guarantee transactional consistency: https://blog.cloudflare.com/durable-objects-easy-fast-correct-choose-three/
@@ -53,6 +58,8 @@ type SummaryCache = {
  * - Easier to code (no need to check if in local state or refetch)
  */
 export class Incident extends DurableObject<Env> {
+	private summaryPromise?: Promise<void>;
+
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		this.ctx.blockConcurrencyWhile(() => this.migrate());
@@ -80,6 +87,15 @@ export class Incident extends DurableObject<Env> {
 			return;
 		}
 		await this.ctx.storage.setAlarm(time);
+	}
+
+	private getCachedSummary() {
+		const cache = this.ctx.storage.kv.get<SummaryCache>(SUMMARY_CACHE_KEY);
+		const now = Date.now();
+		if (!cache || now - cache.generatedAt >= SUMMARY_CACHE_TTL_MS) {
+			return undefined;
+		}
+		return cache;
 	}
 
 	private getSummaryEvents() {
@@ -131,6 +147,28 @@ export class Incident extends DurableObject<Env> {
 		};
 	}
 
+	private async refreshSummary(state: DOState): Promise<SummaryCache> {
+		const summary = await generateIncidentSummary(
+			{
+				title: state.title,
+				description: state.description,
+				severity: state.severity,
+				prompt: state.prompt,
+			},
+			this.getSummaryEvents(),
+			this.env.OPENAI_API_KEY,
+		);
+
+		const nextCache: SummaryCache = { summary, generatedAt: Date.now() };
+		this.ctx.storage.transactionSync(() => {
+			const nextState = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
+			nextState.description = summary;
+			this.ctx.storage.kv.put(SUMMARY_CACHE_KEY, nextCache);
+			this.ctx.storage.kv.put(STATE_KEY, nextState);
+		});
+		return nextCache;
+	}
+
 	private async ensureWorkflowStarted(workflowId: string, payload: IncidentWorkflowPayload) {
 		try {
 			await this.env.INCIDENT_WORKFLOW.create({ id: workflowId, params: payload });
@@ -157,6 +195,40 @@ export class Incident extends DurableObject<Env> {
 		}
 	}
 
+	private startSummaryWork(state: DOState) {
+		if (this.summaryPromise) {
+			return;
+		}
+		this.summaryPromise = this.runSummaryWork(state).finally(() => {
+			this.summaryPromise = undefined;
+		});
+		this.ctx.waitUntil(this.summaryPromise);
+	}
+
+	private async runSummaryWork(state: DOState) {
+		try {
+			const summaryCache = await this.refreshSummary(state);
+			const latestState = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
+			const pendingSummaries = this.ctx.storage.sql.exec<PendingSummaryRow>(`SELECT id, context FROM pending_summary ORDER BY id ASC`).toArray();
+			for (const pending of pendingSummaries) {
+				const context = JSON.parse(pending.context) as SummaryRequestContext;
+				const summaryPayload: SummaryResponsePayload = {
+					incidentId: latestState.id,
+					description: summaryCache.summary,
+					channel: context.channel,
+					threadTs: context.threadTs ?? undefined,
+					ts: context.ts,
+					adapter: context.adapter,
+				};
+				await this.sendWorkflowEvent(latestState.id, this.buildSummaryResponsePayload(latestState, summaryPayload));
+				this.ctx.storage.sql.exec(`DELETE FROM pending_summary WHERE id = ?`, pending.id);
+			}
+		} catch (error) {
+			console.error("Error generating or dispatching summary", error);
+			await this.scheduleAlarmAtMost(Date.now() + ALARM_INTERVAL_MS);
+		}
+	}
+
 	/**
 	 * Either succeeds and there is no unpublished event
 	 * or fails throwing an error (and retries)
@@ -179,7 +251,13 @@ export class Incident extends DurableObject<Env> {
 			);
 			state = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
 		}
+		const hasPendingSummary = this.ctx.storage.sql.exec<{ id: number }>(`SELECT id FROM pending_summary LIMIT 1`).toArray().length > 0;
+		if (hasPendingSummary) {
+			this.startSummaryWork(state);
+		}
+
 		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log WHERE published_at IS NULL AND attempts < ? ORDER BY id ASC LIMIT 100", MAX_ATTEMPTS).toArray();
+		let eventError: unknown;
 		if (events.length > 0) {
 			for (const event of events) {
 				try {
@@ -193,18 +271,23 @@ export class Incident extends DurableObject<Env> {
 						console.warn("Error forwarding event to workflow", event, error);
 					}
 					this.ctx.storage.sql.exec("UPDATE event_log SET attempts = ? WHERE id = ?", attempts, event.id);
-					throw error;
+					eventError = error;
+					break;
 				}
 			}
 		}
 
-		const remaining = this.ctx.storage.sql.exec<{ id: number }>("SELECT id FROM event_log WHERE published_at IS NULL AND attempts < ? LIMIT 1", MAX_ATTEMPTS).toArray();
-		if (remaining.length) {
+		if (eventError) {
+			throw eventError;
+		}
+
+		const remainingEvents = this.ctx.storage.sql.exec<{ id: number }>("SELECT id FROM event_log WHERE published_at IS NULL AND attempts < ? LIMIT 1", MAX_ATTEMPTS).toArray();
+		const remainingSummaries = this.ctx.storage.sql.exec<{ id: number }>(`SELECT id FROM pending_summary LIMIT 1`).toArray();
+		const shouldScheduleForSummaries = remainingSummaries.length > 0 && !this.summaryPromise;
+		if (remainingEvents.length || shouldScheduleForSummaries) {
 			await this.scheduleAlarmAtMost(Date.now() + ALARM_INTERVAL_MS);
-		} else {
-			if (state.status === "resolved") {
-				await this.destroy();
-			}
+		} else if (state.status === "resolved") {
+			await this.destroy();
 		}
 	}
 
@@ -252,6 +335,11 @@ export class Incident extends DurableObject<Env> {
 				adapter TEXT NOT NULL
 			);
 			CREATE INDEX idx_event_log_published_at ON event_log(published_at);
+			CREATE TABLE pending_summary (
+				id INTEGER PRIMARY KEY,
+				context TEXT NOT NULL CHECK (json_valid(context)),
+				created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+			);
 			`);
 			this.ctx.storage.kv.put(EVENTLOGVERSION_KEY, "1");
 			await this.commit(
@@ -294,34 +382,6 @@ export class Incident extends DurableObject<Env> {
 				}
 			}
 		});
-	}
-
-	async getSummary({ refresh = false }: { refresh?: boolean } = {}) {
-		const state = this.getState();
-		if ("error" in state) {
-			return state;
-		}
-
-		const cache = this.ctx.storage.kv.get<SummaryCache>(SUMMARY_CACHE_KEY);
-		const now = Date.now();
-		if (!refresh && cache && now - cache.generatedAt < SUMMARY_CACHE_TTL_MS) {
-			return { summary: cache.summary, cached: true, generatedAt: cache.generatedAt };
-		}
-
-		const summary = await generateIncidentSummary(
-			{
-				title: state.title,
-				description: state.description,
-				severity: state.severity,
-				prompt: state.prompt,
-			},
-			this.getSummaryEvents(),
-			this.env.OPENAI_API_KEY,
-		);
-
-		const nextCache: SummaryCache = { summary, generatedAt: now };
-		this.ctx.storage.kv.put(SUMMARY_CACHE_KEY, nextCache);
-		return { summary, cached: false, generatedAt: now };
 	}
 
 	private async persistAnalysis() {
@@ -452,18 +512,18 @@ export class Incident extends DurableObject<Env> {
 			return state;
 		}
 
-		// TODO: This is wrong. If description is not cached, this should be an event part of commit so that it is atomic and the alarm dispatches it
-		const summaryResult = await this.getSummary();
-		if ("error" in summaryResult || !("summary" in summaryResult)) {
+		const cache = this.getCachedSummary();
+		if (!cache) {
+			await this.ctx.storage.transaction(async () => {
+				this.ctx.storage.sql.exec(`INSERT INTO pending_summary (context) VALUES (?)`, JSON.stringify(context));
+				await this.scheduleAlarmAtMost(Date.now());
+			});
 			return;
 		}
 
-		state.description = summaryResult.summary;
-		await this.commit({ state });
-
 		const summaryPayload: SummaryResponsePayload = {
 			incidentId: state.id,
-			description: summaryResult.summary,
+			description: cache.summary,
 			channel: context.channel,
 			threadTs: context.threadTs ?? undefined,
 			ts: context.ts,

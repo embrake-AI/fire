@@ -232,6 +232,8 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 	}
 
 	const blocks = incidentBlocks({ frontendUrl: env.FRONTEND_URL, incidentId: id, severity, status, assigneeUserId: assignee, title });
+	const incidentChannelMention = channelResult?.channelId ? `<#${channelResult.channelId}>` : null;
+	const announcementBlocks = incidentChannelMention ? addIncidentChannelPointerBlock(blocks, channelResult!.channelId) : blocks;
 	const shouldBroadcast = severity === "high" && !!thread;
 
 	let threadPostResult: PromiseSettledResult<{ ts: string }> | null = null;
@@ -253,11 +255,11 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 							"Content-Type": "application/json",
 						},
 						body: JSON.stringify({
-							text: "Incident created 🔴",
+							text: incidentChannelMention ? `Incident created 🔴 in ${incidentChannelMention}` : "Incident created 🔴",
 							channel,
 							thread_ts: thread,
 							...(shouldBroadcast && { reply_broadcast: true }),
-							blocks,
+							blocks: announcementBlocks,
 							metadata: {
 								event_type: "incident",
 								event_payload: { id },
@@ -778,6 +780,20 @@ function incidentBlocks({
 	}
 
 	return blocks;
+}
+
+function addIncidentChannelPointerBlock(blocks: KnownBlock[], channelId: string): KnownBlock[] {
+	const pointerBlock: KnownBlock = {
+		type: "section",
+		text: {
+			type: "mrkdwn",
+			text: `*Incident channel:* <#${channelId}>`,
+		},
+	};
+	if (!blocks.length) {
+		return [pointerBlock];
+	}
+	return [blocks[0], pointerBlock, ...blocks.slice(1)];
 }
 
 export async function messageAdded(params: SenderParams["messageAdded"]) {
