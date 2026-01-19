@@ -915,7 +915,7 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 								<div
 									class="absolute z-30 mt-2 w-80 rounded-lg border border-border bg-popover p-3 shadow-lg"
 									style={{
-										left: `${Math.min(Math.max(pos().left, 0), 100 - 25)}%`,
+										left: `max(0%, min(${pos().left}%, calc(100% - 20rem)))`,
 										top: "100%",
 									}}
 								>
