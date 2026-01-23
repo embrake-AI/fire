@@ -42,6 +42,7 @@ type Rotation = Awaited<ReturnType<typeof getRotations>>[number];
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 const MIN_OVERRIDE_MS = 15 * 60 * 1000;
+const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function RotationDetailsPage() {
 	const params = Route.useParams();
@@ -77,12 +78,32 @@ function RotationHeader(props: { rotation: Rotation }) {
 		onMutate: () => setIsEditingName(false),
 	});
 	const updateShiftLengthMutation = useUpdateRotationShiftLength();
+	const updateAnchorMutation = useUpdateRotationAnchor();
 
 	const [isEditingName, setIsEditingName] = createSignal(false);
 	const [name, setName] = createSignal(props.rotation.name);
+	const [isEditingAnchor, setIsEditingAnchor] = createSignal(false);
+	const [anchorInput, setAnchorInput] = createSignal("");
 
 	const team = createMemo(() => (props.rotation.teamId ? teamsQuery.data?.find((t) => t.id === props.rotation.teamId) : undefined));
 	const currentShiftLength = createMemo(() => normalizeShiftLength(props.rotation.shiftLength));
+
+	createEffect(() => {
+		if (props.rotation.shiftStart) {
+			setAnchorInput(formatDateTimeLocal(props.rotation.shiftStart));
+		}
+	});
+
+	const formattedAnchor = createMemo(() => {
+		if (!props.rotation.shiftStart) return "Not set";
+		return new Date(props.rotation.shiftStart).toLocaleDateString(undefined, {
+			weekday: "short",
+			month: "short",
+			day: "numeric",
+			hour: "numeric",
+			minute: "2-digit",
+		});
+	});
 
 	const handleUpdateName = () => {
 		const trimmed = name().trim();
@@ -98,10 +119,24 @@ function RotationHeader(props: { rotation: Rotation }) {
 		updateShiftLengthMutation.mutate({ id: props.rotation.id, shiftLength: value });
 	};
 
+	const handleAnchorSave = () => {
+		const parsed = parseDateTimeLocal(anchorInput());
+		if (!parsed) return;
+		updateAnchorMutation.mutate({ id: props.rotation.id, anchorAt: parsed });
+		setIsEditingAnchor(false);
+	};
+
+	const handleAnchorCancel = () => {
+		if (props.rotation.shiftStart) {
+			setAnchorInput(formatDateTimeLocal(props.rotation.shiftStart));
+		}
+		setIsEditingAnchor(false);
+	};
+
 	return (
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 			<div class="space-y-1">
-				<div class="flex items-center gap-2">
+				<div class="flex flex-wrap items-center gap-2">
 					<Show
 						when={isEditingName()}
 						fallback={
@@ -147,6 +182,43 @@ function RotationHeader(props: { rotation: Rotation }) {
 						</SelectTrigger>
 						<SelectContent />
 					</Select>
+					<Show
+						when={!isEditingAnchor()}
+						fallback={
+							<div class="flex items-center gap-2">
+								<Input
+									type="datetime-local"
+									value={anchorInput()}
+									onInput={(e) => setAnchorInput(e.currentTarget.value)}
+									class="h-7 text-xs w-auto"
+									disabled={updateAnchorMutation.isPending}
+									onKeyDown={(e) => {
+										if (e.key === "Escape") handleAnchorCancel();
+										if (e.key === "Enter") handleAnchorSave();
+									}}
+									autofocus
+								/>
+								<Button size="sm" class="h-7 px-2" onClick={handleAnchorSave} disabled={updateAnchorMutation.isPending || !anchorInput()}>
+									<Show when={updateAnchorMutation.isPending} fallback={<Check class="w-3.5 h-3.5" />}>
+										<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+									</Show>
+								</Button>
+								<Button variant="ghost" size="sm" class="h-7 px-2" onClick={handleAnchorCancel} disabled={updateAnchorMutation.isPending}>
+									<X class="w-3.5 h-3.5" />
+								</Button>
+							</div>
+						}
+					>
+						<button
+							type="button"
+							class="text-xs text-muted-foreground hover:text-foreground cursor-pointer bg-transparent border-none p-0 inline-flex items-center gap-1.5 group"
+							onClick={() => setIsEditingAnchor(true)}
+						>
+							<span>Shift started at</span>
+							<span class="font-medium text-foreground">{formattedAnchor()}</span>
+							<Pencil class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+						</button>
+					</Show>
 				</div>
 				<Show when={team()}>
 					{(t) => (
@@ -345,7 +417,6 @@ function AssigneeRow(props: {
 
 function RotationSchedulePanel(props: { rotation: Rotation }) {
 	const usersQuery = useUsers();
-	const updateAnchorMutation = useUpdateRotationAnchor();
 
 	const rangeOptions = [
 		{ label: "1 day", days: 1 },
@@ -355,43 +426,17 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 	] as const;
 
 	const [rangeDays, setRangeDays] = createSignal<number>(rangeOptions[1].days);
-	const [viewStart, setViewStart] = createSignal(startOfDay(new Date()));
+	const [viewMode, setViewMode] = createSignal<"timeline" | "calendar">("timeline");
+	const [viewAnchor, setViewAnchor] = createSignal(startOfDay(new Date()));
 	const selectedRange = createMemo(() => rangeOptions.find((option) => option.days === rangeDays()) ?? rangeOptions[1]);
-	const viewEnd = createMemo(() => new Date(viewStart().getTime() + rangeDays() * DAY_MS));
-
-	const [isEditingAnchor, setIsEditingAnchor] = createSignal(false);
-	const [anchorInput, setAnchorInput] = createSignal("");
-
-	createEffect(() => {
-		if (props.rotation.shiftStart) {
-			setAnchorInput(formatDateTimeLocal(props.rotation.shiftStart));
+	const calendarMonthStart = createMemo(() => startOfMonth(viewAnchor()));
+	const viewStart = createMemo(() => (viewMode() === "calendar" ? calendarMonthStart() : viewAnchor()));
+	const viewEnd = createMemo(() => {
+		if (viewMode() === "calendar") {
+			return addMonths(calendarMonthStart(), 1);
 		}
+		return new Date(viewAnchor().getTime() + rangeDays() * DAY_MS);
 	});
-
-	const formattedAnchor = createMemo(() => {
-		if (!props.rotation.shiftStart) return "Not set";
-		return new Date(props.rotation.shiftStart).toLocaleDateString(undefined, {
-			weekday: "short",
-			month: "short",
-			day: "numeric",
-			hour: "numeric",
-			minute: "2-digit",
-		});
-	});
-
-	const handleAnchorSave = () => {
-		const parsed = parseDateTimeLocal(anchorInput());
-		if (!parsed) return;
-		updateAnchorMutation.mutate({ id: props.rotation.id, anchorAt: parsed });
-		setIsEditingAnchor(false);
-	};
-
-	const handleAnchorCancel = () => {
-		if (props.rotation.shiftStart) {
-			setAnchorInput(formatDateTimeLocal(props.rotation.shiftStart));
-		}
-		setIsEditingAnchor(false);
-	};
 
 	const overridesQuery = useRotationOverrides({
 		rotationId: () => props.rotation.id,
@@ -419,9 +464,6 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 		return map;
 	});
 
-	const totalDays = createMemo(() => Math.max(1, Math.ceil((viewEnd().getTime() - viewStart().getTime()) / DAY_MS)));
-	const dayLabels = createMemo(() => Array.from({ length: totalDays() }, (_, index) => new Date(viewStart().getTime() + index * DAY_MS)));
-
 	const baseSegments = createMemo(() => {
 		if (!props.rotation.assignees.length) return [];
 		const shiftMs = parseShiftLengthMs(props.rotation.shiftLength);
@@ -436,6 +478,49 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 			viewEnd: viewEnd(),
 		});
 	});
+
+	const isCalendarView = createMemo(() => viewMode() === "calendar");
+	const calendarMonthEnd = createMemo(() => addMonths(calendarMonthStart(), 1));
+	const calendarGridStart = createMemo(() => startOfWeek(calendarMonthStart()));
+	const calendarGridEnd = createMemo(() => endOfWeek(addDays(calendarMonthEnd(), -1)));
+	const calendarDays = createMemo(() => {
+		const days: Date[] = [];
+		for (let day = calendarGridStart(); day <= calendarGridEnd(); day = addDays(day, 1)) {
+			days.push(new Date(day));
+		}
+		return days;
+	});
+	const calendarMonthLabel = createMemo(() =>
+		calendarMonthStart().toLocaleDateString(undefined, {
+			month: "long",
+			year: "numeric",
+		}),
+	);
+	const timelineRangeLabel = createMemo(() => {
+		const start = viewStart();
+		const end = addDays(viewEnd(), -1);
+		const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+		const startText = start.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+		const endText = end.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+		if (sameMonth) {
+			return `${startText} - ${end.getDate()}`;
+		}
+		return `${startText} - ${endText}`;
+	});
+	const calendarAssigneeByDay = createMemo(() => {
+		const segments = baseSegments();
+		const map = new Map<string, string | undefined>();
+		for (const day of calendarDays()) {
+			const dayStart = startOfDay(day);
+			const midday = new Date(dayStart.getTime() + 12 * HOUR_MS);
+			const segment = segments.find((item) => item.start <= midday && item.end > midday);
+			map.set(dayStart.toDateString(), segment?.assigneeId);
+		}
+		return map;
+	});
+
+	const totalDays = createMemo(() => Math.max(1, Math.ceil((viewEnd().getTime() - viewStart().getTime()) / DAY_MS)));
+	const dayLabels = createMemo(() => Array.from({ length: totalDays() }, (_, index) => new Date(viewStart().getTime() + index * DAY_MS)));
 
 	const overrideLayout = createMemo(() => {
 		const overrides = overridesQuery.data ?? [];
@@ -487,6 +572,19 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 		setEditingOverrideId(null);
 	};
 
+	const resetSelection = () => {
+		setIsSelecting(false);
+		setSelectionStart(null);
+		setSelectionEnd(null);
+	};
+
+	const switchView = (mode: "timeline" | "calendar") => {
+		if (mode === viewMode()) return;
+		resetSelection();
+		closePopover();
+		setViewMode(mode);
+	};
+
 	const createOverrideMutation = useCreateRotationOverride();
 	const updateOverrideMutation = useUpdateRotationOverride();
 
@@ -502,8 +600,12 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 	});
 
 	const shiftRange = (direction: -1 | 1) => {
+		if (viewMode() === "calendar") {
+			setViewAnchor(addMonths(calendarMonthStart(), direction));
+			return;
+		}
 		const delta = rangeDays() * DAY_MS * direction;
-		setViewStart(new Date(viewStart().getTime() + delta));
+		setViewAnchor(new Date(viewAnchor().getTime() + delta));
 	};
 
 	const parsedOverrideStart = createMemo(() => parseDateTimeLocal(overrideStartInput()));
@@ -658,7 +760,10 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 		});
 	});
 
-	const goToToday = () => setViewStart(startOfDay(new Date()));
+	const goToToday = () => {
+		const today = new Date();
+		setViewAnchor(startOfDay(today));
+	};
 
 	const dayInterval = createMemo(() => {
 		const days = rangeDays();
@@ -698,59 +803,49 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 					<Button variant="ghost" size="icon" class="h-8 w-8" onClick={() => shiftRange(1)}>
 						<ChevronRight class="w-4 h-4" />
 					</Button>
-				</div>
-				<div class="flex-1 flex items-center justify-center">
-					<Show
-						when={!isEditingAnchor()}
-						fallback={
-							<div class="flex items-center gap-2">
-								<Input
-									type="datetime-local"
-									value={anchorInput()}
-									onInput={(e) => setAnchorInput(e.currentTarget.value)}
-									class="h-7 text-xs w-auto"
-									disabled={updateAnchorMutation.isPending}
-									onKeyDown={(e) => {
-										if (e.key === "Escape") handleAnchorCancel();
-										if (e.key === "Enter") handleAnchorSave();
-									}}
-									autofocus
-								/>
-								<Button size="sm" class="h-7 px-2" onClick={handleAnchorSave} disabled={updateAnchorMutation.isPending || !anchorInput()}>
-									<Show when={updateAnchorMutation.isPending} fallback={<Check class="w-3.5 h-3.5" />}>
-										<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
-									</Show>
-								</Button>
-								<Button variant="ghost" size="sm" class="h-7 px-2" onClick={handleAnchorCancel} disabled={updateAnchorMutation.isPending}>
-									<X class="w-3.5 h-3.5" />
-								</Button>
-							</div>
-						}
-					>
-						<button
-							type="button"
-							class="text-xs text-muted-foreground hover:text-foreground cursor-pointer bg-transparent border-none p-0 inline-flex items-center gap-1.5 group"
-							onClick={() => setIsEditingAnchor(true)}
-						>
-							<span>Shifts start from</span>
-							<span class="font-medium text-foreground">{formattedAnchor()}</span>
-							<Pencil class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-						</button>
+					<Show when={isCalendarView()}>
+						<span class="ml-2 text-sm font-medium text-muted-foreground">{calendarMonthLabel()}</span>
+					</Show>
+					<Show when={!isCalendarView()}>
+						<span class="ml-2 text-sm font-medium text-muted-foreground">{timelineRangeLabel()}</span>
 					</Show>
 				</div>
-				<Select
-					value={String(rangeDays())}
-					onChange={(value) => value && setRangeDays(Number(value))}
-					options={rangeOptions.map((option) => String(option.days))}
-					itemComponent={(selectItemProps) => (
-						<SelectItem item={selectItemProps.item}>{rangeOptions.find((option) => String(option.days) === selectItemProps.item.rawValue)?.label}</SelectItem>
-					)}
-				>
-					<SelectTrigger class="w-28 h-8 text-xs">
-						<SelectValue<string>>{() => selectedRange().label}</SelectValue>
-					</SelectTrigger>
-					<SelectContent />
-				</Select>
+				<div class="flex-1" />
+				<div class="flex items-center gap-2">
+					<Show when={!isCalendarView()}>
+						<Select
+							value={String(rangeDays())}
+							onChange={(value) => value && setRangeDays(Number(value))}
+							options={rangeOptions.map((option) => String(option.days))}
+							itemComponent={(selectItemProps) => (
+								<SelectItem item={selectItemProps.item}>{rangeOptions.find((option) => String(option.days) === selectItemProps.item.rawValue)?.label}</SelectItem>
+							)}
+						>
+							<SelectTrigger class="w-28 h-8 text-xs">
+								<SelectValue<string>>{() => selectedRange().label}</SelectValue>
+							</SelectTrigger>
+							<SelectContent />
+						</Select>
+					</Show>
+					<div class="flex items-center rounded-md border border-border/60 bg-muted/30 p-0.5">
+						<Button
+							variant="ghost"
+							size="sm"
+							class={cn("h-7 px-2 text-xs", viewMode() === "timeline" && "bg-background text-foreground shadow-sm")}
+							onClick={() => switchView("timeline")}
+						>
+							Timeline
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							class={cn("h-7 px-2 text-xs", viewMode() === "calendar" && "bg-background text-foreground shadow-sm")}
+							onClick={() => switchView("calendar")}
+						>
+							Calendar
+						</Button>
+					</div>
+				</div>
 			</div>
 			<div class="space-y-0">
 				<Show
@@ -764,217 +859,266 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 				>
 					<div class="relative space-y-0">
 						<Show
-							when={isHourView()}
+							when={isCalendarView()}
 							fallback={
-								<div class="grid text-xs text-muted-foreground" style={{ "grid-template-columns": `repeat(${visibleDayLabels().length}, minmax(0, 1fr))` }}>
-									<For each={visibleDayLabels()}>
-										{(day, index) => <div class={cn("px-1 py-1.5", index() === 0 && "pl-0")}>{day.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>}
-									</For>
-								</div>
-							}
-						>
-							<div class="grid text-xs text-muted-foreground" style={{ "grid-template-columns": `repeat(${hourLabels().length}, minmax(0, 1fr))` }}>
-								<For each={hourLabels()}>
-									{(hour, index) => <div class={cn("px-1 py-1.5", index() === 0 && "pl-0")}>{hour.toLocaleTimeString(undefined, { hour: "numeric" })}</div>}
-								</For>
-							</div>
-						</Show>
-
-						{(() => {
-							const rows = 1 + overrideLayout().rowCount;
-							const rowHeight = 48;
-							const rowGap = 8;
-							const baseTop = rowGap;
-							const containerHeight = rows * (rowHeight + rowGap) + rowGap;
-							const totalMs = viewEnd().getTime() - viewStart().getTime();
-
-							const now = new Date();
-							const nowPosition = ((now.getTime() - viewStart().getTime()) / totalMs) * 100;
-							const showNowLine = nowPosition >= 0 && nowPosition <= 100;
-
-							return (
-								<div
-									ref={timelineRef}
-									class="relative rounded-lg border border-border/50 bg-muted/20 overflow-x-clip"
-									style={{ height: `${containerHeight}px` }}
-									onPointerDown={handlePointerDown}
-								>
-									<div class="absolute inset-0 grid pointer-events-none" style={{ "grid-template-columns": `repeat(${gridColumns()}, minmax(0, 1fr))` }}>
-										<For each={Array.from({ length: gridColumns() })}>{(_, index) => <div class={cn("border-l border-border/30", index() === 0 && "border-l-0")} />}</For>
-									</div>
-
-									<Show when={showNowLine}>
-										<div class="absolute top-0 bottom-0 z-20 pointer-events-none" style={{ left: `${nowPosition}%` }}>
-											<div class="absolute -top-5 left-1/2 -translate-x-1/2 px-1 py-0.5 rounded text-rose-500 text-[10px] font-medium whitespace-nowrap">
-												{now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+								<>
+									<Show
+										when={isHourView()}
+										fallback={
+											<div class="grid text-xs text-muted-foreground" style={{ "grid-template-columns": `repeat(${visibleDayLabels().length}, minmax(0, 1fr))` }}>
+												<For each={visibleDayLabels()}>
+													{(day, index) => <div class={cn("px-1 py-1.5", index() === 0 && "pl-0")}>{day.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>}
+												</For>
 											</div>
-											<div class="absolute top-0 bottom-0 w-px bg-rose-400/70 -translate-x-1/2" />
+										}
+									>
+										<div class="grid text-xs text-muted-foreground" style={{ "grid-template-columns": `repeat(${hourLabels().length}, minmax(0, 1fr))` }}>
+											<For each={hourLabels()}>
+												{(hour, index) => <div class={cn("px-1 py-1.5", index() === 0 && "pl-0")}>{hour.toLocaleTimeString(undefined, { hour: "numeric" })}</div>}
+											</For>
 										</div>
 									</Show>
 
-									<For each={baseSegments()}>
-										{(segment) => {
-											const left = ((segment.start.getTime() - viewStart().getTime()) / totalMs) * 100;
-											const width = ((segment.end.getTime() - segment.start.getTime()) / totalMs) * 100;
-											const assignee = segment.assigneeId ? usersById().get(segment.assigneeId) : undefined;
-											const colorClass = segment.assigneeId ? assigneeColorById().get(segment.assigneeId) : "bg-muted/50 text-muted-foreground border-border/50";
+									{(() => {
+										const rows = 1 + overrideLayout().rowCount;
+										const rowHeight = 48;
+										const rowGap = 8;
+										const baseTop = rowGap;
+										const containerHeight = rows * (rowHeight + rowGap) + rowGap;
+										const totalMs = viewEnd().getTime() - viewStart().getTime();
 
-											return (
-												<div
-													class={cn("absolute h-10 rounded border px-2 flex items-center text-xs font-medium truncate pointer-events-none", colorClass)}
-													style={{ left: `${left}%`, width: `${Math.max(width, 1)}%`, top: `${baseTop}px` }}
-													title={`${assignee?.name ?? "Unassigned"} • ${formatDateRange(segment.start, segment.end)}`}
-												>
-													<span class="truncate">{assignee?.name ?? "Unassigned"}</span>
+										const now = new Date();
+										const nowPosition = ((now.getTime() - viewStart().getTime()) / totalMs) * 100;
+										const showNowLine = nowPosition >= 0 && nowPosition <= 100;
+
+										return (
+											<div
+												ref={timelineRef}
+												class="relative rounded-lg border border-border/50 bg-muted/20 overflow-x-clip"
+												style={{ height: `${containerHeight}px` }}
+												onPointerDown={handlePointerDown}
+											>
+												<div class="absolute inset-0 grid pointer-events-none" style={{ "grid-template-columns": `repeat(${gridColumns()}, minmax(0, 1fr))` }}>
+													<For each={Array.from({ length: gridColumns() })}>{(_, index) => <div class={cn("border-l border-border/30", index() === 0 && "border-l-0")} />}</For>
 												</div>
-											);
-										}}
-									</For>
 
-									<For each={overrideLayout().items}>
-										{(override) => {
-											const left = ((override.start.getTime() - viewStart().getTime()) / totalMs) * 100;
-											const width = ((override.end.getTime() - override.start.getTime()) / totalMs) * 100;
-											const assignee = usersById().get(override.assigneeId);
-											const colorClass = override.assigneeId ? assigneeColorById().get(override.assigneeId) : "bg-muted text-muted-foreground border-border";
-											const top = baseTop + (override.row + 1) * (rowHeight + rowGap);
-											const isDeleting = clearOverrideMutation.isPending && clearOverrideMutation.variables?.overrideId === override.id;
-											const isNarrow = width < 8;
+												<Show when={showNowLine}>
+													<div class="absolute top-0 bottom-0 z-20 pointer-events-none" style={{ left: `${nowPosition}%` }}>
+														<div class="absolute -top-5 left-1/2 -translate-x-1/2 px-1 py-0.5 rounded text-rose-500 text-[10px] font-medium whitespace-nowrap">
+															{now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+														</div>
+														<div class="absolute top-0 bottom-0 w-px bg-rose-400/70 -translate-x-1/2" />
+													</div>
+												</Show>
 
-											return (
-												<div
-													class={cn(
-														"group absolute h-10 rounded border-2 border-amber-400/80 flex items-center text-xs font-medium select-none pointer-events-auto",
-														colorClass,
-														isNarrow ? "justify-center px-0.5" : "px-2 gap-2",
+												<For each={baseSegments()}>
+													{(segment) => {
+														const left = ((segment.start.getTime() - viewStart().getTime()) / totalMs) * 100;
+														const width = ((segment.end.getTime() - segment.start.getTime()) / totalMs) * 100;
+														const assignee = segment.assigneeId ? usersById().get(segment.assigneeId) : undefined;
+														const colorClass = segment.assigneeId ? assigneeColorById().get(segment.assigneeId) : "bg-muted/50 text-muted-foreground border-border/50";
+
+														return (
+															<div
+																class={cn("absolute h-10 rounded border px-2 flex items-center text-xs font-medium truncate pointer-events-none", colorClass)}
+																style={{ left: `${left}%`, width: `${Math.max(width, 1)}%`, top: `${baseTop}px` }}
+																title={`${assignee?.name ?? "Unassigned"} • ${formatDateRange(segment.start, segment.end)}`}
+															>
+																<span class="truncate">{assignee?.name ?? "Unassigned"}</span>
+															</div>
+														);
+													}}
+												</For>
+
+												<For each={overrideLayout().items}>
+													{(override) => {
+														const left = ((override.start.getTime() - viewStart().getTime()) / totalMs) * 100;
+														const width = ((override.end.getTime() - override.start.getTime()) / totalMs) * 100;
+														const assignee = usersById().get(override.assigneeId);
+														const colorClass = override.assigneeId ? assigneeColorById().get(override.assigneeId) : "bg-muted text-muted-foreground border-border";
+														const top = baseTop + (override.row + 1) * (rowHeight + rowGap);
+														const isDeleting = clearOverrideMutation.isPending && clearOverrideMutation.variables?.overrideId === override.id;
+														const isNarrow = width < 8;
+
+														return (
+															<div
+																class={cn(
+																	"group absolute h-10 rounded border-2 border-amber-400/80 flex items-center text-xs font-medium select-none pointer-events-auto",
+																	colorClass,
+																	isNarrow ? "justify-center px-0.5" : "px-2 gap-2",
+																)}
+																style={{ left: `${left}%`, width: `${Math.max(width, 1)}%`, top: `${top}px` }}
+																title={`${assignee?.name ?? "Unassigned"} • ${formatDateRange(override.start, override.end)} (override)`}
+																data-override="true"
+															>
+																<span class={cn("truncate min-w-0", isNarrow && "hidden")}>{assignee?.name ?? "Unassigned"}</span>
+																<div class={cn("flex items-center gap-0.5 transition-opacity", isNarrow ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
+																	<Button
+																		variant="ghost"
+																		size="icon"
+																		class="h-6 w-6 text-muted-foreground hover:text-foreground hover:bg-white/50"
+																		aria-label="Edit override"
+																		onPointerDown={(e) => e.stopPropagation()}
+																		onClick={() => openEditOverride(override)}
+																	>
+																		<Pencil class="w-3 h-3" />
+																	</Button>
+																	<Button
+																		variant="ghost"
+																		size="icon"
+																		class="h-6 w-6 text-destructive hover:text-destructive hover:bg-white/50"
+																		aria-label="Delete override"
+																		onPointerDown={(e) => e.stopPropagation()}
+																		onClick={() => clearOverrideMutation.mutate({ rotationId: props.rotation.id, overrideId: override.id })}
+																		disabled={isDeleting}
+																	>
+																		<Show when={isDeleting} fallback={<Trash2 class="w-3 h-3" />}>
+																			<LoaderCircle class="w-3 h-3 animate-spin" />
+																		</Show>
+																	</Button>
+																</div>
+															</div>
+														);
+													}}
+												</For>
+
+												<Show when={isSelecting() && selectionRange()}>
+													{(range) => (
+														<div
+															class="absolute h-10 rounded bg-primary/15 border-2 border-primary/50 border-dashed pointer-events-none"
+															style={{
+																left: `${((range().start.getTime() - viewStart().getTime()) / totalMs) * 100}%`,
+																width: `${Math.max(((range().end.getTime() - range().start.getTime()) / totalMs) * 100, 1)}%`,
+																top: `${baseTop}px`,
+															}}
+														/>
 													)}
-													style={{ left: `${left}%`, width: `${Math.max(width, 1)}%`, top: `${top}px` }}
-													title={`${assignee?.name ?? "Unassigned"} • ${formatDateRange(override.start, override.end)} (override)`}
-													data-override="true"
-												>
-													<span class={cn("truncate min-w-0", isNarrow && "hidden")}>{assignee?.name ?? "Unassigned"}</span>
-													<div class={cn("flex items-center gap-0.5 transition-opacity", isNarrow ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
-														<Button
-															variant="ghost"
-															size="icon"
-															class="h-6 w-6 text-muted-foreground hover:text-foreground hover:bg-white/50"
-															aria-label="Edit override"
-															onPointerDown={(e) => e.stopPropagation()}
-															onClick={() => openEditOverride(override)}
-														>
-															<Pencil class="w-3 h-3" />
+												</Show>
+
+												<Show when={popoverOpen() && parsedOverrideStart() && parsedOverrideEnd()}>
+													<div
+														class="absolute h-10 rounded bg-primary/15 border-2 border-primary/50 pointer-events-none"
+														style={{
+															left: `${((parsedOverrideStart()!.getTime() - viewStart().getTime()) / totalMs) * 100}%`,
+															width: `${Math.max(((parsedOverrideEnd()!.getTime() - parsedOverrideStart()!.getTime()) / totalMs) * 100, 1)}%`,
+															top: `${baseTop}px`,
+														}}
+													/>
+												</Show>
+											</div>
+										);
+									})()}
+
+									<Show when={popoverOpen() && popoverPosition()}>
+										{(pos) => (
+											<div
+												class="absolute z-30 mt-2 w-80 rounded-lg border border-border bg-popover p-3 shadow-lg"
+												style={{
+													left: `max(0%, min(${pos().left}%, calc(100% - 20rem)))`,
+													top: "100%",
+												}}
+											>
+												<div class="flex items-center justify-between mb-3">
+													<span class="text-sm font-medium">{overrideMode() === "edit" ? "Edit Override" : "Create Override"}</span>
+													<Button variant="ghost" size="icon" class="h-6 w-6" onClick={closePopover}>
+														<X class="w-3.5 h-3.5" />
+													</Button>
+												</div>
+												<div class="space-y-3">
+													<div class="grid gap-2 grid-cols-2">
+														<div class="space-y-1">
+															<Label for="override-start" class="text-xs">
+																Start
+															</Label>
+															<Input
+																id="override-start"
+																type="datetime-local"
+																value={overrideStartInput()}
+																onInput={(e) => setOverrideStartInput(e.currentTarget.value)}
+																disabled={isSavingOverride()}
+																class="h-8 text-xs"
+															/>
+														</div>
+														<div class="space-y-1">
+															<Label for="override-end" class="text-xs">
+																End
+															</Label>
+															<Input
+																id="override-end"
+																type="datetime-local"
+																value={overrideEndInput()}
+																onInput={(e) => setOverrideEndInput(e.currentTarget.value)}
+																disabled={isSavingOverride()}
+																class="h-8 text-xs"
+															/>
+														</div>
+													</div>
+													<EntityPicker
+														entities={assigneeEntities}
+														onSelect={(entity) => setSelectedAssignee(entity.id)}
+														selectedId={selectedAssignee() ?? undefined}
+														placeholder="Choose assignee..."
+														emptyMessage="No assignees available."
+														disabled={isSavingOverride()}
+													/>
+													<div class="flex justify-end gap-2 pt-1">
+														<Button variant="ghost" size="sm" onClick={closePopover} class="h-7 text-xs">
+															Cancel
 														</Button>
-														<Button
-															variant="ghost"
-															size="icon"
-															class="h-6 w-6 text-destructive hover:text-destructive hover:bg-white/50"
-															aria-label="Delete override"
-															onPointerDown={(e) => e.stopPropagation()}
-															onClick={() => clearOverrideMutation.mutate({ rotationId: props.rotation.id, overrideId: override.id })}
-															disabled={isDeleting}
-														>
-															<Show when={isDeleting} fallback={<Trash2 class="w-3 h-3" />}>
-																<LoaderCircle class="w-3 h-3 animate-spin" />
+														<Button size="sm" onClick={handleSaveOverride} disabled={!selectedAssignee() || !isOverrideRangeValid() || isSavingOverride()} class="h-7 text-xs">
+															<Show when={isSavingOverride()} fallback={overrideMode() === "edit" ? "Save" : "Create"}>
+																<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
 															</Show>
 														</Button>
 													</div>
 												</div>
+											</div>
+										)}
+									</Show>
+								</>
+							}
+						>
+							<div class="space-y-2">
+								<div class="grid grid-cols-7 text-xs text-muted-foreground">
+									<For each={WEEKDAY_LABELS}>{(label) => <div class="px-2 py-1.5">{label}</div>}</For>
+								</div>
+								<div class="grid grid-cols-7 gap-px rounded-lg border border-border/60 bg-border/60 overflow-hidden">
+									<For each={calendarDays()}>
+										{(day) => {
+											const dayKey = startOfDay(day).toDateString();
+											const assigneeId = calendarAssigneeByDay().get(dayKey);
+											const assignee = assigneeId ? usersById().get(assigneeId) : undefined;
+											const isCurrentMonth = day.getMonth() === calendarMonthStart().getMonth() && day.getFullYear() === calendarMonthStart().getFullYear();
+											const isToday = isSameDay(day, new Date());
+											const colorClass = assigneeId
+												? (assigneeColorById().get(assigneeId) ?? "bg-muted/50 text-muted-foreground border-border/50")
+												: "bg-muted/50 text-muted-foreground border-border/50";
+
+											return (
+												<div
+													class={cn(
+														"min-h-[96px] bg-background p-2 flex flex-col gap-1",
+														!isCurrentMonth && "bg-muted/20 text-muted-foreground",
+														isToday && "ring-1 ring-primary/40",
+													)}
+												>
+													<div class="flex items-center justify-between">
+														<span class={cn("text-xs font-medium", isToday && "text-primary")}>{day.getDate()}</span>
+													</div>
+													<Show when={assigneeId}>
+														<div
+															class={cn("inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] font-medium truncate", colorClass)}
+															title={assignee?.name ?? "Unknown user"}
+														>
+															<span class="truncate">{assignee?.name ?? "Unknown user"}</span>
+														</div>
+													</Show>
+												</div>
 											);
 										}}
 									</For>
-
-									<Show when={isSelecting() && selectionRange()}>
-										{(range) => (
-											<div
-												class="absolute h-10 rounded bg-primary/15 border-2 border-primary/50 border-dashed pointer-events-none"
-												style={{
-													left: `${((range().start.getTime() - viewStart().getTime()) / totalMs) * 100}%`,
-													width: `${Math.max(((range().end.getTime() - range().start.getTime()) / totalMs) * 100, 1)}%`,
-													top: `${baseTop}px`,
-												}}
-											/>
-										)}
-									</Show>
-
-									<Show when={popoverOpen() && parsedOverrideStart() && parsedOverrideEnd()}>
-										<div
-											class="absolute h-10 rounded bg-primary/15 border-2 border-primary/50 pointer-events-none"
-											style={{
-												left: `${((parsedOverrideStart()!.getTime() - viewStart().getTime()) / totalMs) * 100}%`,
-												width: `${Math.max(((parsedOverrideEnd()!.getTime() - parsedOverrideStart()!.getTime()) / totalMs) * 100, 1)}%`,
-												top: `${baseTop}px`,
-											}}
-										/>
-									</Show>
 								</div>
-							);
-						})()}
-
-						<Show when={popoverOpen() && popoverPosition()}>
-							{(pos) => (
-								<div
-									class="absolute z-30 mt-2 w-80 rounded-lg border border-border bg-popover p-3 shadow-lg"
-									style={{
-										left: `max(0%, min(${pos().left}%, calc(100% - 20rem)))`,
-										top: "100%",
-									}}
-								>
-									<div class="flex items-center justify-between mb-3">
-										<span class="text-sm font-medium">{overrideMode() === "edit" ? "Edit Override" : "Create Override"}</span>
-										<Button variant="ghost" size="icon" class="h-6 w-6" onClick={closePopover}>
-											<X class="w-3.5 h-3.5" />
-										</Button>
-									</div>
-									<div class="space-y-3">
-										<div class="grid gap-2 grid-cols-2">
-											<div class="space-y-1">
-												<Label for="override-start" class="text-xs">
-													Start
-												</Label>
-												<Input
-													id="override-start"
-													type="datetime-local"
-													value={overrideStartInput()}
-													onInput={(e) => setOverrideStartInput(e.currentTarget.value)}
-													disabled={isSavingOverride()}
-													class="h-8 text-xs"
-												/>
-											</div>
-											<div class="space-y-1">
-												<Label for="override-end" class="text-xs">
-													End
-												</Label>
-												<Input
-													id="override-end"
-													type="datetime-local"
-													value={overrideEndInput()}
-													onInput={(e) => setOverrideEndInput(e.currentTarget.value)}
-													disabled={isSavingOverride()}
-													class="h-8 text-xs"
-												/>
-											</div>
-										</div>
-										<EntityPicker
-											entities={assigneeEntities}
-											onSelect={(entity) => setSelectedAssignee(entity.id)}
-											selectedId={selectedAssignee() ?? undefined}
-											placeholder="Choose assignee..."
-											emptyMessage="No assignees available."
-											disabled={isSavingOverride()}
-										/>
-										<div class="flex justify-end gap-2 pt-1">
-											<Button variant="ghost" size="sm" onClick={closePopover} class="h-7 text-xs">
-												Cancel
-											</Button>
-											<Button size="sm" onClick={handleSaveOverride} disabled={!selectedAssignee() || !isOverrideRangeValid() || isSavingOverride()} class="h-7 text-xs">
-												<Show when={isSavingOverride()} fallback={overrideMode() === "edit" ? "Save" : "Create"}>
-													<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
-												</Show>
-											</Button>
-										</div>
-									</div>
-								</div>
-							)}
+							</div>
 						</Show>
 					</div>
 				</Show>
@@ -1107,6 +1251,37 @@ function startOfDay(date: Date) {
 	const next = new Date(date);
 	next.setHours(0, 0, 0, 0);
 	return next;
+}
+
+function startOfMonth(date: Date) {
+	const next = new Date(date);
+	next.setDate(1);
+	next.setHours(0, 0, 0, 0);
+	return next;
+}
+
+function addDays(date: Date, days: number) {
+	const next = new Date(date);
+	next.setDate(next.getDate() + days);
+	return next;
+}
+
+function addMonths(date: Date, months: number) {
+	return new Date(date.getFullYear(), date.getMonth() + months, 1);
+}
+
+function startOfWeek(date: Date) {
+	const next = startOfDay(date);
+	const mondayOffset = (next.getDay() + 6) % 7;
+	return addDays(next, -mondayOffset);
+}
+
+function endOfWeek(date: Date) {
+	return addDays(startOfWeek(date), 6);
+}
+
+function isSameDay(a: Date, b: Date) {
+	return startOfDay(a).getTime() === startOfDay(b).getTime();
 }
 
 function floorToHour(date: Date) {
