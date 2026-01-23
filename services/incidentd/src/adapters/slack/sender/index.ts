@@ -424,6 +424,7 @@ export async function incidentSeverityUpdated(params: SenderParams["incidentSeve
 			assignee,
 			broadcast: shouldBroadcast,
 			incidentName: title,
+			incidentChannelId,
 		});
 	}
 
@@ -468,6 +469,7 @@ export async function incidentAssigneeUpdated(params: SenderParams["incidentAssi
 			status,
 			assignee,
 			incidentName: title,
+			incidentChannelId,
 		});
 	}
 
@@ -519,6 +521,7 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 			assignee,
 			statusMessage: message,
 			incidentName: title,
+			incidentChannelId,
 		});
 	}
 
@@ -567,6 +570,7 @@ async function updateIncidentMessage({
 	statusMessage,
 	broadcast,
 	incidentName,
+	incidentChannelId,
 }: {
 	stepDo: StepDo;
 	stepName: string;
@@ -581,8 +585,10 @@ async function updateIncidentMessage({
 	statusMessage?: string;
 	broadcast?: boolean;
 	incidentName: string;
+	incidentChannelId?: string;
 }) {
-	const blocks = incidentBlocks({ frontendUrl, incidentId: id, severity, status, assigneeUserId: assignee, statusMessage, title: incidentName });
+	const baseBlocks = incidentBlocks({ frontendUrl, incidentId: id, severity, status, assigneeUserId: assignee, statusMessage, title: incidentName });
+	const blocks = incidentChannelId && channel !== incidentChannelId ? addIncidentChannelPointerBlock(baseBlocks, incidentChannelId) : baseBlocks;
 	const textFallback = `${incidentName} - ${status === "resolved" ? "resolved ✅" : status === "mitigating" ? "mitigating 🟡" : "open 🔴"}`;
 	await stepDo(
 		stepName,
