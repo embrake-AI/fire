@@ -148,7 +148,7 @@ export const createEntryPointFromSlackUser = createServerFn({ method: "POST" })
 		const [newEntryPoint] = await db.transaction(async (tx) => {
 			if (existingUser) {
 				if (existingUser.slackId && existingUser.slackId !== data.slackUserId) {
-					throw new Error("User linked to a different Slack user");
+					throw new Error(`User linked to a different Slack user. Existing: ${existingUser.slackId}, Creating: ${data.slackUserId}`);
 				} else {
 					if (!existingUser.slackId) {
 						await tx.update(user).set({ slackId: data.slackUserId }).where(eq(user.id, existingUser.id));

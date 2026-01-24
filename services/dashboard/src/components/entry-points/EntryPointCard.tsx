@@ -143,14 +143,14 @@ export function EntryPointCard(props: EntryPointCardProps) {
 			<Show when={props.isExpanded}>
 				<div class="px-4 pb-4">
 					<AutoSaveTextarea
-						id={`prompt-${props.entryPoint.id}`}
+						id="entry-point-prompt-textarea"
 						label="Matching Prompt"
 						placeholder={
 							props.entryPoint.isFallback ? "Optional for fallback. Describe when to pick this if other prompts match partially..." : "Match this entry point when the incident..."
 						}
 						value={props.entryPoint.prompt}
 						onSave={handleSave}
-						rows={3}
+						rows={5}
 						autoFocus
 					/>
 				</div>

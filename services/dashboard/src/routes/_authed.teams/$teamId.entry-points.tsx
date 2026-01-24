@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { LoaderCircle, Plus, Repeat, X } from "lucide-solid";
-import { createMemo, createSignal, For, Show, Suspense } from "solid-js";
+import { createMemo, createSignal, For, Index, Show, Suspense } from "solid-js";
 import { EntryPointCard, EntryPointsEmptyState } from "~/components/entry-points/EntryPointCard";
 import { Button } from "~/components/ui/button";
 import { Label } from "~/components/ui/label";
@@ -105,16 +105,16 @@ function TeamEntryPoints(props: { teamId: string }) {
 
 			<Show when={entryPoints().length > 0} fallback={!isCreating() && <EntryPointsEmptyState />}>
 				<div class="space-y-3">
-					<For each={entryPoints()}>
+					<Index each={entryPoints()}>
 						{(ep) => (
 							<EntryPointCard
-								entryPoint={ep}
-								onDelete={() => handleDeleteWithCollapse(ep.id)}
-								isExpanded={expandedId() === ep.id}
-								onToggle={() => setExpandedId(expandedId() === ep.id ? null : ep.id)}
+								entryPoint={ep()}
+								onDelete={() => handleDeleteWithCollapse(ep().id)}
+								isExpanded={expandedId() === ep().id}
+								onToggle={() => setExpandedId(expandedId() === ep().id ? null : ep().id)}
 							/>
 						)}
-					</For>
+					</Index>
 				</div>
 			</Show>
 		</div>
