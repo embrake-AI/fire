@@ -170,6 +170,70 @@ export const updateRotationName = createServerFn({ method: "POST" })
 		return { id: updated.id, name: updated.name };
 	});
 
+export const updateRotationTeam = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
+	.inputValidator((data: { id: string; teamId: string | null }) => data)
+	.handler(async ({ data, context }) => {
+		const existingRotation = await db.query.rotation.findFirst({
+			where: {
+				id: data.id,
+				clientId: context.clientId,
+			},
+			with: {
+				members: {
+					columns: {
+						assigneeId: true,
+					},
+				},
+			},
+		});
+
+		if (!existingRotation) {
+			throw new Error("Rotation not found");
+		}
+
+		if (data.teamId) {
+			const existingTeam = await db.query.team.findFirst({
+				where: {
+					id: data.teamId,
+					clientId: context.clientId,
+				},
+				with: {
+					members: {
+						columns: {
+							id: true,
+						},
+					},
+				},
+			});
+
+			if (!existingTeam) {
+				throw new Error("Team not found");
+			}
+
+			const assignees = existingRotation.members.map(({ assigneeId }) => assigneeId);
+			if (assignees.length > 0) {
+				const memberIds = new Set(existingTeam.members.map(({ id }) => id));
+				const missingMember = assignees.find((assigneeId) => !memberIds.has(assigneeId));
+				if (missingMember) {
+					throw new Error("All rotation members must belong to the selected team");
+				}
+			}
+		}
+
+		const [updated] = await db
+			.update(rotation)
+			.set({ teamId: data.teamId })
+			.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)))
+			.returning({ id: rotation.id, teamId: rotation.teamId });
+
+		if (!updated) {
+			throw new Error("Rotation not found");
+		}
+
+		return { id: updated.id, teamId: updated.teamId };
+	});
+
 type InferFromSQL<T> = T extends SQL<infer R> ? R : never;
 export const updateRotationShiftLength = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])

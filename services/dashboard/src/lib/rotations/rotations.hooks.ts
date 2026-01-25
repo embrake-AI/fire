@@ -19,6 +19,7 @@ import {
 	updateRotationName,
 	updateRotationOverride,
 	updateRotationShiftLength,
+	updateRotationTeam,
 } from "./rotations";
 
 type GetRotationsResponse = Awaited<ReturnType<typeof getRotations>>;
@@ -165,6 +166,40 @@ export function useUpdateRotationName(options?: { onMutate?: () => void; onSucce
 		onSuccess: () => {
 			options?.onSuccess?.();
 			queryClient.invalidateQueries({ queryKey: ["rotations"] });
+		},
+
+		onError: (_err, _variables, context) => {
+			if (context?.previousRotations) {
+				queryClient.setQueryData(["rotations"], context.previousRotations);
+			}
+			options?.onError?.();
+		},
+	}));
+}
+
+export function useUpdateRotationTeam(options?: { onMutate?: () => void; onSuccess?: () => void; onError?: () => void }) {
+	const queryClient = useQueryClient();
+	const updateRotationTeamFn = useServerFn(updateRotationTeam);
+
+	return useMutation(() => ({
+		mutationFn: (data: { id: string; teamId: string | null }) => updateRotationTeamFn({ data }),
+
+		onMutate: async ({ id, teamId }) => {
+			await queryClient.cancelQueries({ queryKey: ["rotations"] });
+
+			const previousRotations = queryClient.getQueryData<GetRotationsResponse>(["rotations"]);
+
+			queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) => old?.map((r) => (r.id === id ? { ...r, teamId } : r)));
+
+			options?.onMutate?.();
+
+			return { previousRotations };
+		},
+
+		onSuccess: () => {
+			options?.onSuccess?.();
+			queryClient.invalidateQueries({ queryKey: ["rotations"] });
+			queryClient.invalidateQueries({ queryKey: ["teams"] });
 		},
 
 		onError: (_err, _variables, context) => {

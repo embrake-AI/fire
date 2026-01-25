@@ -8,7 +8,7 @@ import { AutoSaveTextarea } from "~/components/ui/auto-save-textarea";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
-import { ConfigCard, ConfigCardActions, ConfigCardDeleteButton, ConfigCardIcon, ConfigCardRow, ConfigCardTitle } from "~/components/ui/config-card";
+import { ConfigCard, ConfigCardActions, ConfigCardDeleteButton, ConfigCardRow, ConfigCardTitle } from "~/components/ui/config-card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
@@ -416,10 +416,7 @@ function ServiceDependenciesPanel(props: { service: Service }) {
 						<For each={affectsServices()}>
 							{(service) => (
 								<Badge variant="secondary" class="gap-1.5 pr-1.5">
-									<Show
-										when={service.imageUrl}
-										fallback={<Server class="w-3.5 h-3.5 text-emerald-600" />}
-									>
+									<Show when={service.imageUrl} fallback={<Server class="w-3.5 h-3.5 text-emerald-600" />}>
 										{(imageUrl) => <img src={imageUrl()} alt={service.name ?? ""} class="w-3.5 h-3.5 rounded object-cover" />}
 									</Show>
 									{service.name?.trim() || "Untitled service"}
@@ -429,10 +426,7 @@ function ServiceDependenciesPanel(props: { service: Service }) {
 										onClick={() => handleRemoveAffects(service.id)}
 										disabled={removeDependencyMutation.isPending && removeDependencyMutation.variables?.affectedServiceId === service.id}
 									>
-										<Show
-											when={removeDependencyMutation.isPending && removeDependencyMutation.variables?.affectedServiceId === service.id}
-											fallback={<X class="w-3 h-3" />}
-										>
+										<Show when={removeDependencyMutation.isPending && removeDependencyMutation.variables?.affectedServiceId === service.id} fallback={<X class="w-3 h-3" />}>
 											<LoaderCircle class="w-3 h-3 animate-spin" />
 										</Show>
 									</button>
@@ -461,10 +455,7 @@ function ServiceDependenciesPanel(props: { service: Service }) {
 						<For each={affectedByServices()}>
 							{(service) => (
 								<Badge variant="secondary" class="gap-1.5 pr-1.5">
-									<Show
-										when={service.imageUrl}
-										fallback={<Server class="w-3.5 h-3.5 text-emerald-600" />}
-									>
+									<Show when={service.imageUrl} fallback={<Server class="w-3.5 h-3.5 text-emerald-600" />}>
 										{(imageUrl) => <img src={imageUrl()} alt={service.name ?? ""} class="w-3.5 h-3.5 rounded object-cover" />}
 									</Show>
 									{service.name?.trim() || "Untitled service"}
@@ -474,10 +465,7 @@ function ServiceDependenciesPanel(props: { service: Service }) {
 										onClick={() => handleRemoveAffectedBy(service.id)}
 										disabled={removeDependencyMutation.isPending && removeDependencyMutation.variables?.baseServiceId === service.id}
 									>
-										<Show
-											when={removeDependencyMutation.isPending && removeDependencyMutation.variables?.baseServiceId === service.id}
-											fallback={<X class="w-3 h-3" />}
-										>
+										<Show when={removeDependencyMutation.isPending && removeDependencyMutation.variables?.baseServiceId === service.id} fallback={<X class="w-3 h-3" />}>
 											<LoaderCircle class="w-3 h-3 animate-spin" />
 										</Show>
 									</button>

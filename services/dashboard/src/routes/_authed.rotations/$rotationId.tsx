@@ -1,6 +1,6 @@
 import { SHIFT_LENGTH_OPTIONS } from "@fire/common";
 import { createFileRoute, Link } from "@tanstack/solid-router";
-import { Check, ChevronLeft, ChevronRight, GripVertical, LoaderCircle, Pencil, Plus, Trash2, Users as UsersIcon, X } from "lucide-solid";
+import { Check, ChevronLeft, ChevronRight, ExternalLink, GripVertical, LoaderCircle, Pencil, Plus, Trash2, Users as UsersIcon, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, Suspense } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { EntityPicker } from "~/components/EntityPicker";
@@ -28,6 +28,7 @@ import {
 	useUpdateRotationName,
 	useUpdateRotationOverride,
 	useUpdateRotationShiftLength,
+	useUpdateRotationTeam,
 } from "~/lib/rotations/rotations.hooks";
 import { useTeams } from "~/lib/teams/teams.hooks";
 import { usePossibleSlackUsers, useUsers } from "~/lib/users/users.hooks";
@@ -73,19 +74,42 @@ function RotationDetailsPage() {
 }
 
 function RotationHeader(props: { rotation: Rotation }) {
-	const teamsQuery = useTeams({ enabled: () => !!props.rotation.teamId });
+	const teamsQuery = useTeams();
+	const usersQuery = useUsers();
 	const updateNameMutation = useUpdateRotationName({
 		onMutate: () => setIsEditingName(false),
 	});
 	const updateShiftLengthMutation = useUpdateRotationShiftLength();
 	const updateAnchorMutation = useUpdateRotationAnchor();
+	const updateTeamMutation = useUpdateRotationTeam();
 
 	const [isEditingName, setIsEditingName] = createSignal(false);
 	const [name, setName] = createSignal(props.rotation.name);
 	const [isEditingAnchor, setIsEditingAnchor] = createSignal(false);
 	const [anchorInput, setAnchorInput] = createSignal("");
 
-	const team = createMemo(() => (props.rotation.teamId ? teamsQuery.data?.find((t) => t.id === props.rotation.teamId) : undefined));
+	const NO_TEAM_VALUE = "none";
+	const teamOptions = createMemo(() => [NO_TEAM_VALUE, ...(teamsQuery.data?.map((t) => t.id) ?? [])]);
+	const teamsById = createMemo(() => new Map(teamsQuery.data?.map((t) => [t.id, t]) ?? []));
+	const team = createMemo(() => (props.rotation.teamId ? teamsById().get(props.rotation.teamId) : undefined));
+	const eligibleTeamIds = createMemo(() => {
+		if (!teamsQuery.data || !usersQuery.data) {
+			return new Set<string>();
+		}
+		if (props.rotation.assignees.length === 0) {
+			return new Set(teamsQuery.data.map((t) => t.id));
+		}
+		const usersById = new Map(usersQuery.data.map((user) => [user.id, user]));
+		const eligible = new Set<string>();
+		for (const team of teamsQuery.data) {
+			const hasAllMembers = props.rotation.assignees.every((assignee) => usersById.get(assignee.id)?.teamIds.includes(team.id));
+			if (hasAllMembers) {
+				eligible.add(team.id);
+			}
+		}
+		return eligible;
+	});
+	const currentTeamValue = createMemo(() => props.rotation.teamId ?? NO_TEAM_VALUE);
 	const currentShiftLength = createMemo(() => normalizeShiftLength(props.rotation.shiftLength));
 
 	createEffect(() => {
@@ -117,6 +141,14 @@ function RotationHeader(props: { rotation: Rotation }) {
 	const handleShiftLengthChange = (value: string | null) => {
 		if (!value || value === props.rotation.shiftLength) return;
 		updateShiftLengthMutation.mutate({ id: props.rotation.id, shiftLength: value });
+	};
+
+	const handleTeamChange = (value: string | null) => {
+		if (!value) return;
+		const nextTeamId = value === NO_TEAM_VALUE ? null : value;
+		const currentTeamId = props.rotation.teamId ?? null;
+		if (nextTeamId === currentTeamId) return;
+		updateTeamMutation.mutate({ id: props.rotation.id, teamId: nextTeamId });
 	};
 
 	const handleAnchorSave = () => {
@@ -220,14 +252,51 @@ function RotationHeader(props: { rotation: Rotation }) {
 						</button>
 					</Show>
 				</div>
-				<Show when={team()}>
-					{(t) => (
-						<Link to="/teams/$teamId" params={{ teamId: t().id }} class="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-2">
-							<UsersIcon class="w-4 h-4" />
-							{t().name}
-						</Link>
-					)}
-				</Show>
+				<div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+					<UsersIcon class="w-4 h-4" />
+					<Select
+						value={currentTeamValue()}
+						onChange={handleTeamChange}
+						options={teamOptions()}
+						optionDisabled={(option) => option !== NO_TEAM_VALUE && !eligibleTeamIds().has(option)}
+						itemComponent={(itemProps) => {
+							const teamId = itemProps.item.rawValue;
+							const isDisabled = itemProps.item.disabled;
+							if (teamId === NO_TEAM_VALUE) {
+								return <SelectItem item={itemProps.item}>No team</SelectItem>;
+							}
+							return (
+								<SelectItem item={itemProps.item} class={isDisabled ? "opacity-50" : ""}>
+									<div class="flex flex-col gap-0.5">
+										<span>{teamsById().get(teamId)?.name ?? "Unknown team"}</span>
+										<Show when={isDisabled}>
+											<span class="text-[10px] text-muted-foreground">At least one member is not in this team</span>
+										</Show>
+									</div>
+								</SelectItem>
+							);
+						}}
+						disabled={!teamsQuery.data || !usersQuery.data || updateTeamMutation.isPending}
+					>
+						<SelectTrigger class="h-auto py-0.5 px-2.5 text-xs font-normal border-border bg-transparent hover:bg-muted/50 w-auto gap-1 [&>svg]:w-3 [&>svg]:h-3">
+							<SelectValue<string>>
+								{(state) => {
+									const selected = state.selectedOption();
+									if (!selected || selected === NO_TEAM_VALUE) return "No team";
+									return teamsById().get(selected)?.name ?? (teamsQuery.data ? "Unknown team" : "Loading teams...");
+								}}
+							</SelectValue>
+						</SelectTrigger>
+						<SelectContent />
+					</Select>
+					<Show when={team()}>
+						{(t) => (
+							<Link to="/teams/$teamId" params={{ teamId: t().id }} target="_blank" class="text-muted-foreground hover:text-foreground" title="Open team">
+								<ExternalLink class="w-3.5 h-3.5" />
+							</Link>
+						)}
+					</Show>
+				</div>
 			</div>
 		</div>
 	);
