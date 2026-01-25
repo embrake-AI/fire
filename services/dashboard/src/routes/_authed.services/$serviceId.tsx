@@ -372,12 +372,12 @@ function ServiceDependenciesPanel(props: { service: Service }) {
 	const affectsEntities = createMemo(() =>
 		otherServices()
 			.filter((service) => !props.service.affectsServiceIds.includes(service.id))
-			.map((service) => ({ id: service.id, name: service.name?.trim() || "Untitled service" })),
+			.map((service) => ({ id: service.id, name: service.name?.trim() || "Untitled service", avatar: service.imageUrl })),
 	);
 	const affectedByEntities = createMemo(() =>
 		otherServices()
 			.filter((service) => !props.service.affectedByServiceIds.includes(service.id))
-			.map((service) => ({ id: service.id, name: service.name?.trim() || "Untitled service" })),
+			.map((service) => ({ id: service.id, name: service.name?.trim() || "Untitled service", avatar: service.imageUrl })),
 	);
 
 	const handleAddAffects = (service: { id: string }) => {
@@ -416,6 +416,12 @@ function ServiceDependenciesPanel(props: { service: Service }) {
 						<For each={affectsServices()}>
 							{(service) => (
 								<Badge variant="secondary" class="gap-1.5 pr-1.5">
+									<Show
+										when={service.imageUrl}
+										fallback={<Server class="w-3.5 h-3.5 text-emerald-600" />}
+									>
+										{(imageUrl) => <img src={imageUrl()} alt={service.name ?? ""} class="w-3.5 h-3.5 rounded object-cover" />}
+									</Show>
 									{service.name?.trim() || "Untitled service"}
 									<button
 										type="button"
@@ -455,6 +461,12 @@ function ServiceDependenciesPanel(props: { service: Service }) {
 						<For each={affectedByServices()}>
 							{(service) => (
 								<Badge variant="secondary" class="gap-1.5 pr-1.5">
+									<Show
+										when={service.imageUrl}
+										fallback={<Server class="w-3.5 h-3.5 text-emerald-600" />}
+									>
+										{(imageUrl) => <img src={imageUrl()} alt={service.name ?? ""} class="w-3.5 h-3.5 rounded object-cover" />}
+									</Show>
 									{service.name?.trim() || "Untitled service"}
 									<button
 										type="button"
