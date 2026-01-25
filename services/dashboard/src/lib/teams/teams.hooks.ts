@@ -118,6 +118,7 @@ export function useDeleteTeam(options?: { onSuccess?: () => void; onError?: () =
 			queryClient.invalidateQueries({ queryKey: ["teams"] });
 			queryClient.invalidateQueries({ queryKey: ["rotations"] });
 			queryClient.invalidateQueries({ queryKey: ["entry-points"] });
+			queryClient.invalidateQueries({ queryKey: ["services"] });
 		},
 
 		onError: (_err, _variables, context) => {

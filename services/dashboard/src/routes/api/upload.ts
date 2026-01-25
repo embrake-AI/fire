@@ -2,13 +2,14 @@ import { createFileRoute } from "@tanstack/solid-router";
 import { auth } from "~/lib/auth/auth";
 import { uploadImageFile, uploadImageFromUrl } from "~/lib/blob";
 
-type UploadType = "user" | "client" | "team";
+type UploadType = "user" | "client" | "team" | "service";
 
 function resolveUploadPrefix(type: UploadType, clientId: string, userId: string) {
 	const prefixes: Record<UploadType, string> = {
 		user: `users/${clientId}/${userId}`,
 		client: `workspaces/${clientId}`,
 		team: `teams/${clientId}/${userId}`,
+		service: `services/${clientId}/${userId}`,
 	};
 
 	return prefixes[type];
@@ -40,7 +41,7 @@ export const Route = createFileRoute("/api/upload")({
 					});
 				}
 
-				if (rawType !== "user" && rawType !== "client" && rawType !== "team") {
+				if (rawType !== "user" && rawType !== "client" && rawType !== "team" && rawType !== "service") {
 					return new Response(JSON.stringify({ error: "Invalid upload type" }), {
 						status: 400,
 						headers: { "Content-Type": "application/json" },

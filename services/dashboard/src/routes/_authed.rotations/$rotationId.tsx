@@ -214,7 +214,7 @@ function RotationHeader(props: { rotation: Rotation }) {
 							class="text-xs text-muted-foreground hover:text-foreground cursor-pointer bg-transparent border-none p-0 inline-flex items-center gap-1.5 group"
 							onClick={() => setIsEditingAnchor(true)}
 						>
-							<span>Shift started at</span>
+							<span>Shift started</span>
 							<span class="font-medium text-foreground">{formattedAnchor()}</span>
 							<Pencil class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
 						</button>

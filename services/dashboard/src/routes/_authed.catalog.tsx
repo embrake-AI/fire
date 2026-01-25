@@ -19,6 +19,7 @@ function CatalogLayout() {
 		const path = location().pathname;
 		if (path.includes("teams")) return "teams";
 		if (path.includes("rotation")) return "rotation";
+		if (path.includes("services")) return "services";
 		if (path.includes("escalation")) return "escalation";
 		return "entry-points";
 	});
@@ -43,6 +44,9 @@ function CatalogLayout() {
 						</TabsTrigger>
 						<TabsTrigger value="rotation" as={Link} to="/catalog/rotation">
 							Rotation
+						</TabsTrigger>
+						<TabsTrigger value="services" as={Link} to="/catalog/services">
+							Services
 						</TabsTrigger>
 						<TabsTrigger value="escalation" as={Link} to="/catalog/escalation">
 							Escalation

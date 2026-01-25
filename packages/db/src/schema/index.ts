@@ -8,4 +8,5 @@ export * from "./rotation";
 export * from "./rotation-member";
 export * from "./rotation-override";
 export * from "./rotation-with-assignee";
+export * from "./service";
 export * from "./team";

@@ -19,6 +19,10 @@ export const relations = defineRelations(schema, (r) => ({
 			from: r.client.id,
 			to: r.team.clientId,
 		}),
+		services: r.many.service({
+			from: r.client.id,
+			to: r.service.clientId,
+		}),
 	},
 	team: {
 		members: r.many.user({
@@ -28,6 +32,38 @@ export const relations = defineRelations(schema, (r) => ({
 		rotations: r.many.rotation({
 			from: r.team.id,
 			to: r.rotation.teamId,
+		}),
+		servicesOwned: r.many.service({
+			from: r.team.id.through(r.serviceTeamOwner.teamId),
+			to: r.service.id.through(r.serviceTeamOwner.serviceId),
+		}),
+	},
+	service: {
+		teamOwners: r.many.team({
+			from: r.service.id.through(r.serviceTeamOwner.serviceId),
+			to: r.team.id.through(r.serviceTeamOwner.teamId),
+		}),
+		userOwners: r.many.user({
+			from: r.service.id.through(r.serviceUserOwner.serviceId),
+			to: r.user.id.through(r.serviceUserOwner.userId),
+		}),
+		affectsServices: r.many.service({
+			from: r.service.id.through(r.serviceDependency.baseServiceId),
+			to: r.service.id.through(r.serviceDependency.affectedServiceId),
+		}),
+		affectedByServices: r.many.service({
+			from: r.service.id.through(r.serviceDependency.affectedServiceId),
+			to: r.service.id.through(r.serviceDependency.baseServiceId),
+		}),
+	},
+	serviceDependency: {
+		baseService: r.one.service({
+			from: r.serviceDependency.baseServiceId,
+			to: r.service.id,
+		}),
+		affectedService: r.one.service({
+			from: r.serviceDependency.affectedServiceId,
+			to: r.service.id,
 		}),
 	},
 	rotation: {
@@ -92,6 +128,10 @@ export const relations = defineRelations(schema, (r) => ({
 		teams: r.many.team({
 			from: r.user.id.through(r.teamMember.userId),
 			to: r.team.id.through(r.teamMember.teamId),
+		}),
+		servicesOwned: r.many.service({
+			from: r.user.id.through(r.serviceUserOwner.userId),
+			to: r.service.id.through(r.serviceUserOwner.serviceId),
 		}),
 		userIntegrations: r.many.userIntegration({
 			from: r.user.id,

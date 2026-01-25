@@ -35,6 +35,7 @@ function TeamDetailsLayout() {
 	const activeTab = createMemo(() => {
 		const path = location().pathname;
 		if (path.includes("/entry-points")) return "entry-points";
+		if (path.includes("/services")) return "services";
 		if (path.includes("/rotations")) return "rotations";
 		return "users";
 	});
@@ -65,6 +66,9 @@ function TeamDetailsLayout() {
 							</Link>
 							<Link to="/teams/$teamId/entry-points" params={{ teamId: params().teamId }}>
 								<TabsTrigger value="entry-points">Entry Points</TabsTrigger>
+							</Link>
+							<Link to="/teams/$teamId/services" params={{ teamId: params().teamId }}>
+								<TabsTrigger value="services">Services</TabsTrigger>
 							</Link>
 							<TabsIndicator />
 						</TabsList>

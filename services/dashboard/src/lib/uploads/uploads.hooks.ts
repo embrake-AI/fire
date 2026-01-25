@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/solid-query";
 
-export type UploadImageType = "user" | "client" | "team";
+export type UploadImageType = "user" | "client" | "team" | "service";
 
 type UploadImageInput = {
 	file?: File | null;
