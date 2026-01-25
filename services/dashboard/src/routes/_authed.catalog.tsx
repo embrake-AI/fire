@@ -43,13 +43,13 @@ function CatalogLayout() {
 							Teams
 						</TabsTrigger>
 						<TabsTrigger value="rotation" as={Link} to="/catalog/rotation">
-							Rotation
+							Rotations
 						</TabsTrigger>
 						<TabsTrigger value="services" as={Link} to="/catalog/services">
 							Services
 						</TabsTrigger>
 						<TabsTrigger value="escalation" as={Link} to="/catalog/escalation">
-							Escalation
+							Escalations
 						</TabsTrigger>
 						<TabsIndicator />
 					</TabsList>
