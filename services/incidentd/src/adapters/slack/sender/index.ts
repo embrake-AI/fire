@@ -10,6 +10,12 @@ type SlackApiResponse = {
 	error?: string;
 };
 
+type SlackPermalinkResponse = {
+	ok?: boolean;
+	permalink?: string;
+	error?: string;
+};
+
 type SlackChannelResponse = {
 	ok: boolean;
 	channel?: { id: string; name: string };
@@ -20,6 +26,7 @@ type ChannelResult = { channelId: string; channelName?: string };
 
 const CHANNEL_NAME_MAX_LENGTH = 80;
 const CHANNEL_DATE_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const MAX_PROMPT_LENGTH = 1500;
 
 function formatIncidentChannelDate(date: Date): string {
 	const day = date.getUTCDate();
@@ -199,6 +206,64 @@ async function pinMessage(stepDo: StepDo, botToken: string, channelId: string, m
 	);
 }
 
+async function fetchMessagePermalink(stepDo: StepDo, botToken: string, channelId: string, messageTs: string): Promise<string> {
+	const params = new URLSearchParams({ channel: channelId, message_ts: messageTs });
+	return stepDo(
+		"slack.get-permalink",
+		{
+			retries: {
+				limit: 3,
+				delay: "1 second",
+			},
+		},
+		async () => {
+			const response = await fetch(`https://slack.com/api/chat.getPermalink?${params.toString()}`, {
+				headers: {
+					Authorization: `Bearer ${botToken}`,
+				},
+			});
+			const payload = await response.json<SlackPermalinkResponse>();
+			if (!response.ok || payload.ok === false || !payload.permalink) {
+				throw new Error(`Slack getPermalink failed: ${payload.error ?? response.status}`);
+			}
+			return payload.permalink;
+		},
+	);
+}
+
+function normalizePrompt(prompt: string): string {
+	const trimmed = prompt.trim();
+	if (!trimmed) {
+		return "";
+	}
+	if (trimmed.length <= MAX_PROMPT_LENGTH) {
+		return trimmed;
+	}
+	return `${trimmed.slice(0, MAX_PROMPT_LENGTH - 3)}...`;
+}
+
+function addSourceMessageBlock(blocks: KnownBlock[], prompt: string, permalink?: string): KnownBlock[] {
+	const normalizedPrompt = normalizePrompt(prompt);
+	if (!normalizedPrompt) {
+		return blocks;
+	}
+	const sourceTextParts = [`*Original message:* ${normalizedPrompt}`];
+	if (permalink) {
+		sourceTextParts.push(`*Source:* <${permalink}|View original message>`);
+	}
+	const sourceBlock: KnownBlock = {
+		type: "section",
+		text: {
+			type: "mrkdwn",
+			text: sourceTextParts.join("\n"),
+		},
+	};
+	if (!blocks.length) {
+		return [sourceBlock];
+	}
+	return [blocks[0], sourceBlock, ...blocks.slice(1)];
+}
+
 /**
  * Useful guide to create Slack messages (has sub-routes for each type of message):
  *   - https://docs.slack.dev/messaging/
@@ -206,7 +271,7 @@ async function pinMessage(stepDo: StepDo, botToken: string, channelId: string, m
 
 export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 	const { step: stepDo, env, id, incident, metadata } = params;
-	const { severity, status, assignee, title } = incident;
+	const { severity, status, assignee, title, prompt } = incident;
 	const { botToken, channel, thread, incidentChannelId, incidentChannelMessageTs: existingIncidentChannelMessageTs, postedMessageTs } = metadata;
 	if (!botToken || !channel) {
 		// Thread is optional, if we have a channel and no thread, we'll post in the channel directly
@@ -231,9 +296,9 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 		});
 	}
 
-	const blocks = incidentBlocks({ frontendUrl: env.FRONTEND_URL, incidentId: id, severity, status, assigneeUserId: assignee, title });
+	const baseBlocks = incidentBlocks({ frontendUrl: env.FRONTEND_URL, incidentId: id, severity, status, assigneeUserId: assignee, title });
 	const incidentChannelMention = channelResult?.channelId ? `<#${channelResult.channelId}>` : null;
-	const announcementBlocks = incidentChannelMention ? addIncidentChannelPointerBlock(blocks, channelResult!.channelId) : blocks;
+	const announcementBlocks = incidentChannelMention ? addIncidentChannelPointerBlock(baseBlocks, channelResult!.channelId) : baseBlocks;
 	const shouldBroadcast = severity === "high" && !!thread;
 
 	let threadPostResult: PromiseSettledResult<{ ts: string }> | null = null;
@@ -306,6 +371,16 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 
 	let incidentChannelMessageTs: string | undefined = existingIncidentChannelMessageTs;
 	let postedIncidentChannelMessage = false;
+
+	const sourceMessageTs = thread ?? (threadPostResult?.status === "fulfilled" ? threadPostResult.value.ts : undefined) ?? postedMessageTs;
+	const sourceMessagePermalink =
+		botToken && channel && sourceMessageTs
+			? await fetchMessagePermalink(stepDo, botToken, channel, sourceMessageTs as string).catch((err) => {
+					console.warn("Failed to fetch source message permalink", err);
+					return undefined;
+				})
+			: undefined;
+	const incidentChannelBlocks = sourceMessagePermalink ? addSourceMessageBlock(baseBlocks, prompt, sourceMessagePermalink) : baseBlocks;
 	if (channelResult && !existingIncidentChannelMessageTs) {
 		const channelPostResult = await stepDo(
 			"slack.post-incident-channel-message",
@@ -325,7 +400,7 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 					body: JSON.stringify({
 						text: `Incident: ${title}`,
 						channel: channelResult.channelId,
-						blocks,
+						blocks: incidentChannelBlocks,
 						metadata: {
 							event_type: "incident",
 							event_payload: { id },
@@ -362,6 +437,9 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 	}
 	if (incidentChannelMessageTs && incidentChannelMessageTs !== existingIncidentChannelMessageTs) {
 		metadataUpdates.incidentChannelMessageTs = incidentChannelMessageTs;
+	}
+	if (sourceMessagePermalink) {
+		metadataUpdates.sourceMessagePermalink = sourceMessagePermalink;
 	}
 	if (threadPostResult?.status === "fulfilled") {
 		const { ts } = threadPostResult.value;
@@ -403,8 +481,8 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 
 export async function incidentSeverityUpdated(params: SenderParams["incidentSeverityUpdated"]) {
 	const { step: stepDo, env, id, incident, metadata } = params;
-	const { severity, status, assignee, title } = incident;
-	const { botToken, channel, thread, postedMessageTs, incidentChannelId, incidentChannelMessageTs } = metadata;
+	const { severity, status, assignee, title, prompt } = incident;
+	const { botToken, channel, thread, postedMessageTs, incidentChannelId, incidentChannelMessageTs, sourceMessagePermalink } = metadata;
 	if (!botToken) {
 		return;
 	}
@@ -424,6 +502,7 @@ export async function incidentSeverityUpdated(params: SenderParams["incidentSeve
 			assignee,
 			broadcast: shouldBroadcast,
 			incidentName: title,
+			prompt,
 			incidentChannelId,
 		});
 	}
@@ -442,6 +521,8 @@ export async function incidentSeverityUpdated(params: SenderParams["incidentSeve
 				status,
 				assignee,
 				incidentName: title,
+				prompt,
+				sourceMessagePermalink,
 			});
 		}
 		await postToChannel(stepDo, botToken, incidentChannelId, `Severity changed to *${severity}*`, "slack.post-severity-update");
@@ -450,8 +531,8 @@ export async function incidentSeverityUpdated(params: SenderParams["incidentSeve
 
 export async function incidentAssigneeUpdated(params: SenderParams["incidentAssigneeUpdated"]) {
 	const { step: stepDo, env, id, incident, metadata } = params;
-	const { severity, status, assignee, title } = incident;
-	const { botToken, channel, postedMessageTs, incidentChannelId, incidentChannelMessageTs } = metadata;
+	const { severity, status, assignee, title, prompt } = incident;
+	const { botToken, channel, postedMessageTs, incidentChannelId, incidentChannelMessageTs, sourceMessagePermalink, thread } = metadata;
 	if (!botToken) {
 		return;
 	}
@@ -469,6 +550,7 @@ export async function incidentAssigneeUpdated(params: SenderParams["incidentAssi
 			status,
 			assignee,
 			incidentName: title,
+			prompt,
 			incidentChannelId,
 		});
 	}
@@ -492,6 +574,8 @@ export async function incidentAssigneeUpdated(params: SenderParams["incidentAssi
 				status,
 				assignee,
 				incidentName: title,
+				prompt,
+				sourceMessagePermalink,
 			});
 		}
 		const assigneeText = assignee ? `Assignee changed to <@${assignee}>` : "Assignee cleared";
@@ -501,8 +585,8 @@ export async function incidentAssigneeUpdated(params: SenderParams["incidentAssi
 
 export async function incidentStatusUpdated(params: SenderParams["incidentStatusUpdated"]) {
 	const { step: stepDo, env, id, incident, message, metadata } = params;
-	const { severity, status, assignee, title } = incident;
-	const { botToken, channel, postedMessageTs, incidentChannelId, incidentChannelMessageTs } = metadata;
+	const { severity, status, assignee, title, prompt } = incident;
+	const { botToken, channel, postedMessageTs, incidentChannelId, incidentChannelMessageTs, sourceMessagePermalink, thread } = metadata;
 	if (!botToken) {
 		return;
 	}
@@ -521,6 +605,7 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 			assignee,
 			statusMessage: message,
 			incidentName: title,
+			prompt,
 			incidentChannelId,
 		});
 	}
@@ -540,6 +625,8 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 				assignee,
 				statusMessage: message,
 				incidentName: title,
+				prompt,
+				sourceMessagePermalink,
 			});
 		}
 
@@ -570,7 +657,9 @@ async function updateIncidentMessage({
 	statusMessage,
 	broadcast,
 	incidentName,
+	prompt,
 	incidentChannelId,
+	sourceMessagePermalink,
 }: {
 	stepDo: StepDo;
 	stepName: string;
@@ -585,10 +674,18 @@ async function updateIncidentMessage({
 	statusMessage?: string;
 	broadcast?: boolean;
 	incidentName: string;
+	prompt: string;
 	incidentChannelId?: string;
+	sourceMessagePermalink?: string;
 }) {
 	const baseBlocks = incidentBlocks({ frontendUrl, incidentId: id, severity, status, assigneeUserId: assignee, statusMessage, title: incidentName });
-	const blocks = incidentChannelId && channel !== incidentChannelId ? addIncidentChannelPointerBlock(baseBlocks, incidentChannelId) : baseBlocks;
+	let blocks = baseBlocks;
+	if (sourceMessagePermalink) {
+		blocks = addSourceMessageBlock(blocks, prompt, sourceMessagePermalink);
+	}
+	if (incidentChannelId && channel !== incidentChannelId) {
+		blocks = addIncidentChannelPointerBlock(blocks, incidentChannelId);
+	}
 	const textFallback = `${incidentName} - ${status === "resolved" ? "resolved ✅" : status === "mitigating" ? "mitigating 🟡" : "open 🔴"}`;
 	await stepDo(
 		stepName,
