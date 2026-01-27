@@ -235,11 +235,13 @@ function addSourceLinkBlock(blocks: KnownBlock[], permalink?: string): KnownBloc
 		return blocks;
 	}
 	const sourceBlock: KnownBlock = {
-		type: "section",
-		text: {
-			type: "mrkdwn",
-			text: `<${permalink}|View original message>`,
-		},
+		type: "context",
+		elements: [
+			{
+				type: "mrkdwn",
+				text: `<${permalink}|View original message>`,
+			},
+		],
 	};
 	if (!blocks.length) {
 		return [sourceBlock];
