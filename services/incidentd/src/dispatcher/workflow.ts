@@ -11,7 +11,6 @@ export type Incident = {
 	severity: IS["severity"];
 	title: string;
 	description: string;
-	prompt: string;
 };
 
 export type SummaryResponsePayload = {
