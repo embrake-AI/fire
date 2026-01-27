@@ -185,7 +185,7 @@ export async function addPrompt<E extends BasicContext>({
 		if (!status || !validStatusTransitions.includes(status)) {
 			return;
 		}
-		await incident.updateStatus(status, decision.message ?? prompt, adapter);
+		await incident.updateStatus(status, decision.message ?? prompt, adapter, { promptTs: ts, promptChannel: channel });
 		return;
 	}
 
@@ -194,7 +194,7 @@ export async function addPrompt<E extends BasicContext>({
 		if (!severity) {
 			return;
 		}
-		await incident.setSeverity(severity, adapter);
+		await incident.setSeverity(severity, adapter, { promptTs: ts, promptChannel: channel });
 		return;
 	}
 

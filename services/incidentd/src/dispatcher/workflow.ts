@@ -59,6 +59,7 @@ export type SenderParams = {
 		incident: Incident;
 		metadata: Metadata;
 		sourceAdapter: "slack" | "dashboard";
+		eventMetadata?: Record<string, string>;
 	};
 	incidentAssigneeUpdated: {
 		step: StepDo;
@@ -76,6 +77,7 @@ export type SenderParams = {
 		message: string;
 		metadata: Metadata;
 		sourceAdapter: "slack" | "dashboard";
+		eventMetadata?: Record<string, string>;
 	};
 	messageAdded: {
 		step: StepDo;
@@ -181,11 +183,11 @@ async function dispatchEvent(step: WorkflowStep, env: Env, payload: WorkflowEven
 			return dispatchIncidentAssigneeUpdatedEvent(baseParams);
 		}
 		case "SEVERITY_UPDATE": {
-			return dispatchIncidentSeverityUpdatedEvent(baseParams);
+			return dispatchIncidentSeverityUpdatedEvent({ ...baseParams, eventMetadata: payload.eventMetadata });
 		}
 		case "STATUS_UPDATE": {
 			ASSERT(payload.event.event_data.status !== "open", "Incident cannot be opened from the dispatcher");
-			return dispatchIncidentStatusUpdatedEvent({ ...baseParams, message: payload.event.event_data.message });
+			return dispatchIncidentStatusUpdatedEvent({ ...baseParams, message: payload.event.event_data.message, eventMetadata: payload.eventMetadata });
 		}
 		case "MESSAGE_ADDED": {
 			return dispatchMessageAddedEvent({

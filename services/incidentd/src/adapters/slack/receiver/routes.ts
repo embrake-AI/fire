@@ -3,7 +3,7 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { type AuthContext, addMessage, addPrompt, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
 import { ASSERT_NEVER } from "../../../lib/utils";
-import { incidentChannelIdentifier, slackThreadIdentifier } from "../shared";
+import { addReaction, incidentChannelIdentifier, slackThreadIdentifier } from "../shared";
 import { verifySlackRequestMiddleware } from "./middleware";
 import {
 	getIncidentIdFromIdentifier,
@@ -110,20 +110,7 @@ slackRoutes.post("/events", async (c) => {
 			}
 
 			const threadForIncident = event.ts;
-			c.executionCtx.waitUntil(
-				fetch(`https://slack.com/api/reactions.add`, {
-					method: "POST",
-					headers: {
-						Authorization: `Bearer ${botToken}`,
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({
-						name: "fire",
-						channel,
-						timestamp: threadForIncident,
-					}),
-				}).catch(() => {}),
-			);
+			c.executionCtx.waitUntil(addReaction(botToken, channel, threadForIncident, "fire"));
 
 			await startIncident({
 				c: c as Context<AuthContext>,

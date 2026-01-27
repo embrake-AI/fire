@@ -2,7 +2,7 @@ import { IS_SEVERITY } from "@fire/common";
 import type { ActionsBlock, KnownBlock } from "@slack/types";
 import type { Incident, SenderParams, StepDo } from "../../../dispatcher/workflow";
 import { addIncidentIdentifiers } from "../../dashboard/sender";
-import { incidentChannelIdentifier, slackThreadIdentifier } from "../shared";
+import { addReaction, incidentChannelIdentifier, slackThreadIdentifier } from "../shared";
 
 type SlackApiResponse = {
 	ok?: boolean;
@@ -465,7 +465,7 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 }
 
 export async function incidentSeverityUpdated(params: SenderParams["incidentSeverityUpdated"]) {
-	const { step: stepDo, env, id, incident, metadata } = params;
+	const { step: stepDo, env, id, incident, metadata, eventMetadata } = params;
 	const { severity, status, assignee, title } = incident;
 	const { botToken, channel, thread, postedMessageTs, incidentChannelId, incidentChannelMessageTs, sourceMessagePermalink } = metadata;
 	if (!botToken) {
@@ -509,6 +509,10 @@ export async function incidentSeverityUpdated(params: SenderParams["incidentSeve
 			});
 		}
 		await postToChannel(stepDo, botToken, incidentChannelId, `Severity changed to *${severity}*`, "slack.post-severity-update");
+	}
+
+	if (eventMetadata?.promptTs && eventMetadata?.promptChannel) {
+		await stepDo("slack.add-prompt-reaction", () => addReaction(botToken, eventMetadata.promptChannel, eventMetadata.promptTs, "white_check_mark"));
 	}
 }
 
@@ -565,7 +569,7 @@ export async function incidentAssigneeUpdated(params: SenderParams["incidentAssi
 }
 
 export async function incidentStatusUpdated(params: SenderParams["incidentStatusUpdated"]) {
-	const { step: stepDo, env, id, incident, message, metadata } = params;
+	const { step: stepDo, env, id, incident, message, metadata, eventMetadata } = params;
 	const { severity, status, assignee, title } = incident;
 	const { botToken, channel, postedMessageTs, incidentChannelId, incidentChannelMessageTs, sourceMessagePermalink } = metadata;
 	if (!botToken) {
@@ -612,13 +616,17 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 		const statusEmoji = status === "resolved" ? "✅" : status === "mitigating" ? "🟡" : "🔴";
 		const statusText = message ? `Status: ${statusEmoji} *${status}*\n${message}` : `Status: ${statusEmoji} *${status}*`;
 		await postToChannel(stepDo, botToken, incidentChannelId, statusText, "slack.post-status-update");
+	}
 
-		if (status === "resolved") {
-			await postToChannel(stepDo, botToken, incidentChannelId, "This channel will now be archived.", "slack.post-archive-notice");
-			await archiveChannel(stepDo, botToken, incidentChannelId).catch((err) => {
-				console.warn("Failed to archive incident channel", err);
-			});
-		}
+	if (eventMetadata?.promptTs && eventMetadata?.promptChannel) {
+		await stepDo("slack.add-prompt-reaction", () => addReaction(botToken, eventMetadata.promptChannel, eventMetadata.promptTs, "white_check_mark"));
+	}
+
+	if (incidentChannelId && status === "resolved") {
+		await postToChannel(stepDo, botToken, incidentChannelId, "This channel will now be archived.", "slack.post-archive-notice");
+		await archiveChannel(stepDo, botToken, incidentChannelId).catch((err) => {
+			console.warn("Failed to archive incident channel", err);
+		});
 	}
 }
 

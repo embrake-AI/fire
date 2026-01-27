@@ -467,14 +467,14 @@ export class Incident extends DurableObject<Env> {
 		}
 	}
 
-	async setSeverity(severity: DOState["severity"], adapter: "slack" | "dashboard") {
+	async setSeverity(severity: DOState["severity"], adapter: "slack" | "dashboard", eventMetadata?: Record<string, string>) {
 		const state = this.getState();
 		if ("error" in state) {
 			return state;
 		}
 		if (state.severity !== severity) {
 			state.severity = severity;
-			await this.commit({ state, event: { event_type: "SEVERITY_UPDATE", event_data: { severity } }, adapter });
+			await this.commit({ state, event: { event_type: "SEVERITY_UPDATE", event_data: { severity } }, adapter, eventMetadata });
 		}
 	}
 
@@ -489,7 +489,7 @@ export class Incident extends DurableObject<Env> {
 		}
 	}
 
-	async updateStatus(status: DOState["status"], message: string, adapter: "slack" | "dashboard") {
+	async updateStatus(status: DOState["status"], message: string, adapter: "slack" | "dashboard", eventMetadata?: Record<string, string>) {
 		const state = this.getState();
 		if ("error" in state) {
 			return state;
@@ -503,7 +503,7 @@ export class Incident extends DurableObject<Env> {
 		}
 
 		state.status = status;
-		await this.commit({ state, event: { event_type: "STATUS_UPDATE", event_data: { status, message } }, adapter });
+		await this.commit({ state, event: { event_type: "STATUS_UPDATE", event_data: { status, message } }, adapter, eventMetadata });
 	}
 
 	async respondSummary(context: SummaryRequestContext) {
