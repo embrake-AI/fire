@@ -179,6 +179,9 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 		const dayEnd = new Date(dayDate);
 		dayEnd.setDate(dayEnd.getDate() + 1);
 
+		let highestImpact: "partial" | "major" | null = null;
+		let incidentTitle: string | undefined;
+
 		for (const affection of affections) {
 			const serviceImpact = affection.services.find((s) => s.id === serviceId);
 			if (!serviceImpact) continue;
@@ -188,14 +191,24 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 
 			if (affectionStart < dayEnd && affectionEnd >= dayStart) {
 				const impact = serviceImpact.impact;
-				const normalizedImpact = normalizeImpact(impact);
-				return {
-					color: statusColors[normalizedImpact]?.bar || "bg-yellow-500",
-					hasIncident: true,
-					incidentTitle: affection.title,
-					impact: impact,
-				};
+				if (impact === "major") {
+					highestImpact = "major";
+					incidentTitle = affection.title;
+				} else if (impact === "partial" && highestImpact !== "major") {
+					highestImpact = "partial";
+					incidentTitle = affection.title;
+				}
 			}
+		}
+
+		if (highestImpact) {
+			const normalizedImpact = normalizeImpact(highestImpact);
+			return {
+				color: statusColors[normalizedImpact]?.bar || "bg-yellow-500",
+				hasIncident: true,
+				incidentTitle,
+				impact: highestImpact,
+			};
 		}
 		return { color: "bg-emerald-500", hasIncident: false };
 	};
