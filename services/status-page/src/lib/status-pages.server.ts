@@ -262,12 +262,7 @@ export type IncidentHistoryData = {
 	incidents: IncidentHistoryItem[];
 };
 
-export async function fetchIncidentHistoryByDomain(domain: string): Promise<IncidentHistoryData | null> {
-	const data = await fetchPublicStatusPageByDomain(domain);
-	if (!data) {
-		return null;
-	}
-
+function buildIncidentHistoryData(data: StatusPagePublicData): IncidentHistoryData {
 	const incidents: IncidentHistoryItem[] = data.affections
 		.map((affection) => {
 			const severity: "partial" | "major" = affection.services.some((s) => s.impact === "major") ? "major" : "partial";
@@ -296,6 +291,24 @@ export async function fetchIncidentHistoryByDomain(domain: string): Promise<Inci
 	return { page: data.page, incidents };
 }
 
+export async function fetchIncidentHistoryByDomain(domain: string): Promise<IncidentHistoryData | null> {
+	const data = await fetchPublicStatusPageByDomain(domain);
+	if (!data) {
+		return null;
+	}
+
+	return buildIncidentHistoryData(data);
+}
+
+export async function fetchIncidentHistoryBySlug(slug: string): Promise<IncidentHistoryData | null> {
+	const data = await fetchPublicStatusPageBySlug(slug);
+	if (!data) {
+		return null;
+	}
+
+	return buildIncidentHistoryData(data);
+}
+
 export type IncidentDetailUpdate = {
 	id: string;
 	status: "investigating" | "mitigating" | "resolved" | null;
@@ -316,12 +329,7 @@ export type IncidentDetailData = {
 	};
 };
 
-export async function fetchIncidentDetailByDomain(domain: string, incidentId: string): Promise<IncidentDetailData | null> {
-	const data = await fetchPublicStatusPageByDomain(domain);
-	if (!data) {
-		return null;
-	}
-
+function buildIncidentDetailData(data: StatusPagePublicData, incidentId: string): IncidentDetailData | null {
 	const affection = data.affections.find((a) => a.id === incidentId);
 	if (!affection) {
 		return null;
@@ -359,4 +367,22 @@ export async function fetchIncidentDetailByDomain(domain: string, incidentId: st
 			updates,
 		},
 	};
+}
+
+export async function fetchIncidentDetailByDomain(domain: string, incidentId: string): Promise<IncidentDetailData | null> {
+	const data = await fetchPublicStatusPageByDomain(domain);
+	if (!data) {
+		return null;
+	}
+
+	return buildIncidentDetailData(data, incidentId);
+}
+
+export async function fetchIncidentDetailBySlug(slug: string, incidentId: string): Promise<IncidentDetailData | null> {
+	const data = await fetchPublicStatusPageBySlug(slug);
+	if (!data) {
+		return null;
+	}
+
+	return buildIncidentDetailData(data, incidentId);
 }

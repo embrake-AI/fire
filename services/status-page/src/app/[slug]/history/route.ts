@@ -1,5 +1,5 @@
-import { buildStatusPageResponse } from "@/lib/status-pages.render";
-import { fetchPublicStatusPageBySlug } from "@/lib/status-pages.server";
+import { buildIncidentHistoryResponse } from "@/lib/status-pages.render";
+import { fetchIncidentHistoryBySlug } from "@/lib/status-pages.server";
 import { normalizeDomain } from "@/lib/status-pages.utils";
 import type { NextRequest } from "next/server";
 
@@ -23,11 +23,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 		return new Response("Not found", { status: 404 });
 	}
 
-	const data = await fetchPublicStatusPageBySlug(slug);
+	const data = await fetchIncidentHistoryBySlug(slug);
 
 	if (!data) {
 		return new Response("Not found", { status: 404 });
 	}
 
-	return buildStatusPageResponse(data, `/${slug}`);
+	return buildIncidentHistoryResponse(data, `/${slug}`);
 }

@@ -1,5 +1,5 @@
-import { buildStatusPageResponse } from "@/lib/status-pages.render";
-import { fetchPublicStatusPageBySlug } from "@/lib/status-pages.server";
+import { buildIncidentDetailResponse } from "@/lib/status-pages.render";
+import { fetchIncidentDetailBySlug } from "@/lib/status-pages.server";
 import { normalizeDomain } from "@/lib/status-pages.utils";
 import type { NextRequest } from "next/server";
 
@@ -14,8 +14,8 @@ function getRequestHost(request: NextRequest): string | null {
 
 const PRIMARY_DOMAIN = "status.fire.miquelpuigturon.com";
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
-	const { slug } = await params;
+export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string; id: string }> }) {
+	const { slug, id } = await params;
 	const host = getRequestHost(request);
 
 	// Slug-based access is only allowed from the primary domain
@@ -23,11 +23,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 		return new Response("Not found", { status: 404 });
 	}
 
-	const data = await fetchPublicStatusPageBySlug(slug);
+	const data = await fetchIncidentDetailBySlug(slug, id);
 
 	if (!data) {
 		return new Response("Not found", { status: 404 });
 	}
 
-	return buildStatusPageResponse(data, `/${slug}`);
+	const isActive = !data.incident.resolvedAt;
+	return buildIncidentDetailResponse(data, isActive, `/${slug}`);
 }

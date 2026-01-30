@@ -5,7 +5,7 @@ function escapeHtml(text: string | null | undefined): string {
 	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
-export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: number): string {
+export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: number, basePath = ""): string {
 	const { page, services, affections } = data;
 	const logoUrl = page.logoUrl || page.clientImage;
 	const faviconUrl = page.faviconUrl;
@@ -219,7 +219,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 	<footer class="max-w-2xl mx-auto px-4 pb-8 w-full">
 		<div class="pt-8 border-t border-slate-200 space-y-3">
 			<div class="flex items-center justify-between text-xs text-slate-400">
-				<a href="/history" class="hover:text-slate-500 transition-colors">&larr; Incident History</a>
+				<a href="${basePath}/history" class="hover:text-slate-500 transition-colors">&larr; Incident History</a>
 				<a href="https://fire.miquelpuigturon.com" class="flex items-center gap-1.5 hover:text-slate-500 transition-colors">
 					Powered by
 					<svg class="w-3.5 h-3.5 text-orange-500" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
@@ -234,8 +234,8 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 </html>`;
 }
 
-export function buildStatusPageResponse(data: StatusPagePublicData): Response {
-	const html = renderStatusPageHtml(data, Date.now());
+export function buildStatusPageResponse(data: StatusPagePublicData, basePath = ""): Response {
+	const html = renderStatusPageHtml(data, Date.now(), basePath);
 	return new Response(html, {
 		status: 200,
 		headers: {
@@ -288,7 +288,7 @@ function formatDateTime(date: Date): string {
 	});
 }
 
-function renderIncidentHistoryHtml(data: IncidentHistoryData): string {
+function renderIncidentHistoryHtml(data: IncidentHistoryData, basePath = ""): string {
 	const { page, incidents } = data;
 	const logoUrl = page.logoUrl || page.clientImage;
 
@@ -319,7 +319,7 @@ function renderIncidentHistoryHtml(data: IncidentHistoryData): string {
 							: `Started ${formatDate(incident.createdAt)}`;
 
 						return `
-				<a href="/history/${incident.id}" class="block rounded-lg border ${isResolved ? "border-slate-200 bg-white" : `${colors.border} ${colors.bg}`} p-4 hover:shadow-md transition-shadow">
+				<a href="${basePath}/history/${incident.id}" class="block rounded-lg border ${isResolved ? "border-slate-200 bg-white" : `${colors.border} ${colors.bg}`} p-4 hover:shadow-md transition-shadow">
 					<div class="flex items-start justify-between gap-4">
 						<div class="flex-1 min-w-0">
 							<h3 class="text-sm font-medium text-slate-900 truncate">${escapeHtml(incident.title)}</h3>
@@ -350,10 +350,11 @@ function renderIncidentHistoryHtml(data: IncidentHistoryData): string {
 			<p class="text-xs text-slate-400 mt-1">All systems have been running smoothly</p>
 		</div>`;
 
+	const rootPath = basePath || "/";
 	const content = `
 	<div class="flex-1 max-w-2xl mx-auto px-4 py-12 md:py-16 w-full">
 		<header class="flex items-center justify-between mb-8">
-			<a href="/" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+			<a href="${rootPath}" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
 				${
 					logoUrl
 						? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(page.name)}" class="w-10 h-10 object-contain rounded-xl">`
@@ -365,7 +366,7 @@ function renderIncidentHistoryHtml(data: IncidentHistoryData): string {
 				}
 				<div class="text-base font-semibold text-slate-900">${escapeHtml(page.name)}</div>
 			</a>
-			<a href="/" class="text-sm text-slate-500 hover:text-slate-700 transition-colors">&larr; Back to status</a>
+			<a href="${rootPath}" class="text-sm text-slate-500 hover:text-slate-700 transition-colors">&larr; Back to status</a>
 		</header>
 
 		<div class="mb-6">
@@ -398,8 +399,8 @@ function renderIncidentHistoryHtml(data: IncidentHistoryData): string {
 	});
 }
 
-export function buildIncidentHistoryResponse(data: IncidentHistoryData): Response {
-	const html = renderIncidentHistoryHtml(data);
+export function buildIncidentHistoryResponse(data: IncidentHistoryData, basePath = ""): Response {
+	const html = renderIncidentHistoryHtml(data, basePath);
 	return new Response(html, {
 		status: 200,
 		headers: {
@@ -409,7 +410,7 @@ export function buildIncidentHistoryResponse(data: IncidentHistoryData): Respons
 	});
 }
 
-function renderIncidentDetailHtml(data: IncidentDetailData): string {
+function renderIncidentDetailHtml(data: IncidentDetailData, basePath = ""): string {
 	const { page, incident } = data;
 	const logoUrl = page.logoUrl || page.clientImage;
 	const isResolved = !!incident.resolvedAt;
@@ -468,10 +469,11 @@ function renderIncidentDetailHtml(data: IncidentDetailData): string {
 					.join("")
 			: `<p class="text-sm text-slate-500">No updates posted yet</p>`;
 
+	const rootPath = basePath || "/";
 	const content = `
 	<div class="flex-1 max-w-2xl mx-auto px-4 py-12 md:py-16 w-full">
 		<header class="flex items-center justify-between mb-8">
-			<a href="/" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+			<a href="${rootPath}" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
 				${
 					logoUrl
 						? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(page.name)}" class="w-10 h-10 object-contain rounded-xl">`
@@ -483,7 +485,7 @@ function renderIncidentDetailHtml(data: IncidentDetailData): string {
 				}
 				<div class="text-base font-semibold text-slate-900">${escapeHtml(page.name)}</div>
 			</a>
-			<a href="/history" class="text-sm text-slate-500 hover:text-slate-700 transition-colors">&larr; All incidents</a>
+			<a href="${basePath}/history" class="text-sm text-slate-500 hover:text-slate-700 transition-colors">&larr; All incidents</a>
 		</header>
 
 		<div class="rounded-lg ${isResolved ? "border border-slate-200 bg-white" : `${colors.border} ${colors.bg} border`} p-6 mb-6">
@@ -534,8 +536,8 @@ function renderIncidentDetailHtml(data: IncidentDetailData): string {
 	});
 }
 
-export function buildIncidentDetailResponse(data: IncidentDetailData, isActive: boolean): Response {
-	const html = renderIncidentDetailHtml(data);
+export function buildIncidentDetailResponse(data: IncidentDetailData, isActive: boolean, basePath = ""): Response {
+	const html = renderIncidentDetailHtml(data, basePath);
 	const cacheControl = isActive ? "public, max-age=30, stale-while-revalidate=60" : "public, max-age=86400, stale-while-revalidate=3600";
 	return new Response(html, {
 		status: 200,
