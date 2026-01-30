@@ -156,7 +156,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 			</div>`;
 	};
 
-	const BAR_COUNT = 90;
+	const BAR_COUNT = 45;
 
 	const formatTooltipDate = (date: Date): string => {
 		return new Date(date).toLocaleDateString("en-US", {
