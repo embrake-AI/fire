@@ -243,3 +243,120 @@ export async function fetchPublicStatusPageByDomain(domain: string): Promise<Sta
 
 	return buildStatusPagePublicData(pageRow);
 }
+
+export type IncidentHistoryItem = {
+	id: string;
+	title: string;
+	severity: "partial" | "major";
+	createdAt: Date;
+	resolvedAt: Date | null;
+	lastUpdate: {
+		status: "investigating" | "mitigating" | "resolved" | null;
+		message: string | null;
+		createdAt: Date;
+	} | null;
+};
+
+export type IncidentHistoryData = {
+	page: StatusPageSummary;
+	incidents: IncidentHistoryItem[];
+};
+
+export async function fetchIncidentHistoryByDomain(domain: string): Promise<IncidentHistoryData | null> {
+	const data = await fetchPublicStatusPageByDomain(domain);
+	if (!data) {
+		return null;
+	}
+
+	const incidents: IncidentHistoryItem[] = data.affections
+		.map((affection) => {
+			const severity: "partial" | "major" = affection.services.some((s) => s.impact === "major") ? "major" : "partial";
+			const affectionUpdates = data.updates
+				.filter((u) => u.affectionId === affection.id)
+				.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+			const lastUpdate = affectionUpdates[0] ?? null;
+
+			return {
+				id: affection.id,
+				title: affection.title,
+				severity,
+				createdAt: affection.createdAt,
+				resolvedAt: affection.resolvedAt,
+				lastUpdate: lastUpdate
+					? {
+							status: lastUpdate.status,
+							message: lastUpdate.message,
+							createdAt: lastUpdate.createdAt,
+						}
+					: null,
+			};
+		})
+		.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+	return { page: data.page, incidents };
+}
+
+export type IncidentDetailUpdate = {
+	id: string;
+	status: "investigating" | "mitigating" | "resolved" | null;
+	message: string | null;
+	createdAt: Date;
+};
+
+export type IncidentDetailData = {
+	page: StatusPageSummary;
+	incident: {
+		id: string;
+		title: string;
+		severity: "partial" | "major";
+		createdAt: Date;
+		resolvedAt: Date | null;
+		affectedServices: { id: string; name: string; impact: "partial" | "major" }[];
+		updates: IncidentDetailUpdate[];
+	};
+};
+
+export async function fetchIncidentDetailByDomain(domain: string, incidentId: string): Promise<IncidentDetailData | null> {
+	const data = await fetchPublicStatusPageByDomain(domain);
+	if (!data) {
+		return null;
+	}
+
+	const affection = data.affections.find((a) => a.id === incidentId);
+	if (!affection) {
+		return null;
+	}
+
+	const severity: "partial" | "major" = affection.services.some((s) => s.impact === "major") ? "major" : "partial";
+	const affectedServices = affection.services.map((s) => {
+		const service = data.services.find((svc) => svc.id === s.id);
+		return {
+			id: s.id,
+			name: service?.name ?? "Unknown Service",
+			impact: s.impact,
+		};
+	});
+
+	const updates = data.updates
+		.filter((u) => u.affectionId === affection.id)
+		.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+		.map((u) => ({
+			id: u.id,
+			status: u.status,
+			message: u.message,
+			createdAt: u.createdAt,
+		}));
+
+	return {
+		page: data.page,
+		incident: {
+			id: affection.id,
+			title: affection.title,
+			severity,
+			createdAt: affection.createdAt,
+			resolvedAt: affection.resolvedAt,
+			affectedServices,
+			updates,
+		},
+	};
+}
