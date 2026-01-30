@@ -23,6 +23,10 @@ export const relations = defineRelations(schema, (r) => ({
 			from: r.client.id,
 			to: r.service.clientId,
 		}),
+		statusPages: r.many.statusPage({
+			from: r.client.id,
+			to: r.statusPage.clientId,
+		}),
 	},
 	team: {
 		members: r.many.user({
@@ -54,6 +58,60 @@ export const relations = defineRelations(schema, (r) => ({
 		affectedByServices: r.many.service({
 			from: r.service.id.through(r.serviceDependency.affectedServiceId),
 			to: r.service.id.through(r.serviceDependency.baseServiceId),
+		}),
+		statusPages: r.many.statusPage({
+			from: r.service.id.through(r.statusPageService.serviceId),
+			to: r.statusPage.id.through(r.statusPageService.statusPageId),
+		}),
+		incidentAffections: r.many.incidentAffection({
+			from: r.service.id.through(r.incidentAffectionService.serviceId),
+			to: r.incidentAffection.id.through(r.incidentAffectionService.affectionId),
+		}),
+	},
+	statusPage: {
+		services: r.many.service({
+			from: r.statusPage.id.through(r.statusPageService.statusPageId),
+			to: r.service.id.through(r.statusPageService.serviceId),
+		}),
+		serviceLinks: r.many.statusPageService({
+			from: r.statusPage.id,
+			to: r.statusPageService.statusPageId,
+		}),
+	},
+	statusPageService: {
+		statusPage: r.one.statusPage({
+			from: r.statusPageService.statusPageId,
+			to: r.statusPage.id,
+		}),
+		service: r.one.service({
+			from: r.statusPageService.serviceId,
+			to: r.service.id,
+		}),
+	},
+	incidentAffection: {
+		services: r.many.service({
+			from: r.incidentAffection.id.through(r.incidentAffectionService.affectionId),
+			to: r.service.id.through(r.incidentAffectionService.serviceId),
+		}),
+		updates: r.many.incidentAffectionUpdate({
+			from: r.incidentAffection.id,
+			to: r.incidentAffectionUpdate.affectionId,
+		}),
+	},
+	incidentAffectionService: {
+		affection: r.one.incidentAffection({
+			from: r.incidentAffectionService.affectionId,
+			to: r.incidentAffection.id,
+		}),
+		service: r.one.service({
+			from: r.incidentAffectionService.serviceId,
+			to: r.service.id,
+		}),
+	},
+	incidentAffectionUpdate: {
+		affection: r.one.incidentAffection({
+			from: r.incidentAffectionUpdate.affectionId,
+			to: r.incidentAffection.id,
 		}),
 	},
 	serviceDependency: {

@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
+import { Route as StatusSlugRouteImport } from './routes/status/$slug'
 import { Route as AuthErrorRouteImport } from './routes/auth.error'
 import { Route as ApiUploadRouteImport } from './routes/api/upload'
 import { Route as AuthedSettingsRouteImport } from './routes/_authed.settings'
@@ -21,11 +22,13 @@ import { Route as AuthedMetricsIndexRouteImport } from './routes/_authed.metrics
 import { Route as SlackOauthCallbackRouteImport } from './routes/slack/oauth/callback'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedTeamsTeamIdRouteImport } from './routes/_authed.teams/$teamId'
+import { Route as AuthedStatusPageStatusPageIdRouteImport } from './routes/_authed.status-page/$statusPageId'
 import { Route as AuthedServicesServiceIdRouteImport } from './routes/_authed.services/$serviceId'
 import { Route as AuthedRotationsRotationIdRouteImport } from './routes/_authed.rotations/$rotationId'
 import { Route as AuthedMetricsIncidentIdRouteImport } from './routes/_authed.metrics/$incidentId'
 import { Route as AuthedIncidentsIncidentIdRouteImport } from './routes/_authed.incidents/$incidentId'
 import { Route as AuthedCatalogTeamsRouteImport } from './routes/_authed.catalog.teams'
+import { Route as AuthedCatalogStatusPagesRouteImport } from './routes/_authed.catalog.status-pages'
 import { Route as AuthedCatalogServicesRouteImport } from './routes/_authed.catalog.services'
 import { Route as AuthedCatalogRotationRouteImport } from './routes/_authed.catalog.rotation'
 import { Route as AuthedCatalogEscalationRouteImport } from './routes/_authed.catalog.escalation'
@@ -53,6 +56,11 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthedRoute,
+} as any)
+const StatusSlugRoute = StatusSlugRouteImport.update({
+  id: '/status/$slug',
+  path: '/status/$slug',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthErrorRoute = AuthErrorRouteImport.update({
   id: '/auth/error',
@@ -99,6 +107,12 @@ const AuthedTeamsTeamIdRoute = AuthedTeamsTeamIdRouteImport.update({
   path: '/teams/$teamId',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedStatusPageStatusPageIdRoute =
+  AuthedStatusPageStatusPageIdRouteImport.update({
+    id: '/status-page/$statusPageId',
+    path: '/status-page/$statusPageId',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedServicesServiceIdRoute = AuthedServicesServiceIdRouteImport.update({
   id: '/services/$serviceId',
   path: '/services/$serviceId',
@@ -126,6 +140,12 @@ const AuthedCatalogTeamsRoute = AuthedCatalogTeamsRouteImport.update({
   path: '/teams',
   getParentRoute: () => AuthedCatalogRoute,
 } as any)
+const AuthedCatalogStatusPagesRoute =
+  AuthedCatalogStatusPagesRouteImport.update({
+    id: '/status-pages',
+    path: '/status-pages',
+    getParentRoute: () => AuthedCatalogRoute,
+  } as any)
 const AuthedCatalogServicesRoute = AuthedCatalogServicesRouteImport.update({
   id: '/services',
   path: '/services',
@@ -207,16 +227,19 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
+  '/status/$slug': typeof StatusSlugRoute
   '/': typeof AuthedIndexRoute
   '/catalog/entry-points': typeof AuthedCatalogEntryPointsRoute
   '/catalog/escalation': typeof AuthedCatalogEscalationRoute
   '/catalog/rotation': typeof AuthedCatalogRotationRoute
   '/catalog/services': typeof AuthedCatalogServicesRoute
+  '/catalog/status-pages': typeof AuthedCatalogStatusPagesRoute
   '/catalog/teams': typeof AuthedCatalogTeamsRoute
   '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/metrics/$incidentId': typeof AuthedMetricsIncidentIdRoute
   '/rotations/$rotationId': typeof AuthedRotationsRotationIdRoute
   '/services/$serviceId': typeof AuthedServicesServiceIdRoute
+  '/status-page/$statusPageId': typeof AuthedStatusPageStatusPageIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
@@ -238,16 +261,19 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
+  '/status/$slug': typeof StatusSlugRoute
   '/': typeof AuthedIndexRoute
   '/catalog/entry-points': typeof AuthedCatalogEntryPointsRoute
   '/catalog/escalation': typeof AuthedCatalogEscalationRoute
   '/catalog/rotation': typeof AuthedCatalogRotationRoute
   '/catalog/services': typeof AuthedCatalogServicesRoute
+  '/catalog/status-pages': typeof AuthedCatalogStatusPagesRoute
   '/catalog/teams': typeof AuthedCatalogTeamsRoute
   '/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/metrics/$incidentId': typeof AuthedMetricsIncidentIdRoute
   '/rotations/$rotationId': typeof AuthedRotationsRotationIdRoute
   '/services/$serviceId': typeof AuthedServicesServiceIdRoute
+  '/status-page/$statusPageId': typeof AuthedStatusPageStatusPageIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
@@ -271,16 +297,19 @@ export interface FileRoutesById {
   '/_authed/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
+  '/status/$slug': typeof StatusSlugRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/catalog/entry-points': typeof AuthedCatalogEntryPointsRoute
   '/_authed/catalog/escalation': typeof AuthedCatalogEscalationRoute
   '/_authed/catalog/rotation': typeof AuthedCatalogRotationRoute
   '/_authed/catalog/services': typeof AuthedCatalogServicesRoute
+  '/_authed/catalog/status-pages': typeof AuthedCatalogStatusPagesRoute
   '/_authed/catalog/teams': typeof AuthedCatalogTeamsRoute
   '/_authed/incidents/$incidentId': typeof AuthedIncidentsIncidentIdRoute
   '/_authed/metrics/$incidentId': typeof AuthedMetricsIncidentIdRoute
   '/_authed/rotations/$rotationId': typeof AuthedRotationsRotationIdRoute
   '/_authed/services/$serviceId': typeof AuthedServicesServiceIdRoute
+  '/_authed/status-page/$statusPageId': typeof AuthedStatusPageStatusPageIdRoute
   '/_authed/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
@@ -304,16 +333,19 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/upload'
     | '/auth/error'
+    | '/status/$slug'
     | '/'
     | '/catalog/entry-points'
     | '/catalog/escalation'
     | '/catalog/rotation'
     | '/catalog/services'
+    | '/catalog/status-pages'
     | '/catalog/teams'
     | '/incidents/$incidentId'
     | '/metrics/$incidentId'
     | '/rotations/$rotationId'
     | '/services/$serviceId'
+    | '/status-page/$statusPageId'
     | '/teams/$teamId'
     | '/api/auth/$'
     | '/slack/oauth/callback'
@@ -335,16 +367,19 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/upload'
     | '/auth/error'
+    | '/status/$slug'
     | '/'
     | '/catalog/entry-points'
     | '/catalog/escalation'
     | '/catalog/rotation'
     | '/catalog/services'
+    | '/catalog/status-pages'
     | '/catalog/teams'
     | '/incidents/$incidentId'
     | '/metrics/$incidentId'
     | '/rotations/$rotationId'
     | '/services/$serviceId'
+    | '/status-page/$statusPageId'
     | '/teams/$teamId'
     | '/api/auth/$'
     | '/slack/oauth/callback'
@@ -367,16 +402,19 @@ export interface FileRouteTypes {
     | '/_authed/settings'
     | '/api/upload'
     | '/auth/error'
+    | '/status/$slug'
     | '/_authed/'
     | '/_authed/catalog/entry-points'
     | '/_authed/catalog/escalation'
     | '/_authed/catalog/rotation'
     | '/_authed/catalog/services'
+    | '/_authed/catalog/status-pages'
     | '/_authed/catalog/teams'
     | '/_authed/incidents/$incidentId'
     | '/_authed/metrics/$incidentId'
     | '/_authed/rotations/$rotationId'
     | '/_authed/services/$serviceId'
+    | '/_authed/status-page/$statusPageId'
     | '/_authed/teams/$teamId'
     | '/api/auth/$'
     | '/slack/oauth/callback'
@@ -398,6 +436,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ApiUploadRoute: typeof ApiUploadRoute
   AuthErrorRoute: typeof AuthErrorRoute
+  StatusSlugRoute: typeof StatusSlugRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   SlackOauthCallbackRoute: typeof SlackOauthCallbackRoute
   ApiMetricsIndexRoute: typeof ApiMetricsIndexRoute
@@ -425,6 +464,13 @@ declare module '@tanstack/solid-router' {
       fullPath: '/'
       preLoaderRoute: typeof AuthedIndexRouteImport
       parentRoute: typeof AuthedRoute
+    }
+    '/status/$slug': {
+      id: '/status/$slug'
+      path: '/status/$slug'
+      fullPath: '/status/$slug'
+      preLoaderRoute: typeof StatusSlugRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/auth/error': {
       id: '/auth/error'
@@ -489,6 +535,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AuthedTeamsTeamIdRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/status-page/$statusPageId': {
+      id: '/_authed/status-page/$statusPageId'
+      path: '/status-page/$statusPageId'
+      fullPath: '/status-page/$statusPageId'
+      preLoaderRoute: typeof AuthedStatusPageStatusPageIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/services/$serviceId': {
       id: '/_authed/services/$serviceId'
       path: '/services/$serviceId'
@@ -522,6 +575,13 @@ declare module '@tanstack/solid-router' {
       path: '/teams'
       fullPath: '/catalog/teams'
       preLoaderRoute: typeof AuthedCatalogTeamsRouteImport
+      parentRoute: typeof AuthedCatalogRoute
+    }
+    '/_authed/catalog/status-pages': {
+      id: '/_authed/catalog/status-pages'
+      path: '/status-pages'
+      fullPath: '/catalog/status-pages'
+      preLoaderRoute: typeof AuthedCatalogStatusPagesRouteImport
       parentRoute: typeof AuthedCatalogRoute
     }
     '/_authed/catalog/services': {
@@ -623,6 +683,7 @@ interface AuthedCatalogRouteChildren {
   AuthedCatalogEscalationRoute: typeof AuthedCatalogEscalationRoute
   AuthedCatalogRotationRoute: typeof AuthedCatalogRotationRoute
   AuthedCatalogServicesRoute: typeof AuthedCatalogServicesRoute
+  AuthedCatalogStatusPagesRoute: typeof AuthedCatalogStatusPagesRoute
   AuthedCatalogTeamsRoute: typeof AuthedCatalogTeamsRoute
 }
 
@@ -631,6 +692,7 @@ const AuthedCatalogRouteChildren: AuthedCatalogRouteChildren = {
   AuthedCatalogEscalationRoute: AuthedCatalogEscalationRoute,
   AuthedCatalogRotationRoute: AuthedCatalogRotationRoute,
   AuthedCatalogServicesRoute: AuthedCatalogServicesRoute,
+  AuthedCatalogStatusPagesRoute: AuthedCatalogStatusPagesRoute,
   AuthedCatalogTeamsRoute: AuthedCatalogTeamsRoute,
 }
 
@@ -685,6 +747,7 @@ interface AuthedRouteChildren {
   AuthedMetricsIncidentIdRoute: typeof AuthedMetricsIncidentIdRoute
   AuthedRotationsRotationIdRoute: typeof AuthedRotationsRotationIdRoute
   AuthedServicesServiceIdRoute: typeof AuthedServicesServiceIdRoute
+  AuthedStatusPageStatusPageIdRoute: typeof AuthedStatusPageStatusPageIdRoute
   AuthedTeamsTeamIdRoute: typeof AuthedTeamsTeamIdRouteWithChildren
   AuthedMetricsIndexRoute: typeof AuthedMetricsIndexRoute
 }
@@ -697,6 +760,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedMetricsIncidentIdRoute: AuthedMetricsIncidentIdRoute,
   AuthedRotationsRotationIdRoute: AuthedRotationsRotationIdRoute,
   AuthedServicesServiceIdRoute: AuthedServicesServiceIdRoute,
+  AuthedStatusPageStatusPageIdRoute: AuthedStatusPageStatusPageIdRoute,
   AuthedTeamsTeamIdRoute: AuthedTeamsTeamIdRouteWithChildren,
   AuthedMetricsIndexRoute: AuthedMetricsIndexRoute,
 }
@@ -709,6 +773,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ApiUploadRoute: ApiUploadRoute,
   AuthErrorRoute: AuthErrorRoute,
+  StatusSlugRoute: StatusSlugRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   SlackOauthCallbackRoute: SlackOauthCallbackRoute,
   ApiMetricsIndexRoute: ApiMetricsIndexRoute,

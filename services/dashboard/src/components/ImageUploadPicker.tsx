@@ -14,11 +14,20 @@ type ImageUploadPickerProps = {
 	setDroppedImageUrl: (url: string) => void;
 	previewFallback?: string | null;
 	inputId?: string;
+	/** Maximum file size in bytes. Default: 2MB */
+	maxSizeBytes?: number;
+	/** Called when validation error state changes */
+	onValidationError?: (error: string | null) => void;
 };
+
+const DEFAULT_MAX_SIZE = 2 * 1024 * 1024; // 2MB
 
 export function ImageUploadPicker(props: ImageUploadPickerProps) {
 	const [isDragActive, setIsDragActive] = createSignal(false);
+	const [sizeError, setSizeError] = createSignal<string | null>(null);
 	let fileInputRef: HTMLInputElement | undefined;
+
+	const maxSize = () => props.maxSizeBytes ?? DEFAULT_MAX_SIZE;
 
 	const formatFileSize = (size: number) => {
 		if (size < 1024) return `${size} B`;
@@ -47,7 +56,15 @@ export function ImageUploadPicker(props: ImageUploadPickerProps) {
 	const previewSource = createMemo(() => previewUrl() || props.droppedImageUrl() || props.previewFallback || "");
 
 	const handleSelectedFile = (file: File | null) => {
+		setSizeError(null);
+		props.onValidationError?.(null);
 		if (!file || !file.type.startsWith("image/")) {
+			return;
+		}
+		if (file.size > maxSize()) {
+			const error = `File too large. Maximum size is ${formatFileSize(maxSize())}.`;
+			setSizeError(error);
+			props.onValidationError?.(error);
 			return;
 		}
 		props.setImageFile(file);
@@ -171,6 +188,7 @@ export function ImageUploadPicker(props: ImageUploadPickerProps) {
 							</div>
 						)}
 					</Show>
+					<Show when={sizeError()}>{(error) => <p class="text-xs text-red-600">{error()}</p>}</Show>
 				</CardContent>
 			</Card>
 			<Show when={previewSource()}>

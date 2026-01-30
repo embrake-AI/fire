@@ -48,13 +48,19 @@ slackRoutes.post("/events", async (c) => {
 				return c.text("OK");
 			}
 
-			const slackIntegration = await getSlackIntegration({
-				hyperdrive: c.env.db,
-				teamId,
-				enterpriseId,
-				isEnterpriseInstall,
-				withEntryPoints: true,
-			});
+			const [slackIntegration, incidentIdForChannel] = await Promise.all([
+				getSlackIntegration({
+					hyperdrive: c.env.db,
+					teamId,
+					enterpriseId,
+					isEnterpriseInstall,
+					withEntryPoints: true,
+				}),
+				getIncidentIdFromIdentifier({
+					incidents: c.env.incidents,
+					identifier: incidentChannelIdentifier(channel),
+				}),
+			]);
 
 			if (!slackIntegration) {
 				console.error(`No Slack integration found for ${teamId}`);
@@ -66,10 +72,6 @@ slackRoutes.post("/events", async (c) => {
 			const botToken = integrationData.botToken;
 
 			const isThread = !!promptThread && promptThread !== event.ts;
-			const incidentIdForChannel = await getIncidentIdFromIdentifier({
-				incidents: c.env.incidents,
-				identifier: incidentChannelIdentifier(channel),
-			});
 			if (incidentIdForChannel) {
 				await addPrompt({
 					c: c as Context<AuthContext>,
@@ -110,7 +112,10 @@ slackRoutes.post("/events", async (c) => {
 			}
 
 			const threadForIncident = event.ts;
-			c.executionCtx.waitUntil(addReaction(botToken, channel, threadForIncident, "fire"));
+			const isRetry = c.req.header("x-slack-retry-num") !== undefined;
+			if (!isRetry) {
+				c.executionCtx.waitUntil(addReaction(botToken, channel, threadForIncident, "fire"));
+			}
 
 			await startIncident({
 				c: c as Context<AuthContext>,
