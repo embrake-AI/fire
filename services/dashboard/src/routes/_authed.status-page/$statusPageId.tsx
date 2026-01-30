@@ -50,18 +50,7 @@ function StatusPageDetailsPage() {
 }
 
 function StatusPageEditor(props: { page: StatusPageData }) {
-	return (
-		<div class="space-y-4">
-			<div class="flex items-center justify-between">
-				<h1 class="text-lg font-semibold text-foreground">Edit Status Page</h1>
-				<Button as="a" href={`/status/${props.page.slug}`} target="_blank" rel="noreferrer" variant="outline" size="sm" class="gap-2">
-					<ExternalLink class="w-4 h-4" />
-					View live
-				</Button>
-			</div>
-			<BrowserFrame page={props.page} />
-		</div>
-	);
+	return <BrowserFrame page={props.page} />;
 }
 
 // --- Browser Frame ---
@@ -171,6 +160,14 @@ function BrowserChrome(props: { page: StatusPageData }) {
 									<span class="text-muted-foreground select-none">fire.app/status/</span>
 									<span class="text-foreground font-medium">{props.page.slug}</span>
 								</button>
+								<a
+									href={`/status/${props.page.slug}`}
+									target="_blank"
+									rel="noreferrer"
+									class="flex items-center justify-center w-8 h-8 border-l border-border hover:bg-muted/50 transition-colors shrink-0 text-muted-foreground hover:text-foreground"
+								>
+									<ExternalLink class="w-4 h-4" />
+								</a>
 							</div>
 						}
 					>
@@ -647,26 +644,20 @@ function StatusPageNotFound() {
 
 function StatusPageDetailsSkeleton() {
 	return (
-		<div class="space-y-4">
-			<div class="flex items-center justify-between">
-				<Skeleton class="h-7 w-40" />
-				<Skeleton class="h-9 w-24" />
-			</div>
-			<div class="rounded-xl border border-border overflow-hidden shadow-lg">
-				<Skeleton class="h-12 w-full" />
-				<div class="p-6 md:p-8 space-y-8">
-					<div class="flex justify-center">
-						<Skeleton class="h-20 w-20 rounded-xl" />
+		<div class="rounded-xl border border-border overflow-hidden shadow-lg">
+			<Skeleton class="h-12 w-full" />
+			<div class="p-6 md:p-8 space-y-8">
+				<div class="flex justify-center">
+					<Skeleton class="h-20 w-20 rounded-xl" />
+				</div>
+				<Skeleton class="h-14 w-full rounded-lg" />
+				<div class="space-y-3">
+					<div class="flex justify-between">
+						<Skeleton class="h-5 w-20" />
+						<Skeleton class="h-8 w-16" />
 					</div>
-					<Skeleton class="h-14 w-full rounded-lg" />
-					<div class="space-y-3">
-						<div class="flex justify-between">
-							<Skeleton class="h-5 w-20" />
-							<Skeleton class="h-8 w-16" />
-						</div>
-						<Skeleton class="h-14 w-full" />
-						<Skeleton class="h-14 w-full" />
-					</div>
+					<Skeleton class="h-14 w-full" />
+					<Skeleton class="h-14 w-full" />
 				</div>
 			</div>
 		</div>

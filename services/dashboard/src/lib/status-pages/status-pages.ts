@@ -249,7 +249,7 @@ export const deleteStatusPage = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { id: string }) => data)
 	.handler(async ({ context, data }) => {
-		const result = await db.delete(statusPage).where(and(eq(statusPage.id, data.id), eq(statusPage.clientId, context.clientId)));
+		const result = await db.delete(statusPage).where(and(eq(statusPage.id, data.id), eq(statusPage.clientId, context.clientId))).returning({ id: statusPage.id });
 
 		if (result.length === 0) {
 			throw new Error("Status page not found");
