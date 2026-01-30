@@ -12,11 +12,15 @@ function getRequestHost(request: NextRequest): string | null {
 	return normalizeDomain(rawHost);
 }
 
-const PRIMARY_DOMAIN = "status.fire.miquelpuigturon.com";
+const PRIMARY_DOMAIN = process.env.STATUS_PAGE_PRIMARY_DOMAIN ?? "";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string; id: string }> }) {
 	const { slug, id } = await params;
 	const host = getRequestHost(request);
+
+	if (!PRIMARY_DOMAIN) {
+		return new Response("Configuration error", { status: 500 });
+	}
 
 	// Slug-based access is only allowed from the primary domain
 	if (host !== PRIMARY_DOMAIN) {
