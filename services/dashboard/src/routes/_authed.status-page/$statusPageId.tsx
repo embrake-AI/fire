@@ -538,7 +538,7 @@ function Footer(props: { page: StatusPageData }) {
 			<div class="flex items-center justify-between text-xs text-muted-foreground">
 				<span class="flex items-center gap-1.5">&larr; Incident History</span>
 				<span class="flex items-center gap-1.5">
-					Powered by <Flame class="w-3.5 h-3.5 text-orange-500" /> <span class="font-medium text-foreground/70">Fire</span>
+					Powered by <Flame class="w-3.5 h-3.5 text-orange-500" />
 				</span>
 			</div>
 			<div class="flex items-center justify-center gap-1 text-[10px] text-muted-foreground/50">
