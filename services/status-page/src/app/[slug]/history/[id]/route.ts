@@ -12,7 +12,7 @@ function getRequestHost(request: NextRequest): string | null {
 	return normalizeDomain(rawHost);
 }
 
-const PRIMARY_DOMAIN = process.env.STATUS_PAGE_PRIMARY_DOMAIN ?? "";
+const PRIMARY_DOMAIN = process.env.VITE_STATUS_PAGE_DOMAIN ?? "";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string; id: string }> }) {
 	const { slug, id } = await params;

@@ -109,39 +109,14 @@ function BrowserChrome(props: { page: StatusPageData }) {
 	const hasCustomDomainChanges = createMemo(() => normalizedCustomDomain() !== savedCustomDomain());
 	const displayCustomDomain = createMemo(() => normalizeDomain(props.page.customDomain ?? "") ?? "");
 	const hasCustomDomain = createMemo(() => !!displayCustomDomain());
-	const appHost = createMemo(() => {
-		const appUrl = import.meta.env.VITE_APP_URL as string | undefined;
-		if (appUrl) {
-			try {
-				return new URL(appUrl).host;
-			} catch {
-				return "fire.app";
-			}
-		}
-		if (typeof window !== "undefined") {
-			return window.location.host;
-		}
-		return "fire.app";
-	});
-	const slugPrefix = createMemo(() => `${appHost()}/status/`);
+	const statusDomain = normalizeDomain(import.meta.env.VITE_STATUS_PAGE_DOMAIN as string) ?? "";
+	const slugPrefix = createMemo(() => `${statusDomain}/`);
 	const addressPrefix = createMemo(() => (hasCustomDomain() ? displayCustomDomain() : slugPrefix()));
-	const publicStatusUrl = createMemo(() => (hasCustomDomain() ? `https://${displayCustomDomain()}` : `/status/${props.page.slug}`));
-	const statusCnameTarget = createMemo(() => {
-		const envTarget = import.meta.env.VITE_STATUS_DOMAIN as string | undefined;
-		if (envTarget) return envTarget;
-		const appUrl = import.meta.env.VITE_APP_URL as string | undefined;
-		if (appUrl) {
-			try {
-				return `status.${new URL(appUrl).hostname}`;
-			} catch {
-				return "status.fire.app";
-			}
-		}
-		if (typeof window !== "undefined") {
-			return `status.${window.location.host.replace(/^app\./, "")}`;
-		}
-		return "status.fire.app";
+	const publicStatusUrl = createMemo(() => {
+		if (hasCustomDomain()) return `https://${displayCustomDomain()}`;
+		return `https://${statusDomain}/${props.page.slug}`;
 	});
+	const statusCnameTarget = statusDomain;
 
 	const handleSaveSlug = async () => {
 		const nextSlug = normalizedSlug();
@@ -365,9 +340,9 @@ function BrowserChrome(props: { page: StatusPageData }) {
 								Public URL: <span class="font-medium">{`https://${normalizedCustomDomain()}`}</span>
 							</p>
 						</Show>
-						<p class="text-xs text-muted-foreground">
-							Create a CNAME record from your domain to <span class="font-medium">{statusCnameTarget()}</span>.
-						</p>
+							<p class="text-xs text-muted-foreground">
+								Create a CNAME record from your domain to <span class="font-medium">{statusCnameTarget}</span>.
+							</p>
 					</div>
 					<DialogFooter class="gap-2">
 						<Button variant="outline" onClick={() => setIsEditingCustomDomain(false)}>
@@ -783,6 +758,8 @@ function ServicesEmptyState() {
 function Footer(props: { page: StatusPageData }) {
 	const updateStatusPageMutation = useUpdateStatusPage();
 
+	const appOrigin = new URL(import.meta.env.VITE_APP_URL as string).origin;
+
 	const [isEditingPrivacy, setIsEditingPrivacy] = createSignal(false);
 	const [isEditingTerms, setIsEditingTerms] = createSignal(false);
 	const [privacyUrl, setPrivacyUrl] = createSignal(props.page.privacyPolicyUrl ?? "");
@@ -804,10 +781,15 @@ function Footer(props: { page: StatusPageData }) {
 	};
 
 	return (
-		<div class="pt-8 space-y-3">
+			<div class="pt-8 space-y-3">
 			<div class="flex items-center justify-between text-xs text-muted-foreground">
 				<span class="flex items-center gap-1.5">&larr; Incident History</span>
-				<a href="https://fire.app" class="flex items-center gap-1.5 hover:text-muted-foreground transition-colors" target="_blank" rel="noreferrer">
+				<a
+					href={appOrigin}
+					class="flex items-center gap-1.5 hover:text-muted-foreground transition-colors"
+					target="_blank"
+					rel="noreferrer"
+				>
 					Powered by <Flame class="w-3.5 h-3.5 text-orange-500" />
 				</a>
 			</div>

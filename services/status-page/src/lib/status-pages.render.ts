@@ -1,6 +1,6 @@
 import type { IncidentDetailData, IncidentHistoryData, StatusPageAffection, StatusPagePublicData } from "./status-pages.server";
 
-const POWERED_BY_URL = process.env.STATUS_PAGE_POWERED_BY_URL ?? "";
+const POWERED_BY_URL = process.env.VITE_APP_URL ?? "";
 
 function escapeHtml(text: string | null | undefined): string {
 	if (!text) return "";
@@ -212,7 +212,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 
 			if (dayDate < serviceAddedDay) {
 				bars.push(`
-					<div class="uptime-bar flex-1 h-4 rounded-sm bg-slate-200 min-w-[3px] cursor-pointer">
+					<div class="uptime-bar flex-1 h-4 rounded-sm bg-slate-200 min-w-0.75 cursor-pointer">
 						<div class="uptime-tooltip">
 							<div class="tooltip-date">${formattedDate}</div>
 							<div class="tooltip-status tooltip-none">
@@ -242,7 +242,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 					: "No incidents";
 
 				bars.push(`
-					<div class="uptime-bar flex-1 h-4 rounded-sm ${dayStatus.color} min-w-[3px] cursor-pointer">
+					<div class="uptime-bar flex-1 h-4 rounded-sm ${dayStatus.color} min-w-0.75 cursor-pointer">
 						<div class="uptime-tooltip">
 							<div class="tooltip-date">${formattedDate}</div>
 							<div class="tooltip-status ${tooltipStatusClass}">
@@ -254,7 +254,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 			}
 		}
 
-		return `<div class="flex gap-[2px] mt-2">${bars.join("")}</div>`;
+		return `<div class="flex gap-0.5 mt-2">${bars.join("")}</div>`;
 	};
 
 	const calculateUptime = (serviceId: string, serviceCreatedAt: Date | null): number => {
@@ -435,14 +435,14 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 		}
 	</style>
 </head>
-<body class="bg-gradient-to-b from-slate-50 to-white min-h-screen flex flex-col">
+<body class="bg-linear-to-b from-slate-50 to-white min-h-screen flex flex-col">
 	<div class="flex-1 max-w-2xl mx-auto px-4 py-12 md:py-16 w-full">
 		<header class="flex items-center justify-between mb-8">
 			<div class="flex items-center gap-3">
 				${
 					logoUrl
 						? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(page.name)}" class="w-12 h-12 object-contain rounded-xl">`
-						: `<div class="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-100 to-slate-50 border border-slate-200 flex items-center justify-center">
+						: `<div class="w-12 h-12 rounded-xl bg-linear-to-br from-slate-100 to-slate-50 border border-slate-200 flex items-center justify-center">
 						<svg class="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
 						</svg>
@@ -514,7 +514,7 @@ function renderBaseHtml(options: {
 		}
 	</style>
 </head>
-<body class="bg-gradient-to-b from-slate-50 to-white min-h-screen flex flex-col">
+<body class="bg-linear-to-b from-slate-50 to-white min-h-screen flex flex-col">
 	${options.content}
 </body>
 </html>`;
@@ -608,7 +608,7 @@ function renderIncidentHistoryHtml(data: IncidentHistoryData, basePath = ""): st
 				${
 					logoUrl
 						? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(page.name)}" class="w-10 h-10 object-contain rounded-xl">`
-						: `<div class="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-50 border border-slate-200 flex items-center justify-center">
+						: `<div class="w-10 h-10 rounded-xl bg-linear-to-br from-slate-100 to-slate-50 border border-slate-200 flex items-center justify-center">
 						<svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
 						</svg>
@@ -727,7 +727,7 @@ function renderIncidentDetailHtml(data: IncidentDetailData, basePath = ""): stri
 				${
 					logoUrl
 						? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(page.name)}" class="w-10 h-10 object-contain rounded-xl">`
-						: `<div class="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-50 border border-slate-200 flex items-center justify-center">
+						: `<div class="w-10 h-10 rounded-xl bg-linear-to-br from-slate-100 to-slate-50 border border-slate-200 flex items-center justify-center">
 						<svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
 						</svg>
