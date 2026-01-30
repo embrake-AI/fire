@@ -1,6 +1,6 @@
 import type { incidentAffection, incidentAffectionService, incidentAffectionUpdate, service, statusPage } from "@fire/db/schema";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "../db";
+import { db } from "./db";
 import { normalizeDomain } from "./status-pages.utils";
 
 type StatusPageRow = InferSelectModel<typeof statusPage>;

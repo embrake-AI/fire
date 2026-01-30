@@ -46,6 +46,7 @@ export function useCreateStatusPage(options?: { onMutate?: (tempId: string) => v
 				slug,
 				logoUrl: null,
 				faviconUrl: null,
+				serviceDisplayMode: "bars_percentage",
 				customDomain: null,
 				privacyPolicyUrl: null,
 				termsOfServiceUrl: null,
@@ -91,6 +92,7 @@ export function useUpdateStatusPage(options?: { onSuccess?: () => void; onError?
 			slug?: string;
 			logoUrl?: string | null;
 			faviconUrl?: string | null;
+			serviceDisplayMode?: string | null;
 			customDomain?: string | null;
 			privacyPolicyUrl?: string | null;
 			termsOfServiceUrl?: string | null;
@@ -111,6 +113,7 @@ export function useUpdateStatusPage(options?: { onSuccess?: () => void; onError?
 							...(data.slug !== undefined ? { slug: data.slug } : {}),
 							...(data.logoUrl !== undefined ? { logoUrl: data.logoUrl } : {}),
 							...(data.faviconUrl !== undefined ? { faviconUrl: data.faviconUrl } : {}),
+							...(data.serviceDisplayMode !== undefined ? { serviceDisplayMode: data.serviceDisplayMode } : {}),
 							...(data.customDomain !== undefined ? { customDomain: data.customDomain } : {}),
 							...(data.privacyPolicyUrl !== undefined ? { privacyPolicyUrl: data.privacyPolicyUrl } : {}),
 							...(data.termsOfServiceUrl !== undefined ? { termsOfServiceUrl: data.termsOfServiceUrl } : {}),
@@ -199,6 +202,7 @@ export function useUpdateStatusPageServices(options?: { onSuccess?: () => void; 
 										name: service.name,
 										description: service.description,
 										imageUrl: service.imageUrl,
+										createdAt: service.createdAt,
 									});
 								}
 							}

@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
-import { Route as StatusSlugRouteImport } from './routes/status/$slug'
 import { Route as AuthErrorRouteImport } from './routes/auth.error'
 import { Route as ApiUploadRouteImport } from './routes/api/upload'
 import { Route as AuthedSettingsRouteImport } from './routes/_authed.settings'
@@ -56,11 +55,6 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthedRoute,
-} as any)
-const StatusSlugRoute = StatusSlugRouteImport.update({
-  id: '/status/$slug',
-  path: '/status/$slug',
-  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthErrorRoute = AuthErrorRouteImport.update({
   id: '/auth/error',
@@ -227,7 +221,6 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
-  '/status/$slug': typeof StatusSlugRoute
   '/': typeof AuthedIndexRoute
   '/catalog/entry-points': typeof AuthedCatalogEntryPointsRoute
   '/catalog/escalation': typeof AuthedCatalogEscalationRoute
@@ -261,7 +254,6 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
-  '/status/$slug': typeof StatusSlugRoute
   '/': typeof AuthedIndexRoute
   '/catalog/entry-points': typeof AuthedCatalogEntryPointsRoute
   '/catalog/escalation': typeof AuthedCatalogEscalationRoute
@@ -297,7 +289,6 @@ export interface FileRoutesById {
   '/_authed/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
-  '/status/$slug': typeof StatusSlugRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/catalog/entry-points': typeof AuthedCatalogEntryPointsRoute
   '/_authed/catalog/escalation': typeof AuthedCatalogEscalationRoute
@@ -333,7 +324,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/upload'
     | '/auth/error'
-    | '/status/$slug'
     | '/'
     | '/catalog/entry-points'
     | '/catalog/escalation'
@@ -367,7 +357,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/upload'
     | '/auth/error'
-    | '/status/$slug'
     | '/'
     | '/catalog/entry-points'
     | '/catalog/escalation'
@@ -402,7 +391,6 @@ export interface FileRouteTypes {
     | '/_authed/settings'
     | '/api/upload'
     | '/auth/error'
-    | '/status/$slug'
     | '/_authed/'
     | '/_authed/catalog/entry-points'
     | '/_authed/catalog/escalation'
@@ -436,7 +424,6 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ApiUploadRoute: typeof ApiUploadRoute
   AuthErrorRoute: typeof AuthErrorRoute
-  StatusSlugRoute: typeof StatusSlugRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   SlackOauthCallbackRoute: typeof SlackOauthCallbackRoute
   ApiMetricsIndexRoute: typeof ApiMetricsIndexRoute
@@ -464,13 +451,6 @@ declare module '@tanstack/solid-router' {
       fullPath: '/'
       preLoaderRoute: typeof AuthedIndexRouteImport
       parentRoute: typeof AuthedRoute
-    }
-    '/status/$slug': {
-      id: '/status/$slug'
-      path: '/status/$slug'
-      fullPath: '/status/$slug'
-      preLoaderRoute: typeof StatusSlugRouteImport
-      parentRoute: typeof rootRouteImport
     }
     '/auth/error': {
       id: '/auth/error'
@@ -773,7 +753,6 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ApiUploadRoute: ApiUploadRoute,
   AuthErrorRoute: AuthErrorRoute,
-  StatusSlugRoute: StatusSlugRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   SlackOauthCallbackRoute: SlackOauthCallbackRoute,
   ApiMetricsIndexRoute: ApiMetricsIndexRoute,

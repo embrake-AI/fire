@@ -7,7 +7,9 @@ import { ConfigCard, ConfigCardActions, ConfigCardDeleteButton, ConfigCardDescri
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Skeleton } from "~/components/ui/skeleton";
+import { useClient } from "~/lib/client/client.hooks";
 import { useCreateStatusPage, useDeleteStatusPage, useStatusPages } from "~/lib/status-pages/status-pages.hooks";
+import { normalizeDomain } from "~/lib/status-pages/status-pages.utils";
 
 export const Route = createFileRoute("/_authed/catalog/status-pages")({
 	component: StatusPagesConfig,
@@ -25,6 +27,7 @@ function StatusPagesConfig() {
 
 function StatusPagesContent() {
 	const statusPagesQuery = useStatusPages();
+	const clientQuery = useClient();
 	const pages = () => statusPagesQuery.data ?? [];
 
 	const [isCreating, setIsCreating] = createSignal(false);
@@ -71,6 +74,7 @@ function StatusPagesContent() {
 						{(page) => (
 							<StatusPageCard
 								page={page}
+								fallbackImage={clientQuery.data?.image}
 								onOpen={() => navigate({ to: "/status-page/$statusPageId", params: { statusPageId: page.id } })}
 								onDelete={() => handleDelete(page.id)}
 								isDeleting={deleteMutation.isPending && deleteMutation.variables === page.id}
@@ -167,16 +171,28 @@ function CreateStatusPageForm(props: CreateStatusPageFormProps) {
 
 type StatusPage = NonNullable<ReturnType<typeof useStatusPages>["data"]>[number];
 
-function StatusPageCard(props: { page: StatusPage; onOpen: () => void; onDelete: () => void; isDeleting: boolean }) {
+function StatusPageCard(props: { page: StatusPage; fallbackImage?: string | null; onOpen: () => void; onDelete: () => void; isDeleting: boolean }) {
+	const displayImage = () => props.page.logoUrl || props.fallbackImage;
+	const customDomain = () => normalizeDomain(props.page.customDomain ?? "");
+	const publicUrl = () => (customDomain() ? `https://${customDomain()}` : `/status/${props.page.slug}`);
+	const displayUrl = () => (customDomain() ? customDomain() : `/status/${props.page.slug}`);
+
 	return (
 		<ConfigCard>
 			<ConfigCardRow onClick={props.onOpen} class="hover:bg-muted/50 transition-colors cursor-pointer">
-				<ConfigCardIcon variant="slate" size="sm">
-					<Activity class="w-4 h-4" />
-				</ConfigCardIcon>
+				<Show
+					when={displayImage()}
+					fallback={
+						<ConfigCardIcon variant="slate" size="sm">
+							<Activity class="w-4 h-4" />
+						</ConfigCardIcon>
+					}
+				>
+					{(url) => <img src={url()} alt="" class="w-8 h-8 rounded-full object-cover shrink-0" />}
+				</Show>
 				<div class="flex-1 min-w-0">
 					<ConfigCardTitle class="truncate">{props.page.name.trim() || "Untitled status page"}</ConfigCardTitle>
-					<ConfigCardDescription class="truncate">{`/status/${props.page.slug}`}</ConfigCardDescription>
+					<ConfigCardDescription class="truncate">{displayUrl()}</ConfigCardDescription>
 				</div>
 				<div class="text-sm text-muted-foreground shrink-0">
 					{props.page.serviceCount} service{props.page.serviceCount !== 1 && "s"}
@@ -184,7 +200,7 @@ function StatusPageCard(props: { page: StatusPage; onOpen: () => void; onDelete:
 				<ConfigCardActions animated>
 					<Button
 						as="a"
-						href={`/status/${props.page.slug}`}
+						href={publicUrl()}
 						target="_blank"
 						rel="noreferrer"
 						variant="ghost"
@@ -222,7 +238,7 @@ function StatusPagesEmptyState() {
 		<div class="flex flex-col items-center justify-center py-12 border border-dashed border-border rounded-lg">
 			<div class="relative mb-4">
 				<div class="absolute inset-0 bg-slate-400/20 rounded-full blur-xl animate-pulse" />
-				<div class="relative p-3 rounded-full bg-gradient-to-br from-slate-100 to-slate-50 border border-slate-200/60">
+				<div class="relative p-3 rounded-full bg-linear-to-br from-slate-100 to-slate-50 border border-slate-200/60">
 					<Activity class="w-8 h-8 text-slate-600" />
 				</div>
 			</div>

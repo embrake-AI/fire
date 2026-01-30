@@ -18,10 +18,12 @@
 	"scripts": {
 		"dev:dashboard": "turbo run dev --filter dashboard",
 		"dev:incidentd": "turbo run dev --filter incidentd",
+		"dev:status-page": "turbo run dev --filter status-page",
 		"dev": "turbo run dev",
 		"build": "turbo run build",
 		"build:dashboard": "turbo run build --filter dashboard...",
 		"build:incidentd": "turbo run build --filter incidentd...",
+		"build:status-page": "turbo run build --filter status-page...",
 		"check": "turbo run type-check lint",
 		"type-check": "turbo run type-check",
 		"lint": "turbo run lint",

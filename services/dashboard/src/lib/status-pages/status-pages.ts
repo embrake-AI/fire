@@ -4,17 +4,19 @@ import type { InferSelectModel } from "drizzle-orm";
 import { and, eq, inArray } from "drizzle-orm";
 import { authMiddleware } from "../auth/auth-middleware";
 import { db } from "../db";
+import { isValidDomain, normalizeDomain } from "./status-pages.utils";
 
 type StatusPageRow = InferSelectModel<typeof statusPage>;
 type ServiceRow = InferSelectModel<typeof service>;
 
 export type StatusPageService = Pick<ServiceRow, "id" | "name" | "description" | "imageUrl"> & {
 	position: number | null;
+	createdAt: Date | null;
 };
 
 export type StatusPageSummary = Pick<
 	StatusPageRow,
-	"id" | "name" | "slug" | "logoUrl" | "faviconUrl" | "customDomain" | "privacyPolicyUrl" | "termsOfServiceUrl" | "createdAt" | "updatedAt"
+	"id" | "name" | "slug" | "logoUrl" | "faviconUrl" | "serviceDisplayMode" | "customDomain" | "privacyPolicyUrl" | "termsOfServiceUrl" | "createdAt" | "updatedAt"
 >;
 
 export type StatusPageListItem = StatusPageSummary & {
@@ -54,6 +56,7 @@ export const getStatusPages = createServerFn({ method: "GET" })
 				slug: true,
 				logoUrl: true,
 				faviconUrl: true,
+				serviceDisplayMode: true,
 				customDomain: true,
 				privacyPolicyUrl: true,
 				termsOfServiceUrl: true,
@@ -72,6 +75,7 @@ export const getStatusPages = createServerFn({ method: "GET" })
 								name: true,
 								description: true,
 								imageUrl: true,
+								createdAt: true,
 							},
 						},
 					},
@@ -89,6 +93,7 @@ export const getStatusPages = createServerFn({ method: "GET" })
 					description: link.service!.description,
 					imageUrl: link.service!.imageUrl,
 					position: link.position,
+					createdAt: link.service!.createdAt,
 				}));
 
 			return {
@@ -97,6 +102,7 @@ export const getStatusPages = createServerFn({ method: "GET" })
 				slug: page.slug,
 				logoUrl: page.logoUrl,
 				faviconUrl: page.faviconUrl,
+				serviceDisplayMode: page.serviceDisplayMode,
 				customDomain: page.customDomain,
 				privacyPolicyUrl: page.privacyPolicyUrl,
 				termsOfServiceUrl: page.termsOfServiceUrl,
@@ -147,6 +153,7 @@ export const createStatusPage = createServerFn({ method: "POST" })
 			slug: created.slug,
 			logoUrl: created.logoUrl,
 			faviconUrl: created.faviconUrl,
+			serviceDisplayMode: created.serviceDisplayMode,
 			customDomain: created.customDomain,
 			privacyPolicyUrl: created.privacyPolicyUrl,
 			termsOfServiceUrl: created.termsOfServiceUrl,
@@ -166,6 +173,7 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 			slug?: string;
 			logoUrl?: string | null;
 			faviconUrl?: string | null;
+			serviceDisplayMode?: string | null;
 			customDomain?: string | null;
 			privacyPolicyUrl?: string | null;
 			termsOfServiceUrl?: string | null;
@@ -177,6 +185,7 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 			slug?: string;
 			logoUrl?: string | null;
 			faviconUrl?: string | null;
+			serviceDisplayMode?: string | null;
 			customDomain?: string | null;
 			privacyPolicyUrl?: string | null;
 			termsOfServiceUrl?: string | null;
@@ -212,8 +221,28 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 		if (data.faviconUrl !== undefined) {
 			updateFields.faviconUrl = data.faviconUrl;
 		}
+		if (data.serviceDisplayMode !== undefined) {
+			updateFields.serviceDisplayMode = data.serviceDisplayMode;
+		}
 		if (data.customDomain !== undefined) {
-			updateFields.customDomain = data.customDomain?.trim() || null;
+			const normalizedDomain = normalizeDomain(data.customDomain);
+			if (normalizedDomain && !isValidDomain(normalizedDomain)) {
+				throw new Error("Custom domain is invalid");
+			}
+			if (normalizedDomain) {
+				const existing = await db.query.statusPage.findFirst({
+					where: {
+						customDomain: normalizedDomain,
+					},
+					columns: {
+						id: true,
+					},
+				});
+				if (existing && existing.id !== data.id) {
+					throw new Error("Custom domain is already in use");
+				}
+			}
+			updateFields.customDomain = normalizedDomain;
 		}
 		if (data.privacyPolicyUrl !== undefined) {
 			updateFields.privacyPolicyUrl = data.privacyPolicyUrl?.trim() || null;
@@ -238,6 +267,7 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 			slug: updated.slug,
 			logoUrl: updated.logoUrl,
 			faviconUrl: updated.faviconUrl,
+			serviceDisplayMode: updated.serviceDisplayMode,
 			customDomain: updated.customDomain,
 			privacyPolicyUrl: updated.privacyPolicyUrl,
 			termsOfServiceUrl: updated.termsOfServiceUrl,
@@ -249,7 +279,10 @@ export const deleteStatusPage = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { id: string }) => data)
 	.handler(async ({ context, data }) => {
-		const result = await db.delete(statusPage).where(and(eq(statusPage.id, data.id), eq(statusPage.clientId, context.clientId))).returning({ id: statusPage.id });
+		const result = await db
+			.delete(statusPage)
+			.where(and(eq(statusPage.id, data.id), eq(statusPage.clientId, context.clientId)))
+			.returning({ id: statusPage.id });
 
 		if (result.length === 0) {
 			throw new Error("Status page not found");

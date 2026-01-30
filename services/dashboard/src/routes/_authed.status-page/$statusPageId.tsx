@@ -7,11 +7,14 @@ import { Button } from "~/components/ui/button";
 import { Card } from "~/components/ui/card";
 import { ConfigCard, ConfigCardRow } from "~/components/ui/config-card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "~/components/ui/dialog";
+import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Skeleton } from "~/components/ui/skeleton";
 import { useClient } from "~/lib/client/client.hooks";
 import { useServices } from "~/lib/services/services.hooks";
 import { useStatusPages, useUpdateStatusPage, useUpdateStatusPageServices } from "~/lib/status-pages/status-pages.hooks";
+import { isValidDomain, normalizeDomain } from "~/lib/status-pages/status-pages.utils";
 import { useUploadImage } from "~/lib/uploads/uploads.hooks";
 import { cn } from "~/lib/utils/client";
 
@@ -20,7 +23,6 @@ export const Route = createFileRoute("/_authed/status-page/$statusPageId")({
 });
 
 type StatusPageData = NonNullable<ReturnType<typeof useStatusPages>["data"]>[number];
-type StatusPageService = StatusPageData["services"][number];
 
 function toSlug(value: string) {
 	return value
@@ -59,15 +61,18 @@ function BrowserFrame(props: { page: StatusPageData }) {
 	return (
 		<div class="rounded-xl border border-border overflow-hidden shadow-lg bg-white">
 			<BrowserChrome page={props.page} />
-			<div class="py-8 px-12 md:py-12 md:px-24 space-y-8 bg-gradient-to-b from-slate-50 to-white min-h-[500px]">
+			<div class="py-8 px-12 md:py-12 md:px-24 space-y-8 bg-linear-to-b from-slate-50 to-white min-h-125">
 				<div class="flex items-center justify-between">
-					<EditableLogo page={props.page} />
+					<div class="flex items-center gap-3">
+						<EditableLogo page={props.page} />
+						<EditableCompanyName page={props.page} />
+					</div>
 					<Button variant="outline" size="sm" class="pointer-events-none">
 						Subscribe to updates
 					</Button>
 				</div>
 				<StatusBanner />
-				<ServicesList statusPageId={props.page.id} services={props.page.services} />
+				<ServicesList page={props.page} />
 				<Footer page={props.page} />
 			</div>
 		</div>
@@ -86,14 +91,57 @@ function BrowserChrome(props: { page: StatusPageData }) {
 	const [faviconFile, setFaviconFile] = createSignal<File | null>(null);
 	const [droppedFaviconUrl, setDroppedFaviconUrl] = createSignal("");
 	const [faviconValidationError, setFaviconValidationError] = createSignal<string | null>(null);
+	const [isEditingCustomDomain, setIsEditingCustomDomain] = createSignal(false);
+	const [customDomain, setCustomDomain] = createSignal(props.page.customDomain ?? "");
+	const [customDomainError, setCustomDomainError] = createSignal<string | null>(null);
 
 	createEffect(() => {
 		setSlug(props.page.slug);
 		setSlugError(null);
+		setCustomDomain(props.page.customDomain ?? "");
+		setCustomDomainError(null);
 	});
 
 	const normalizedSlug = createMemo(() => toSlug(slug()));
 	const hasSlugChanges = createMemo(() => normalizedSlug() !== props.page.slug);
+	const normalizedCustomDomain = createMemo(() => normalizeDomain(customDomain()) ?? "");
+	const savedCustomDomain = createMemo(() => normalizeDomain(props.page.customDomain ?? "") ?? "");
+	const hasCustomDomainChanges = createMemo(() => normalizedCustomDomain() !== savedCustomDomain());
+	const displayCustomDomain = createMemo(() => normalizeDomain(props.page.customDomain ?? "") ?? "");
+	const hasCustomDomain = createMemo(() => !!displayCustomDomain());
+	const appHost = createMemo(() => {
+		const appUrl = import.meta.env.VITE_APP_URL as string | undefined;
+		if (appUrl) {
+			try {
+				return new URL(appUrl).host;
+			} catch {
+				return "fire.app";
+			}
+		}
+		if (typeof window !== "undefined") {
+			return window.location.host;
+		}
+		return "fire.app";
+	});
+	const slugPrefix = createMemo(() => `${appHost()}/status/`);
+	const addressPrefix = createMemo(() => (hasCustomDomain() ? displayCustomDomain() : slugPrefix()));
+	const publicStatusUrl = createMemo(() => (hasCustomDomain() ? `https://${displayCustomDomain()}` : `/status/${props.page.slug}`));
+	const statusCnameTarget = createMemo(() => {
+		const envTarget = import.meta.env.VITE_STATUS_DOMAIN as string | undefined;
+		if (envTarget) return envTarget;
+		const appUrl = import.meta.env.VITE_APP_URL as string | undefined;
+		if (appUrl) {
+			try {
+				return `status.${new URL(appUrl).hostname}`;
+			} catch {
+				return "status.fire.app";
+			}
+		}
+		if (typeof window !== "undefined") {
+			return `status.${window.location.host.replace(/^app\./, "")}`;
+		}
+		return "status.fire.app";
+	});
 
 	const handleSaveSlug = async () => {
 		const nextSlug = normalizedSlug();
@@ -131,6 +179,26 @@ function BrowserChrome(props: { page: StatusPageData }) {
 		updateStatusPageMutation.mutate({ id: props.page.id, faviconUrl: uploadedUrl || null });
 	};
 
+	const handleSaveCustomDomain = async () => {
+		const rawInput = customDomain().trim();
+		const nextDomain = normalizedCustomDomain();
+		if (rawInput && !nextDomain) {
+			setCustomDomainError("Enter a valid domain (e.g., status.example.com)");
+			return;
+		}
+		if (nextDomain && !isValidDomain(nextDomain)) {
+			setCustomDomainError("Enter a valid domain (e.g., status.example.com)");
+			return;
+		}
+		setCustomDomainError(null);
+		try {
+			await updateStatusPageMutation.mutateAsync({ id: props.page.id, customDomain: nextDomain || null });
+			setIsEditingCustomDomain(false);
+		} catch (err) {
+			setCustomDomainError(err instanceof Error ? err.message : "Unable to update custom domain");
+		}
+	};
+
 	return (
 		<>
 			<div class="flex items-center gap-3 px-4 py-3 bg-slate-100 border-b border-border">
@@ -157,11 +225,13 @@ function BrowserChrome(props: { page: StatusPageData }) {
 									</Show>
 								</button>
 								<button type="button" class="flex-1 flex items-center px-2 py-1.5 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setIsEditingSlug(true)}>
-									<span class="text-muted-foreground select-none">fire.app/status/</span>
-									<span class="text-foreground font-medium">{props.page.slug}</span>
+									<Show when={!hasCustomDomain()} fallback={<span class="text-foreground font-medium">{addressPrefix()}</span>}>
+										<span class="text-muted-foreground select-none">{addressPrefix()}</span>
+										<span class="text-foreground font-medium">{props.page.slug}</span>
+									</Show>
 								</button>
 								<a
-									href={`/status/${props.page.slug}`}
+									href={publicStatusUrl()}
 									target="_blank"
 									rel="noreferrer"
 									class="flex items-center justify-center w-8 h-8 border-l border-border hover:bg-muted/50 transition-colors shrink-0 text-muted-foreground hover:text-foreground"
@@ -184,7 +254,7 @@ function BrowserChrome(props: { page: StatusPageData }) {
 									{(url) => <img src={url()} alt="Favicon" class="w-4 h-4 object-contain" />}
 								</Show>
 							</button>
-							<span class="text-muted-foreground select-none pl-2">fire.app/status/</span>
+							<span class="text-muted-foreground select-none pl-2">{slugPrefix()}</span>
 							<form
 								class="flex items-center gap-1 flex-1 pr-2"
 								onSubmit={(e) => {
@@ -216,11 +286,17 @@ function BrowserChrome(props: { page: StatusPageData }) {
 							</form>
 						</div>
 					</Show>
-					<div class="flex items-center gap-1.5 shrink-0 text-sm text-muted-foreground/60">
+					<button
+						type="button"
+						class="flex items-center gap-1.5 shrink-0 text-sm text-muted-foreground/60 hover:text-foreground transition-colors"
+						onClick={() => setIsEditingCustomDomain(true)}
+					>
 						<Globe class="w-4 h-4" />
 						<span class="hidden sm:inline">Custom domain</span>
-						<span class="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full font-medium">Soon</span>
-					</div>
+						<span class={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium", displayCustomDomain() ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground")}>
+							{displayCustomDomain() || "Add"}
+						</span>
+					</button>
 				</div>
 			</div>
 			<Show when={slugError()}>
@@ -253,6 +329,52 @@ function BrowserChrome(props: { page: StatusPageData }) {
 						</Button>
 						<Button onClick={handleSaveFavicon} disabled={uploadImageMutation.isPending || updateStatusPageMutation.isPending || !!faviconValidationError()}>
 							<Show when={uploadImageMutation.isPending || updateStatusPageMutation.isPending} fallback="Save">
+								<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+								Saving...
+							</Show>
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog open={isEditingCustomDomain()} onOpenChange={setIsEditingCustomDomain}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Custom domain</DialogTitle>
+						<DialogDescription>Point your domain to this status page.</DialogDescription>
+					</DialogHeader>
+					<div class="space-y-3">
+						<div class="space-y-1.5">
+							<Label for="status-page-custom-domain">Domain</Label>
+							<Input
+								id="status-page-custom-domain"
+								placeholder="status.example.com"
+								value={customDomain()}
+								onInput={(e) => {
+									setCustomDomain(e.currentTarget.value);
+									setCustomDomainError(null);
+								}}
+								autofocus
+							/>
+							<Show when={customDomainError()}>
+								<p class="text-xs text-red-600">{customDomainError()}</p>
+							</Show>
+						</div>
+						<Show when={normalizedCustomDomain()}>
+							<p class="text-xs text-muted-foreground">
+								Public URL: <span class="font-medium">{`https://${normalizedCustomDomain()}`}</span>
+							</p>
+						</Show>
+						<p class="text-xs text-muted-foreground">
+							Create a CNAME record from your domain to <span class="font-medium">{statusCnameTarget()}</span>.
+						</p>
+					</div>
+					<DialogFooter class="gap-2">
+						<Button variant="outline" onClick={() => setIsEditingCustomDomain(false)}>
+							Cancel
+						</Button>
+						<Button onClick={handleSaveCustomDomain} disabled={updateStatusPageMutation.isPending || !!customDomainError() || !hasCustomDomainChanges()}>
+							<Show when={updateStatusPageMutation.isPending} fallback="Save">
 								<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
 								Saving...
 							</Show>
@@ -308,7 +430,7 @@ function EditableLogo(props: { page: StatusPageData }) {
 				<Show
 					when={displayLogo()}
 					fallback={
-						<div class="w-14 h-14 rounded-xl bg-gradient-to-br from-slate-100 to-slate-50 border border-slate-200 flex items-center justify-center text-slate-400">
+						<div class="w-14 h-14 rounded-xl bg-linear-to-br from-slate-100 to-slate-50 border border-slate-200 flex items-center justify-center text-slate-400">
 							<ImageUp class="w-6 h-6" />
 						</div>
 					}
@@ -354,6 +476,86 @@ function EditableLogo(props: { page: StatusPageData }) {
 	);
 }
 
+function EditableCompanyName(props: { page: StatusPageData }) {
+	const updateStatusPageMutation = useUpdateStatusPage();
+	const [isEditingName, setIsEditingName] = createSignal(false);
+	const [name, setName] = createSignal(props.page.name);
+	const [nameError, setNameError] = createSignal<string | null>(null);
+
+	createEffect(() => {
+		setName(props.page.name);
+		setNameError(null);
+	});
+
+	const trimmedName = createMemo(() => name().trim());
+	const hasNameChanges = createMemo(() => trimmedName() !== props.page.name.trim());
+
+	const handleSaveName = async () => {
+		const nextName = trimmedName();
+		if (!nextName) {
+			setNameError("Name is required");
+			return;
+		}
+		setNameError(null);
+		try {
+			await updateStatusPageMutation.mutateAsync({ id: props.page.id, name: nextName });
+			setIsEditingName(false);
+		} catch (err) {
+			setNameError(err instanceof Error ? err.message : "Unable to update name");
+		}
+	};
+
+	return (
+		<div class="flex items-center">
+			<Show
+				when={isEditingName()}
+				fallback={
+					<button type="button" class="text-lg font-semibold text-foreground hover:text-muted-foreground transition-colors" onClick={() => setIsEditingName(true)}>
+						{props.page.name.trim() || "Untitled status page"}
+					</button>
+				}
+			>
+				<form
+					class="flex items-center gap-1"
+					onSubmit={(e) => {
+						e.preventDefault();
+						handleSaveName();
+					}}
+					onKeyDown={(e) => {
+						if (e.key === "Escape") {
+							setIsEditingName(false);
+							setName(props.page.name);
+							setNameError(null);
+						}
+					}}
+				>
+					<input
+						type="text"
+						value={name()}
+						onInput={(e) => {
+							setName(e.currentTarget.value);
+							setNameError(null);
+						}}
+						class="w-48 px-2 py-1 text-sm border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+						autofocus
+					/>
+					<button type="submit" class="p-1 text-green-600 hover:text-green-700 cursor-pointer" disabled={updateStatusPageMutation.isPending || !hasNameChanges()}>
+						<Show when={updateStatusPageMutation.isPending} fallback={<Check class="w-4 h-4" />}>
+							<LoaderCircle class="w-4 h-4 animate-spin" />
+						</Show>
+					</button>
+					<button type="button" class="p-1 text-muted-foreground hover:text-foreground cursor-pointer" onClick={() => setIsEditingName(false)}>
+						<X class="w-4 h-4" />
+					</button>
+				</form>
+			</Show>
+			<Show when={nameError()}>
+				<span class="ml-2 text-xs text-red-600">{nameError()}</span>
+			</Show>
+		</div>
+	);
+}
+
 // --- Status Banner ---
 
 function StatusBanner() {
@@ -369,28 +571,41 @@ function StatusBanner() {
 
 // --- Services List ---
 
-function ServicesList(props: { statusPageId: string; services: StatusPageService[] }) {
+const DISPLAY_MODE_OPTIONS = [
+	{ value: "simple", label: "Simple" },
+	{ value: "bars", label: "Uptime bars" },
+	{ value: "bars_percentage", label: "Bars with percentage" },
+] as const;
+
+function ServicesList(props: { page: StatusPageData }) {
 	const servicesQuery = useServices();
 	const updateServicesMutation = useUpdateStatusPageServices();
+	const updateStatusPageMutation = useUpdateStatusPage();
 
 	const [draggedId, setDraggedId] = createSignal<string | null>(null);
 	const [dropTargetIndex, setDropTargetIndex] = createSignal<number | null>(null);
 
-	const availableServices = createMemo(() => servicesQuery.data?.filter((service) => !props.services.some((selected) => selected.id === service.id)) ?? []);
+	const displayMode = () => props.page.serviceDisplayMode || "bars_percentage";
+
+	const availableServices = createMemo(() => servicesQuery.data?.filter((service) => !props.page.services.some((selected) => selected.id === service.id)) ?? []);
 	const availableEntities = createMemo(() =>
 		availableServices().map((service) => ({ id: service.id, name: service.name?.trim() || "Untitled service", avatar: service.imageUrl })),
 	);
 
 	const updateServices = (serviceIds: string[]) => {
-		updateServicesMutation.mutate({ id: props.statusPageId, serviceIds });
+		updateServicesMutation.mutate({ id: props.page.id, serviceIds });
 	};
 
 	const handleAddService = (service: { id: string }) => {
-		updateServices([...props.services.map((item) => item.id), service.id]);
+		updateServices([...props.page.services.map((item) => item.id), service.id]);
 	};
 
 	const handleRemoveService = (serviceId: string) => {
-		updateServices(props.services.filter((item) => item.id !== serviceId).map((item) => item.id));
+		updateServices(props.page.services.filter((item) => item.id !== serviceId).map((item) => item.id));
+	};
+
+	const handleDisplayModeChange = (mode: string) => {
+		updateStatusPageMutation.mutate({ id: props.page.id, serviceDisplayMode: mode });
 	};
 
 	const handleDragStart = (serviceId: string) => {
@@ -402,9 +617,9 @@ function ServicesList(props: { statusPageId: string; services: StatusPageService
 		const targetIndex = dropTargetIndex();
 
 		if (draggedServiceId && targetIndex !== null) {
-			const currentIndex = props.services.findIndex((service) => service.id === draggedServiceId);
+			const currentIndex = props.page.services.findIndex((service) => service.id === draggedServiceId);
 			if (currentIndex !== -1 && currentIndex !== targetIndex) {
-				const reordered = props.services.map((service) => service.id);
+				const reordered = props.page.services.map((service) => service.id);
 				const [moved] = reordered.splice(currentIndex, 1);
 				const insertAt = Math.max(0, Math.min(targetIndex, reordered.length));
 				reordered.splice(insertAt, 0, moved);
@@ -424,7 +639,24 @@ function ServicesList(props: { statusPageId: string; services: StatusPageService
 
 	return (
 		<div class="space-y-3">
-			<div class="flex items-center justify-end">
+			<div class="flex items-center justify-between">
+				<div class="flex items-center gap-1">
+					<For each={DISPLAY_MODE_OPTIONS}>
+						{(option) => (
+							<button
+								type="button"
+								class={cn(
+									"px-2.5 py-1 text-xs rounded-md transition-colors cursor-pointer",
+									displayMode() === option.value ? "bg-slate-200 text-slate-900 font-medium" : "text-slate-500 hover:text-slate-700 hover:bg-slate-100",
+								)}
+								onClick={() => handleDisplayModeChange(option.value)}
+								disabled={updateStatusPageMutation.isPending}
+							>
+								{option.label}
+							</button>
+						)}
+					</For>
+				</div>
 				<Popover>
 					<PopoverTrigger as={Button} size="sm" variant="outline" disabled={availableEntities().length === 0 || updateServicesMutation.isPending}>
 						<Plus class="w-4 h-4 mr-1" />
@@ -436,9 +668,9 @@ function ServicesList(props: { statusPageId: string; services: StatusPageService
 				</Popover>
 			</div>
 
-			<Show when={props.services.length > 0} fallback={<ServicesEmptyState />}>
+			<Show when={props.page.services.length > 0} fallback={<ServicesEmptyState />}>
 				<div class="space-y-2">
-					<For each={props.services}>
+					<For each={props.page.services}>
 						{(service, index) => (
 							// biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop container needs these handlers
 							<div
@@ -464,10 +696,22 @@ function ServicesList(props: { statusPageId: string; services: StatusPageService
 									<ConfigCardRow class="py-3">
 										<div class="flex items-center gap-3 flex-1 min-w-0">
 											<GripVertical class="w-4 h-4 text-muted-foreground cursor-grab" />
-											<p class="text-sm font-medium text-foreground truncate min-w-0 flex-1">{service.name?.trim() || "Untitled service"}</p>
-											<div class="flex items-center gap-1">
-												<div class="w-2 h-2 rounded-full bg-emerald-500" />
-												<span class="text-xs text-emerald-600">Operational</span>
+											<div class="flex-1 min-w-0">
+												<div class="flex items-center justify-between">
+													<p class="text-sm font-medium text-foreground truncate">{service.name?.trim() || "Untitled service"}</p>
+													<div class="flex items-center gap-2">
+														<Show when={displayMode() === "bars_percentage"}>
+															<span class="text-xs text-slate-400">100% uptime</span>
+														</Show>
+														<div class="flex items-center gap-1">
+															<div class="w-2 h-2 rounded-full bg-emerald-500" />
+															<span class="text-xs text-emerald-600">Operational</span>
+														</div>
+													</div>
+												</div>
+												<Show when={displayMode() !== "simple"}>
+													<UptimeBars createdAt={service.createdAt} />
+												</Show>
 											</div>
 										</div>
 										<Button
@@ -488,6 +732,38 @@ function ServicesList(props: { statusPageId: string; services: StatusPageService
 					</For>
 				</div>
 			</Show>
+		</div>
+	);
+}
+
+function UptimeBars(props: { createdAt: Date | null }) {
+	const BAR_COUNT = 90;
+
+	const activeBars = createMemo(() => {
+		if (!props.createdAt) return 0;
+		const addedDate = new Date(props.createdAt);
+		const now = new Date();
+		const diffTime = now.getTime() - addedDate.getTime();
+		const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+		return Math.min(diffDays, BAR_COUNT);
+	});
+
+	return (
+		<div class="flex gap-0.5 mt-2">
+			<For each={Array(BAR_COUNT).fill(0)}>
+				{(_, index) => {
+					const isActive = () => index() >= BAR_COUNT - activeBars();
+					return (
+						<div
+							class="flex-1 h-4 rounded-sm min-w-0.75"
+							classList={{
+								"bg-emerald-500": isActive(),
+								"bg-slate-200": !isActive(),
+							}}
+						/>
+					);
+				}}
+			</For>
 		</div>
 	);
 }
@@ -531,9 +807,9 @@ function Footer(props: { page: StatusPageData }) {
 		<div class="pt-8 space-y-3">
 			<div class="flex items-center justify-between text-xs text-muted-foreground">
 				<span class="flex items-center gap-1.5">&larr; Incident History</span>
-				<span class="flex items-center gap-1.5">
+				<a href="https://fire.app" class="flex items-center gap-1.5 hover:text-muted-foreground transition-colors" target="_blank" rel="noreferrer">
 					Powered by <Flame class="w-3.5 h-3.5 text-orange-500" />
-				</span>
+				</a>
 			</div>
 			<div class="flex items-center justify-center gap-1 text-[10px] text-muted-foreground/50">
 				<EditableFooterLink
@@ -626,7 +902,7 @@ function StatusPageNotFound() {
 			<div class="flex flex-col items-center justify-center py-12">
 				<div class="relative mb-4">
 					<div class="absolute inset-0 bg-slate-400/20 rounded-full blur-xl animate-pulse" />
-					<div class="relative p-3 rounded-full bg-gradient-to-br from-slate-100 to-slate-50 border border-slate-200/60">
+					<div class="relative p-3 rounded-full bg-linear-to-br from-slate-100 to-slate-50 border border-slate-200/60">
 						<Activity class="w-8 h-8 text-slate-600" />
 					</div>
 				</div>

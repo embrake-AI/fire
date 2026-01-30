@@ -13,6 +13,7 @@ export const statusPage = pgTable(
 		slug: text("slug").notNull(),
 		logoUrl: text("logo_url"),
 		faviconUrl: text("favicon_url"),
+		serviceDisplayMode: text("service_display_mode").default("bars_percentage"),
 		customDomain: text("custom_domain"),
 		privacyPolicyUrl: text("privacy_policy_url"),
 		termsOfServiceUrl: text("terms_of_service_url"),
