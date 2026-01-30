@@ -464,9 +464,6 @@ function ServicesList(props: { statusPageId: string; services: StatusPageService
 									<ConfigCardRow class="py-3">
 										<div class="flex items-center gap-3 flex-1 min-w-0">
 											<GripVertical class="w-4 h-4 text-muted-foreground cursor-grab" />
-											<Show when={service.imageUrl} fallback={<Server class="w-5 h-5 text-emerald-600" />}>
-												{(imageUrl) => <img src={imageUrl()} alt={service.name ?? ""} class="w-6 h-6 rounded object-cover shrink-0" />}
-											</Show>
 											<p class="text-sm font-medium text-foreground truncate min-w-0 flex-1">{service.name?.trim() || "Untitled service"}</p>
 											<div class="flex items-center gap-1">
 												<div class="w-2 h-2 rounded-full bg-emerald-500" />
