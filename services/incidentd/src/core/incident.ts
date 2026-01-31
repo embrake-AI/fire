@@ -562,6 +562,7 @@ export class Incident extends DurableObject<Env> {
 			return { error: "MESSAGE_REQUIRED" };
 		}
 
+		const normalizedStatus = status && AFFECTION_STATUS_ORDER.includes(status) ? status : undefined;
 		const existingAffection = this.ctx.storage.sql.exec<{ id: number }>("SELECT id FROM event_log WHERE event_type = 'AFFECTION_UPDATE' LIMIT 1").toArray();
 		const hasAffection = existingAffection.length > 0;
 
@@ -579,12 +580,12 @@ export class Incident extends DurableObject<Env> {
 			if (!hasServices) {
 				return { error: "SERVICES_REQUIRED" };
 			}
-			if (status !== "investigating") {
+			if (normalizedStatus !== "investigating") {
 				return { error: "INITIAL_STATUS_REQUIRED" };
 			}
 		}
 
-		if (status) {
+		if (normalizedStatus) {
 			const [lastStatusRow] = this.ctx.storage.sql
 				.exec<{ status: AffectionStatus | null }>(
 					"SELECT json_extract(event_data, '$.status') AS status FROM event_log WHERE event_type = 'AFFECTION_UPDATE' AND json_extract(event_data, '$.status') IS NOT NULL ORDER BY id DESC LIMIT 1",
@@ -592,7 +593,7 @@ export class Incident extends DurableObject<Env> {
 				.toArray();
 			const currentStatus = lastStatusRow?.status ?? "investigating";
 			const currentIndex = getAffectionStatusIndex(currentStatus);
-			const nextIndex = getAffectionStatusIndex(status);
+			const nextIndex = getAffectionStatusIndex(normalizedStatus);
 			if (nextIndex <= currentIndex && hasAffection) {
 				return { error: "STATUS_CAN_ONLY_MOVE_FORWARD" };
 			}
@@ -601,7 +602,7 @@ export class Incident extends DurableObject<Env> {
 		const eventData: AffectionUpdateData = {
 			message: trimmedMessage,
 			createdBy,
-			...(status ? { status } : {}),
+			...(normalizedStatus ? { status: normalizedStatus } : {}),
 			...(hasTitle ? { title: trimmedTitle } : {}),
 			...(hasServices ? { services: filteredServices } : {}),
 		};
