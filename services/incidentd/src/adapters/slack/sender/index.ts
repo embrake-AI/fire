@@ -633,7 +633,15 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 export async function affectionUpdated(params: SenderParams["affectionUpdated"]) {
 	const { step: stepDo, metadata, event, eventMetadata } = params;
 	const { botToken, incidentChannelId } = metadata;
-	if (!botToken || !incidentChannelId) {
+	if (!botToken) {
+		return;
+	}
+
+	if (eventMetadata?.promptTs && eventMetadata?.promptChannel) {
+		await stepDo("slack.add-prompt-reaction", () => addReaction(botToken, eventMetadata.promptChannel, eventMetadata.promptTs, "white_check_mark"));
+	}
+
+	if (!incidentChannelId) {
 		return;
 	}
 
@@ -641,10 +649,6 @@ export async function affectionUpdated(params: SenderParams["affectionUpdated"])
 	const statusText = event.status ? `Status page update: ${statusEmoji} *${event.status}*` : "Status page update";
 	const messageText = event.message ? `\n${event.message}` : "";
 	await postToChannel(stepDo, botToken, incidentChannelId, `${statusText}${messageText}`, "slack.post-affection-update");
-
-	if (eventMetadata?.promptTs && eventMetadata?.promptChannel) {
-		await stepDo("slack.add-prompt-reaction", () => addReaction(botToken, eventMetadata.promptChannel, eventMetadata.promptTs, "white_check_mark"));
-	}
 }
 
 async function updateIncidentMessage({
