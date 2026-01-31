@@ -270,7 +270,7 @@ function PostmortemCard(props: { analysis: Accessor<IncidentAnalysis> }) {
 				</div>
 			</CardHeader>
 			<CardContent>
-				<Show when={hasContent()} fallback={<p class="text-sm text-muted-foreground">Post-mortem is being generated. Check back in a moment.</p>}>
+				<Show when={hasContent()} fallback={<p class="text-sm text-muted-foreground">No post mortem auto generated</p>}>
 					<div class="space-y-6">
 						<Show when={timeline().length > 0}>
 							<div class="space-y-3">
