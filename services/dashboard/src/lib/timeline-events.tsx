@@ -153,4 +153,25 @@ export const eventRegistry: EventConfigMap = {
 			);
 		},
 	},
+	AFFECTION_UPDATE: {
+		icon: MessageSquare,
+		iconBg: "bg-emerald-100",
+		iconColor: "text-emerald-600",
+		label: "Status Page Update",
+		render: ({ data }) => {
+			const statusLabel = data.status ? data.status.charAt(0).toUpperCase() + data.status.slice(1) : null;
+			return (
+				<div class="space-y-2">
+					<Show when={statusLabel}>
+						<Badge variant="outline" class="text-xs">
+							{statusLabel}
+						</Badge>
+					</Show>
+					<p class="text-sm text-muted-foreground">
+						<EmojiText text={data.message} />
+					</p>
+				</div>
+			);
+		},
+	},
 } satisfies EventConfigMap;

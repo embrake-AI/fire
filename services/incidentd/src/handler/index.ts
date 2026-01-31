@@ -1,4 +1,4 @@
-import type { EntryPoint, IS, ListIncidentsElement } from "@fire/common";
+import type { EntryPoint, IS, IS_Event, ListIncidentsElement } from "@fire/common";
 import type { Context } from "hono";
 import { decidePromptAction } from "../core/idontknowhowtonamethisitswhereillplacecallstoai";
 
@@ -28,11 +28,13 @@ export async function startIncident<E extends AuthContext>({
 	source,
 	identifier,
 	entryPoints,
+	services,
 }: {
 	c: Context<E>;
 	m: Omit<Metadata, "clientId">;
 	identifier: string;
 	entryPoints: EntryPoint[];
+	services: { id: string; prompt: string | null }[];
 } & Pick<IS, "prompt" | "createdBy" | "source">) {
 	const clientId = c.var.auth.clientId;
 	const metadata = { ...m, clientId, identifier };
@@ -47,6 +49,7 @@ export async function startIncident<E extends AuthContext>({
 			metadata,
 		},
 		entryPoints,
+		services,
 	);
 	return incidentId.toString();
 }
@@ -114,6 +117,22 @@ export async function updateStatus<E extends BasicContext>({
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
 	await incident.updateStatus(status, message, adapter);
+}
+
+export async function updateAffection<E extends BasicContext>({
+	c,
+	id,
+	update,
+	adapter,
+}: {
+	c: Context<E>;
+	id: string;
+	update: Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
+	adapter: "slack" | "dashboard";
+}) {
+	const incidentId = c.env.INCIDENT.idFromString(id);
+	const incident = c.env.INCIDENT.get(incidentId);
+	return incident.updateAffection({ ...update, adapter });
 }
 
 export async function addMessage<E extends BasicContext>({

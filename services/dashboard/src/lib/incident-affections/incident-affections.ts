@@ -45,7 +45,7 @@ export type CreateIncidentAffectionInput = {
 };
 
 export type AddIncidentAffectionUpdateInput = {
-	affectionId: string;
+	incidentId: string;
 	status?: AffectionStatus;
 	message: string;
 };
@@ -62,11 +62,6 @@ function normalizeServices(services: { id: string; impact: AffectionImpact }[]) 
 		serviceMap.set(entry.id, entry.impact);
 	}
 	return Array.from(serviceMap.entries()).map(([id, impact]) => ({ id, impact }));
-}
-
-function getNextStatusIndex(status?: AffectionStatus | null) {
-	if (!status) return 0;
-	return Math.max(0, AFFECTION_STATUS_ORDER.indexOf(status));
 }
 
 async function assertIncidentAccess(incidentId: string, context: { clientId: string; userId: string }) {
@@ -201,16 +196,6 @@ export const createIncidentAffection = createServerFn({ method: "POST" })
 
 		await assertIncidentAccess(data.incidentId, context);
 
-		const existing = await db.query.incidentAffection.findFirst({
-			where: {
-				incidentId: data.incidentId,
-			},
-			columns: { id: true },
-		});
-		if (existing) {
-			throw new Error("Affection already exists for this incident");
-		}
-
 		const serviceIds = services.map((entry) => entry.id);
 		const matchedServices = await db
 			.select({ id: service.id })
@@ -221,29 +206,26 @@ export const createIncidentAffection = createServerFn({ method: "POST" })
 			throw new Error("One or more services not found");
 		}
 
-		const createdAffection = await db.transaction(async (tx) => {
-			const [created] = await tx
-				.insert(incidentAffection)
-				.values({
-					incidentId: data.incidentId,
+		const response = await signedFetch(
+			`${process.env.INCIDENTS_URL}/${data.incidentId}/affection`,
+			{ clientId: context.clientId, userId: context.userId },
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
 					title,
-					createdBy: context.userId,
-				})
-				.returning();
+					services,
+					message: initialMessage,
+				}),
+			},
+		);
 
-			await tx.insert(incidentAffectionService).values(services.map((entry) => ({ affectionId: created.id, serviceId: entry.id, impact: entry.impact })));
+		if (!response.ok) {
+			const payload = (await response.json().catch(() => ({}))) as { error?: string };
+			throw new Error(payload.error ?? "Failed to create affection");
+		}
 
-			await tx.insert(incidentAffectionUpdate).values({
-				affectionId: created.id,
-				status: "investigating",
-				message: initialMessage,
-				createdBy: context.userId,
-			});
-
-			return created;
-		});
-
-		return { id: createdAffection.id };
+		return { success: true };
 	});
 
 export const addIncidentAffectionUpdate = createServerFn({ method: "POST" })
@@ -255,48 +237,25 @@ export const addIncidentAffectionUpdate = createServerFn({ method: "POST" })
 			throw new Error("Update message is required");
 		}
 
-		const affection = await assertAffectionAccess(data.affectionId, context.clientId);
-
-		const [lastStatus] = await db
-			.select({ status: incidentAffectionUpdate.status })
-			.from(incidentAffectionUpdate)
-			.where(and(eq(incidentAffectionUpdate.affectionId, data.affectionId), isNotNull(incidentAffectionUpdate.status)))
-			.orderBy(desc(incidentAffectionUpdate.createdAt))
-			.limit(1);
-
-		if (data.status) {
-			const currentIndex = getNextStatusIndex(lastStatus?.status ?? "investigating");
-			const nextIndex = getNextStatusIndex(data.status);
-			if (nextIndex <= currentIndex) {
-				throw new Error("Status can only move forward");
-			}
-		}
-
-		const updateFields: { updatedAt: Date; resolvedAt?: Date } = {
-			updatedAt: new Date(),
-		};
-
-		if (data.status === "resolved" && !affection.resolvedAt) {
-			updateFields.resolvedAt = new Date();
-		}
-
-		const createdUpdate = await db.transaction(async (tx) => {
-			const [created] = await tx
-				.insert(incidentAffectionUpdate)
-				.values({
-					affectionId: data.affectionId,
-					status: data.status ?? null,
+		const response = await signedFetch(
+			`${process.env.INCIDENTS_URL}/${data.incidentId}/affection/update`,
+			{ clientId: context.clientId, userId: context.userId },
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
 					message,
-					createdBy: context.userId,
-				})
-				.returning();
+					...(data.status ? { status: data.status } : {}),
+				}),
+			},
+		);
 
-			await tx.update(incidentAffection).set(updateFields).where(eq(incidentAffection.id, data.affectionId));
+		if (!response.ok) {
+			const payload = (await response.json().catch(() => ({}))) as { error?: string };
+			throw new Error(payload.error ?? "Failed to add affection update");
+		}
 
-			return created;
-		});
-
-		return { id: createdUpdate.id, incidentId: affection.incidentId };
+		return { success: true };
 	});
 
 export const updateIncidentAffectionServices = createServerFn({ method: "POST" })

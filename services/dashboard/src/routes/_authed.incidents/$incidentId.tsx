@@ -434,10 +434,8 @@ function IncidentAffectionSection(props: { incidentId: string; incidentStatus: I
 	};
 
 	const handleAddUpdate = async (data: { message: string; status?: AffectionStatus }) => {
-		const currentAffection = affection();
-		if (!currentAffection) return;
 		await addUpdateMutation.mutateAsync({
-			affectionId: currentAffection.id,
+			incidentId: props.incidentId,
 			message: data.message,
 			status: data.status,
 		});

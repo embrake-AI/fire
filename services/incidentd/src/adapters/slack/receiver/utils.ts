@@ -232,7 +232,7 @@ export async function getSlackIntegration(opts: {
 	enterpriseId?: string | null;
 	isEnterpriseInstall?: boolean;
 	withEntryPoints?: boolean;
-}): Promise<{ clientId: string; data: SlackIntegrationData; entryPoints: EntryPoint[] } | null> {
+}): Promise<{ clientId: string; data: SlackIntegrationData; entryPoints: EntryPoint[]; services: { id: string; prompt: string | null }[] } | null> {
 	const { hyperdrive, teamId, enterpriseId, isEnterpriseInstall = false } = opts;
 	const db = getDB(hyperdrive);
 
@@ -294,6 +294,12 @@ export async function getSlackIntegration(opts: {
 						},
 					}
 				: {},
+			services: {
+				columns: {
+					id: true,
+					prompt: true,
+				},
+			},
 		},
 	});
 
@@ -304,6 +310,7 @@ export async function getSlackIntegration(opts: {
 	return {
 		clientId: result.id,
 		data: result.integrations[0]?.data,
+		services: result.services?.map((service) => ({ id: service.id, prompt: service.prompt ?? null })) ?? [],
 		entryPoints:
 			result.entryPoints
 				.map((ep) => {

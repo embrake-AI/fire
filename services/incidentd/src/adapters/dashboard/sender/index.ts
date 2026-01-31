@@ -88,6 +88,7 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 }
 
 export const messageAdded = undefined;
+export const affectionUpdated = undefined;
 
 export async function summaryResponse(params: SenderParams["summaryResponse"]): Promise<void> {
 	const { step, env, id, description } = params;

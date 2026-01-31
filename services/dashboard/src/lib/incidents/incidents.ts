@@ -214,6 +214,12 @@ export const startIncident = createServerFn({ method: "POST" })
 						},
 					},
 				},
+				services: {
+					columns: {
+						id: true,
+						prompt: true,
+					},
+				},
 			},
 		});
 		if (!client) {
@@ -263,13 +269,17 @@ export const startIncident = createServerFn({ method: "POST" })
 				};
 			})
 			.filter((ep) => !!ep);
+		const services = client.services.map((serviceRow) => ({
+			id: serviceRow.id,
+			prompt: serviceRow.prompt ?? null,
+		}));
 		const response = await signedFetch(
 			process.env.INCIDENTS_URL!,
 			{ clientId: context.clientId, userId: context.userId },
 			{
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ prompt: data.prompt, metadata, entryPoints }),
+				body: JSON.stringify({ prompt: data.prompt, metadata, entryPoints, services }),
 			},
 		);
 		if (!response.ok) {

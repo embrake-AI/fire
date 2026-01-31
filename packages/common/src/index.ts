@@ -50,6 +50,16 @@ export type IS_Event =
 			};
 	  }
 	| {
+			event_type: "AFFECTION_UPDATE";
+			event_data: {
+				message: string;
+				status?: "investigating" | "mitigating" | "resolved";
+				title?: string;
+				services?: { id: string; impact: "partial" | "major" }[];
+				createdBy: string;
+			};
+	  }
+	| {
 			event_type: "MESSAGE_ADDED";
 			event_data: {
 				message: string;

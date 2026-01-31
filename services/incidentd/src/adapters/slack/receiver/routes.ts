@@ -66,7 +66,7 @@ slackRoutes.post("/events", async (c) => {
 				console.error(`No Slack integration found for ${teamId}`);
 				return c.text("OK");
 			}
-			const { clientId, data: integrationData } = slackIntegration;
+			const { clientId, data: integrationData, services } = slackIntegration;
 			c.set("auth", { clientId });
 
 			const botToken = integrationData.botToken;
@@ -129,6 +129,7 @@ slackRoutes.post("/events", async (c) => {
 					thread: threadForIncident,
 				},
 				entryPoints: slackIntegration.entryPoints,
+				services,
 			});
 		} else if (event.type === "message" && (event.channel_type === "channel" || event.channel_type === "group")) {
 			// hard-coding the type copied from testing. Not sure why types differ.

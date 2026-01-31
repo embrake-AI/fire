@@ -1,8 +1,16 @@
 import { relations } from "@fire/db/relations";
 import * as schema from "@fire/db/schema";
-import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 
-export function getDB(hyperdrive: Hyperdrive) {
+type DBSchema = typeof schema;
+type DBRelations = typeof relations;
+
+let db: NodePgDatabase<DBSchema, DBRelations>;
+export function getDB(hyperdrive: Hyperdrive): NodePgDatabase<DBSchema, DBRelations> {
+	if (db) {
+		return db;
+	}
 	// requires pg being installed
-	return drizzle(hyperdrive.connectionString, { schema, relations });
+	db = drizzle(hyperdrive.connectionString, { schema, relations });
+	return db;
 }

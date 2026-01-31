@@ -630,6 +630,19 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 	}
 }
 
+export async function affectionUpdated(params: SenderParams["affectionUpdated"]) {
+	const { step: stepDo, metadata, event } = params;
+	const { botToken, incidentChannelId } = metadata;
+	if (!botToken || !incidentChannelId) {
+		return;
+	}
+
+	const statusEmoji = event.status === "resolved" ? "✅" : event.status === "mitigating" ? "🟡" : event.status === "investigating" ? "🔍" : "📣";
+	const statusText = event.status ? `Status page update: ${statusEmoji} *${event.status}*` : "Status page update";
+	const messageText = event.message ? `\n${event.message}` : "";
+	await postToChannel(stepDo, botToken, incidentChannelId, `${statusText}${messageText}`, "slack.post-affection-update");
+}
+
 async function updateIncidentMessage({
 	stepDo,
 	stepName,

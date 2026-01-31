@@ -14,6 +14,7 @@ export type DOState = IS & {
 const STATE_KEY = "S";
 const EVENTLOGVERSION_KEY = "ELV";
 const ENTRYPOINT_KEY = "EP";
+const SERVICES_KEY = "SV";
 const SUMMARY_CACHE_KEY = "SC";
 const ALARM_INTERVAL_MS = 200;
 const MAX_ATTEMPTS = 3;
@@ -35,6 +36,28 @@ type PendingSummaryRow = {
 	id: number;
 	context: string;
 };
+
+const AFFECTION_STATUS_ORDER = ["investigating", "mitigating", "resolved"] as const;
+type AffectionStatus = "investigating" | "mitigating" | "resolved";
+type AffectionImpact = "partial" | "major";
+
+type AffectionUpdateData = Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
+type IncidentService = { id: string; prompt: string | null };
+
+function getAffectionStatusIndex(status: AffectionStatus) {
+	return AFFECTION_STATUS_ORDER.indexOf(status);
+}
+
+function normalizeIncidentServices(services: IncidentService[]) {
+	const serviceMap = new Map<string, IncidentService>();
+	for (const service of services) {
+		if (!service?.id) continue;
+		if (!serviceMap.has(service.id)) {
+			serviceMap.set(service.id, { id: service.id, prompt: service.prompt ?? null });
+		}
+	}
+	return Array.from(serviceMap.values());
+}
 
 /**
  * An Incident is the source of truth for an incident. It is agnostic of the communication channel(s).
@@ -438,10 +461,15 @@ export class Incident extends DurableObject<Env> {
 	/**
 	 * Entry point to start a new incident. Must be called before any other method.
 	 */
-	async start({ id, prompt, createdBy, source, metadata }: Pick<DOState, "id" | "prompt" | "createdBy" | "source" | "metadata">, entryPoints: EntryPoint[]) {
+	async start(
+		{ id, prompt, createdBy, source, metadata }: Pick<DOState, "id" | "prompt" | "createdBy" | "source" | "metadata">,
+		entryPoints: EntryPoint[],
+		services: IncidentService[],
+	) {
 		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY);
 		if (!state) {
 			await this.ctx.storage.transaction(async () => {
+				const normalizedServices = normalizeIncidentServices(services);
 				this.ctx.storage.kv.put<DOState>(STATE_KEY, {
 					id,
 					prompt,
@@ -462,6 +490,7 @@ export class Incident extends DurableObject<Env> {
 					// This will be set on `init`
 				});
 				this.ctx.storage.kv.put(ENTRYPOINT_KEY, entryPoints);
+				this.ctx.storage.kv.put(SERVICES_KEY, normalizedServices);
 				await this.ctx.storage.setAlarm(Date.now());
 			});
 		}
@@ -504,6 +533,78 @@ export class Incident extends DurableObject<Env> {
 
 		state.status = status;
 		await this.commit({ state, event: { event_type: "STATUS_UPDATE", event_data: { status, message } }, adapter, eventMetadata });
+	}
+
+	async updateAffection({
+		message,
+		status,
+		title,
+		services,
+		createdBy,
+		adapter,
+	}: {
+		message: string;
+		status?: AffectionStatus;
+		title?: string;
+		services?: { id: string; impact: AffectionImpact }[];
+		createdBy: string;
+		adapter: "slack" | "dashboard";
+	}): Promise<{ error: string } | undefined> {
+		const state = this.getState();
+		if ("error" in state) {
+			return state;
+		}
+
+		const trimmedMessage = message.trim();
+		if (!trimmedMessage) {
+			return { error: "MESSAGE_REQUIRED" };
+		}
+
+		const existingAffection = this.ctx.storage.sql.exec<{ id: number }>("SELECT id FROM event_log WHERE event_type = 'AFFECTION_UPDATE' LIMIT 1").toArray();
+		const hasAffection = existingAffection.length > 0;
+
+		const trimmedTitle = title?.trim() ?? "";
+		const hasTitle = trimmedTitle.length > 0;
+		const allowedServices = this.ctx.storage.kv.get<IncidentService[]>(SERVICES_KEY) ?? [];
+		const serviceIds = new Set(allowedServices.map((service) => service.id));
+		const filteredServices = Array.isArray(services) ? services.filter((service) => serviceIds.has(service.id)) : [];
+		const hasServices = filteredServices.length > 0;
+
+		if (!hasAffection) {
+			if (!hasTitle) {
+				return { error: "TITLE_REQUIRED" };
+			}
+			if (!hasServices) {
+				return { error: "SERVICES_REQUIRED" };
+			}
+			if (status !== "investigating") {
+				return { error: "INITIAL_STATUS_REQUIRED" };
+			}
+		}
+
+		if (status) {
+			const [lastStatusRow] = this.ctx.storage.sql
+				.exec<{ status: AffectionStatus | null }>(
+					"SELECT json_extract(event_data, '$.status') AS status FROM event_log WHERE event_type = 'AFFECTION_UPDATE' AND json_extract(event_data, '$.status') IS NOT NULL ORDER BY id DESC LIMIT 1",
+				)
+				.toArray();
+			const currentStatus = lastStatusRow?.status ?? "investigating";
+			const currentIndex = getAffectionStatusIndex(currentStatus);
+			const nextIndex = getAffectionStatusIndex(status);
+			if (nextIndex <= currentIndex && hasAffection) {
+				return { error: "STATUS_CAN_ONLY_MOVE_FORWARD" };
+			}
+		}
+
+		const eventData: AffectionUpdateData = {
+			message: trimmedMessage,
+			createdBy,
+			...(status ? { status } : {}),
+			...(hasTitle ? { title: trimmedTitle } : {}),
+			...(hasServices ? { services: filteredServices } : {}),
+		};
+
+		await this.commit({ state, event: { event_type: "AFFECTION_UPDATE", event_data: eventData }, adapter });
 	}
 
 	async respondSummary(context: SummaryRequestContext) {

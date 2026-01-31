@@ -4,6 +4,7 @@ import * as dashboardSender from "../adapters/dashboard/sender";
 import * as slackSender from "../adapters/slack/sender";
 import type { Metadata } from "../handler";
 import { ASSERT, ASSERT_NEVER } from "../lib/utils";
+import * as statusPageDispatcher from "./status-page";
 
 export type Incident = {
 	status: IS["status"];
@@ -90,6 +91,16 @@ export type SenderParams = {
 		sourceAdapter: "slack" | "dashboard";
 		slackUserToken?: string;
 	};
+	affectionUpdated: {
+		step: StepDo;
+		env: Env;
+		id: string;
+		incident: Incident;
+		metadata: Metadata;
+		sourceAdapter: "slack" | "dashboard";
+		event: Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
+		eventId: number;
+	};
 	summaryResponse: {
 		step: StepDo;
 		env: Env;
@@ -110,10 +121,11 @@ interface Sender {
 	incidentAssigneeUpdated: ((params: SenderParams["incidentAssigneeUpdated"]) => Promise<void>) | undefined;
 	incidentStatusUpdated: ((params: SenderParams["incidentStatusUpdated"]) => Promise<void>) | undefined;
 	messageAdded: ((params: SenderParams["messageAdded"]) => Promise<void>) | undefined;
+	affectionUpdated: ((params: SenderParams["affectionUpdated"]) => Promise<void>) | undefined;
 	summaryResponse: ((params: SenderParams["summaryResponse"]) => Promise<void>) | undefined;
 }
 
-const senders: Sender[] = [dashboardSender, slackSender];
+const senders: Sender[] = [dashboardSender, slackSender, statusPageDispatcher];
 
 function isIncidentResolved(event: IS_Event) {
 	return event.event_type === "STATUS_UPDATE" && event.event_data.status === "resolved";
@@ -164,6 +176,10 @@ async function dispatchMessageAddedEvent(params: SenderParams["messageAdded"]) {
 	await settleDispatch("message-added", [...senders.map((sender) => sender.messageAdded?.(params))]);
 }
 
+async function dispatchAffectionUpdatedEvent(params: SenderParams["affectionUpdated"]) {
+	await settleDispatch("affection-updated", [...senders.map((sender) => sender.affectionUpdated?.(params))]);
+}
+
 async function dispatchSummaryResponseEvent(params: SenderParams["summaryResponse"]) {
 	await settleDispatch("summary-response", [...senders.map((sender) => sender.summaryResponse?.(params))]);
 }
@@ -196,6 +212,13 @@ async function dispatchEvent(step: WorkflowStep, env: Env, payload: WorkflowEven
 				userId: payload.event.event_data.userId,
 				messageId: payload.event.event_data.messageId,
 				slackUserToken: payload.eventMetadata?.slackUserToken,
+			});
+		}
+		case "AFFECTION_UPDATE": {
+			return dispatchAffectionUpdatedEvent({
+				...baseParams,
+				event: payload.event.event_data,
+				eventId: payload.event.event_id,
 			});
 		}
 		default: {

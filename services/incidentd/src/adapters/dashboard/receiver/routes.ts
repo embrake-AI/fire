@@ -1,6 +1,6 @@
-import type { EntryPoint } from "@fire/common";
+import type { EntryPoint, IS_Event } from "@fire/common";
 import { Hono } from "hono";
-import { addMessage, type BasicContext, getIncident, listIncidents, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
+import { addMessage, type BasicContext, getIncident, listIncidents, startIncident, updateAffection, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
 import { verifyDashboardRequestMiddleware } from "./middleware";
 
 type DashboardContext = BasicContext & { Variables: { auth: { clientId: string; userId: string } } };
@@ -23,11 +23,13 @@ dashboardRoutes.get("/:id", async (c) => {
 dashboardRoutes.post("/", async (c) => {
 	const auth = c.get("auth");
 	const id = crypto.randomUUID();
-	const { prompt, metadata, entryPoints } = await c.req.json<{
+	const { prompt, metadata, entryPoints, services } = await c.req.json<{
 		prompt: string;
 		metadata?: Record<string, string>;
 		entryPoints: EntryPoint[];
+		services: { id: string; prompt: string | null }[];
 	}>();
+	const normalizedServices = Array.isArray(services) ? services.filter((service) => service?.id).map((service) => ({ id: service.id, prompt: service.prompt ?? null })) : [];
 
 	const incidentId = await startIncident({
 		c,
@@ -36,6 +38,7 @@ dashboardRoutes.post("/", async (c) => {
 		createdBy: auth.userId,
 		source: "dashboard",
 		entryPoints,
+		services: normalizedServices,
 		m: metadata ?? {},
 	});
 	return c.json({ id: incidentId });
@@ -94,6 +97,78 @@ dashboardRoutes.post("/:id/message", async (c) => {
 	}>();
 
 	await addMessage({ c, id, message, userId: slackUserId, messageId, adapter: "dashboard", slackUserToken });
+	return c.json({ success: true });
+});
+
+dashboardRoutes.post("/:id/affection", async (c) => {
+	const id = c.req.param("id");
+	if (!id) {
+		return c.json({ error: "ID is required" }, 400);
+	}
+	const auth = c.get("auth");
+	const { title, services, message } = await c.req.json<{ title: string; services: { id: string; impact: "partial" | "major" }[]; message: string }>();
+
+	const trimmedTitle = title?.trim() ?? "";
+	const trimmedMessage = message?.trim() ?? "";
+
+	if (!trimmedTitle) {
+		return c.json({ error: "Title is required" }, 400);
+	}
+	if (!trimmedMessage) {
+		return c.json({ error: "Message is required" }, 400);
+	}
+	if (!Array.isArray(services) || services.length === 0) {
+		return c.json({ error: "At least one service is required" }, 400);
+	}
+
+	const uniqueServices = Array.from(new Map(services.map((entry) => [entry.id, entry])).values());
+	const normalizedServices = uniqueServices.filter((entry) => entry.id && (entry.impact === "partial" || entry.impact === "major"));
+	if (normalizedServices.length !== uniqueServices.length) {
+		return c.json({ error: "Invalid services payload" }, 400);
+	}
+	const update: Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"] = {
+		message: trimmedMessage,
+		status: "investigating",
+		title: trimmedTitle,
+		services: normalizedServices,
+		createdBy: auth.userId,
+	};
+
+	const result = await updateAffection({ c, id, update, adapter: "dashboard" });
+	if (result && "error" in result) {
+		return c.json({ error: result.error }, 400);
+	}
+
+	return c.json({ success: true });
+});
+
+dashboardRoutes.post("/:id/affection/update", async (c) => {
+	const id = c.req.param("id");
+	if (!id) {
+		return c.json({ error: "ID is required" }, 400);
+	}
+	const auth = c.get("auth");
+	const { message, status } = await c.req.json<{ message: string; status?: "investigating" | "mitigating" | "resolved" }>();
+
+	const trimmedMessage = message?.trim() ?? "";
+	if (!trimmedMessage) {
+		return c.json({ error: "Message is required" }, 400);
+	}
+	if (status && !["investigating", "mitigating", "resolved"].includes(status)) {
+		return c.json({ error: "Invalid status" }, 400);
+	}
+
+	const update: Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"] = {
+		message: trimmedMessage,
+		createdBy: auth.userId,
+		...(status ? { status } : {}),
+	};
+
+	const result = await updateAffection({ c, id, update, adapter: "dashboard" });
+	if (result && "error" in result) {
+		return c.json({ error: result.error }, 400);
+	}
+
 	return c.json({ success: true });
 });
 
