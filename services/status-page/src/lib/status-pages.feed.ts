@@ -1,4 +1,4 @@
-import type { IncidentDetailData } from "./status-pages.server";
+import type { IncidentDetailData, IncidentHistoryData } from "./status-pages.server";
 
 export type FeedFormat = "rss" | "atom";
 
@@ -49,6 +49,36 @@ function buildEntries(data: IncidentDetailData): FeedEntry[] {
 			date: update.createdAt,
 		};
 	});
+}
+
+function buildHistoryEntries(data: IncidentHistoryData): FeedEntry[] {
+	if (data.incidents.length === 0) {
+		return [
+			{
+				id: `${data.page.id}-status`,
+				title: `${data.page.name} status`,
+				summary: "No incidents reported.",
+				date: data.page.updatedAt ?? data.page.createdAt,
+			},
+		];
+	}
+
+	return data.incidents
+		.map((incident) => {
+			const lastUpdate = incident.lastUpdate;
+			const status = lastUpdate?.status ?? (incident.resolvedAt ? "resolved" : "investigating");
+			const label = status ? (STATUS_LABELS[status] ?? "Update") : "Update";
+			const summary = lastUpdate?.message ?? (incident.resolvedAt ? "Incident resolved." : "Incident created.");
+			const date = lastUpdate?.createdAt ?? incident.resolvedAt ?? incident.createdAt;
+
+			return {
+				id: lastUpdate ? `${incident.id}-${lastUpdate.createdAt.toISOString()}` : `${incident.id}-created`,
+				title: `${label}: ${incident.title}`,
+				summary,
+				date,
+			};
+		})
+		.sort((a, b) => b.date.getTime() - a.date.getTime());
 }
 
 function buildRssFeed(options: { title: string; description: string; siteUrl: string; feedUrl: string; updatedAt: Date; entries: FeedEntry[] }): string {
@@ -136,6 +166,48 @@ export function buildIncidentFeedResponse(options: { data: IncidentDetailData; f
 		body = buildRssFeed({
 			title,
 			description: `Updates for "${data.incident.title}" on ${data.page.name}.`,
+			siteUrl,
+			feedUrl,
+			updatedAt,
+			entries,
+		});
+		contentType = "application/rss+xml; charset=utf-8";
+	}
+
+	return new Response(body, {
+		status: 200,
+		headers: {
+			"Content-Type": contentType,
+			"Cache-Control": cacheControl,
+		},
+	});
+}
+
+export function buildHistoryFeedResponse(options: { data: IncidentHistoryData; format: FeedFormat; feedUrl: string; siteUrl: string }): Response {
+	const { data, format, feedUrl, siteUrl } = options;
+	const entries = buildHistoryEntries(data);
+	const updatedAt = entries[0]?.date ?? data.page.updatedAt ?? data.page.createdAt ?? new Date();
+	const description = `Latest incidents for ${data.page.name}.`;
+	const title = `${data.page.name} - Incident History`;
+
+	const cacheControl = "public, max-age=30, stale-while-revalidate=60";
+
+	let body = "";
+	let contentType = "";
+
+	if (format === "atom") {
+		body = buildAtomFeed({
+			title,
+			siteUrl,
+			feedUrl,
+			updatedAt,
+			entries,
+		});
+		contentType = "application/atom+xml; charset=utf-8";
+	} else {
+		body = buildRssFeed({
+			title,
+			description,
 			siteUrl,
 			feedUrl,
 			updatedAt,

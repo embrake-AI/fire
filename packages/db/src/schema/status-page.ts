@@ -15,6 +15,7 @@ export const statusPage = pgTable(
 		faviconUrl: text("favicon_url"),
 		serviceDisplayMode: text("service_display_mode").default("bars_percentage"),
 		customDomain: text("custom_domain"),
+		supportUrl: text("support_url"),
 		privacyPolicyUrl: text("privacy_policy_url"),
 		termsOfServiceUrl: text("terms_of_service_url"),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

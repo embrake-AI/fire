@@ -56,6 +56,7 @@ export function useCreateStatusPage(options?: { onMutate?: (tempId: string) => v
 				faviconUrl: null,
 				serviceDisplayMode: "bars_percentage",
 				customDomain: null,
+				supportUrl: null,
 				privacyPolicyUrl: null,
 				termsOfServiceUrl: null,
 				createdAt: new Date(),
@@ -102,6 +103,7 @@ export function useUpdateStatusPage(options?: { onSuccess?: () => void; onError?
 			faviconUrl?: string | null;
 			serviceDisplayMode?: string | null;
 			customDomain?: string | null;
+			supportUrl?: string | null;
 			privacyPolicyUrl?: string | null;
 			termsOfServiceUrl?: string | null;
 		}) => updateStatusPageFn({ data }),
@@ -123,6 +125,7 @@ export function useUpdateStatusPage(options?: { onSuccess?: () => void; onError?
 							...(data.faviconUrl !== undefined ? { faviconUrl: data.faviconUrl } : {}),
 							...(data.serviceDisplayMode !== undefined ? { serviceDisplayMode: data.serviceDisplayMode } : {}),
 							...(data.customDomain !== undefined ? { customDomain: data.customDomain } : {}),
+							...(data.supportUrl !== undefined ? { supportUrl: data.supportUrl } : {}),
 							...(data.privacyPolicyUrl !== undefined ? { privacyPolicyUrl: data.privacyPolicyUrl } : {}),
 							...(data.termsOfServiceUrl !== undefined ? { termsOfServiceUrl: data.termsOfServiceUrl } : {}),
 						};

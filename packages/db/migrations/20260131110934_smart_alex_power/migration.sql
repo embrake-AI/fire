@@ -1,0 +1,1 @@
+ALTER TABLE "status_page" ADD COLUMN "support_url" text;

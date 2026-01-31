@@ -18,7 +18,7 @@ export type StatusPageService = Pick<ServiceRow, "id" | "name" | "imageUrl"> & {
 
 export type StatusPageSummary = Pick<
 	StatusPageRow,
-	"id" | "name" | "slug" | "logoUrl" | "faviconUrl" | "serviceDisplayMode" | "customDomain" | "privacyPolicyUrl" | "termsOfServiceUrl" | "createdAt" | "updatedAt"
+	"id" | "name" | "slug" | "logoUrl" | "faviconUrl" | "serviceDisplayMode" | "customDomain" | "supportUrl" | "privacyPolicyUrl" | "termsOfServiceUrl" | "createdAt" | "updatedAt"
 >;
 
 export type StatusPageListItem = StatusPageSummary & {
@@ -60,6 +60,7 @@ export const getStatusPages = createServerFn({ method: "GET" })
 				faviconUrl: true,
 				serviceDisplayMode: true,
 				customDomain: true,
+				supportUrl: true,
 				privacyPolicyUrl: true,
 				termsOfServiceUrl: true,
 				createdAt: true,
@@ -106,6 +107,7 @@ export const getStatusPages = createServerFn({ method: "GET" })
 				faviconUrl: page.faviconUrl,
 				serviceDisplayMode: page.serviceDisplayMode,
 				customDomain: page.customDomain,
+				supportUrl: page.supportUrl,
 				privacyPolicyUrl: page.privacyPolicyUrl,
 				termsOfServiceUrl: page.termsOfServiceUrl,
 				createdAt: page.createdAt,
@@ -157,6 +159,7 @@ export const createStatusPage = createServerFn({ method: "POST" })
 			faviconUrl: created.faviconUrl,
 			serviceDisplayMode: created.serviceDisplayMode,
 			customDomain: created.customDomain,
+			supportUrl: created.supportUrl,
 			privacyPolicyUrl: created.privacyPolicyUrl,
 			termsOfServiceUrl: created.termsOfServiceUrl,
 			createdAt: created.createdAt,
@@ -177,6 +180,7 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 			faviconUrl?: string | null;
 			serviceDisplayMode?: string | null;
 			customDomain?: string | null;
+			supportUrl?: string | null;
 			privacyPolicyUrl?: string | null;
 			termsOfServiceUrl?: string | null;
 		}) => data,
@@ -189,6 +193,7 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 			faviconUrl?: string | null;
 			serviceDisplayMode?: string | null;
 			customDomain?: string | null;
+			supportUrl?: string | null;
 			privacyPolicyUrl?: string | null;
 			termsOfServiceUrl?: string | null;
 		} = {};
@@ -269,6 +274,9 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 
 			updateFields.customDomain = normalizedDomain;
 		}
+		if (data.supportUrl !== undefined) {
+			updateFields.supportUrl = data.supportUrl?.trim() || null;
+		}
 		if (data.privacyPolicyUrl !== undefined) {
 			updateFields.privacyPolicyUrl = data.privacyPolicyUrl?.trim() || null;
 		}
@@ -294,6 +302,7 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 			faviconUrl: updated.faviconUrl,
 			serviceDisplayMode: updated.serviceDisplayMode,
 			customDomain: updated.customDomain,
+			supportUrl: updated.supportUrl,
 			privacyPolicyUrl: updated.privacyPolicyUrl,
 			termsOfServiceUrl: updated.termsOfServiceUrl,
 			updatedAt: updated.updatedAt,

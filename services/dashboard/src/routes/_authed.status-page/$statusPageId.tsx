@@ -994,7 +994,7 @@ function ServicesList(props: { page: StatusPageData }) {
 }
 
 function UptimeBars(props: { createdAt: Date | null }) {
-	const BAR_COUNT = 90;
+	const BAR_COUNT = 60;
 
 	const activeBars = createMemo(() => {
 		if (!props.createdAt) return 0;
@@ -1044,12 +1044,15 @@ function Footer(props: { page: StatusPageData }) {
 
 	const [isEditingPrivacy, setIsEditingPrivacy] = createSignal(false);
 	const [isEditingTerms, setIsEditingTerms] = createSignal(false);
+	const [isEditingSupport, setIsEditingSupport] = createSignal(false);
 	const [privacyUrl, setPrivacyUrl] = createSignal(props.page.privacyPolicyUrl ?? "");
 	const [termsUrl, setTermsUrl] = createSignal(props.page.termsOfServiceUrl ?? "");
+	const [supportUrl, setSupportUrl] = createSignal(props.page.supportUrl ?? "");
 
 	createEffect(() => {
 		setPrivacyUrl(props.page.privacyPolicyUrl ?? "");
 		setTermsUrl(props.page.termsOfServiceUrl ?? "");
+		setSupportUrl(props.page.supportUrl ?? "");
 	});
 
 	const handleSavePrivacy = async () => {
@@ -1060,6 +1063,11 @@ function Footer(props: { page: StatusPageData }) {
 	const handleSaveTerms = async () => {
 		await updateStatusPageMutation.mutateAsync({ id: props.page.id, termsOfServiceUrl: termsUrl().trim() || null });
 		setIsEditingTerms(false);
+	};
+
+	const handleSaveSupport = async () => {
+		await updateStatusPageMutation.mutateAsync({ id: props.page.id, supportUrl: supportUrl().trim() || null });
+		setIsEditingSupport(false);
 	};
 
 	return (
@@ -1090,6 +1098,17 @@ function Footer(props: { page: StatusPageData }) {
 					value={termsUrl()}
 					setValue={setTermsUrl}
 					onSave={handleSaveTerms}
+					isPending={updateStatusPageMutation.isPending}
+				/>
+				<span>&middot;</span>
+				<EditableFooterLink
+					label="Support site"
+					url={props.page.supportUrl}
+					isEditing={isEditingSupport()}
+					setIsEditing={setIsEditingSupport}
+					value={supportUrl()}
+					setValue={setSupportUrl}
+					onSave={handleSaveSupport}
 					isPending={updateStatusPageMutation.isPending}
 				/>
 			</div>
