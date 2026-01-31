@@ -542,6 +542,7 @@ export class Incident extends DurableObject<Env> {
 		services,
 		createdBy,
 		adapter,
+		eventMetadata,
 	}: {
 		message: string;
 		status?: AffectionStatus;
@@ -549,6 +550,7 @@ export class Incident extends DurableObject<Env> {
 		services?: { id: string; impact: AffectionImpact }[];
 		createdBy: string;
 		adapter: "slack" | "dashboard";
+		eventMetadata?: Record<string, string>;
 	}): Promise<{ error: string } | undefined> {
 		const state = this.getState();
 		if ("error" in state) {
@@ -604,7 +606,7 @@ export class Incident extends DurableObject<Env> {
 			...(hasServices ? { services: filteredServices } : {}),
 		};
 
-		await this.commit({ state, event: { event_type: "AFFECTION_UPDATE", event_data: eventData }, adapter });
+		await this.commit({ state, event: { event_type: "AFFECTION_UPDATE", event_data: eventData }, adapter, eventMetadata });
 	}
 
 	async respondSummary(context: SummaryRequestContext) {

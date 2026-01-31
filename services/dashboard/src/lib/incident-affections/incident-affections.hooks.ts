@@ -7,6 +7,8 @@ import {
 	type CreateIncidentAffectionInput,
 	createIncidentAffection,
 	getIncidentAffection,
+	type IncidentAffectionData,
+	type IncidentAffectionUpdateItem,
 	type UpdateIncidentAffectionServicesInput,
 	updateIncidentAffectionServices,
 } from "./incident-affections";
@@ -45,13 +47,39 @@ export function useAddIncidentAffectionUpdate(incidentId: Accessor<string>, opti
 
 	return useMutation(() => ({
 		mutationFn: (data: AddIncidentAffectionUpdateInput) => addIncidentAffectionUpdateFn({ data }),
+		onMutate: (data) => {
+			const queryKey = ["incident-affection", incidentId()];
+			const previous = queryClient.getQueryData<IncidentAffectionData | null>(queryKey);
+			if (!previous) return { previous };
+
+			const optimisticUpdate: IncidentAffectionUpdateItem = {
+				id: `optimistic-${Date.now()}`,
+				status: data.status ?? null,
+				message: data.message,
+				createdAt: new Date(),
+				createdBy: null,
+			};
+
+			queryClient.setQueryData<IncidentAffectionData | null>(queryKey, {
+				...previous,
+				currentStatus: data.status ?? previous.currentStatus,
+				lastUpdate: optimisticUpdate,
+				updatedAt: new Date(),
+				resolvedAt: data.status === "resolved" ? new Date() : previous.resolvedAt,
+			});
+
+			return { previous };
+		},
 
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["incident-affection", incidentId()] });
 			options?.onSuccess?.();
 		},
 
-		onError: () => {
+		onError: (_error, _vars, context) => {
+			if (context?.previous !== undefined) {
+				queryClient.setQueryData(["incident-affection", incidentId()], context.previous);
+			}
 			options?.onError?.();
 		},
 	}));

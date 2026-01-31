@@ -9,10 +9,11 @@ type IncidentInfo = {
 };
 
 export type PromptDecision = {
-	action: "update_status" | "update_severity" | "summarize" | "noop";
+	action: "update_status" | "update_severity" | "add_status_page_update" | "summarize" | "noop";
 	status?: Exclude<IS["status"], "open">;
 	severity?: IS["severity"];
 	message?: string;
+	affectionStatus?: "investigating" | "mitigating" | "resolved";
 };
 
 // We could allow users to tune the system prompt (when high, medium, low)
@@ -124,8 +125,9 @@ const PROMPT_DECISION_SYSTEM_PROMPT = `You are an incident operations assistant.
 
 - update_status: only if the user explicitly asks to mark the incident as mitigating or resolved.
 - update_severity: only if the user explicitly asks to change severity to low/medium/high.
-- summarize: if the user asks for a summary or recap either directly, or indirectly by asking for context or wondering what's going on.
-- noop: if the intent is unclear or doesn't match the options.
+ - add_status_page_update: only if the user explicitly asks to post an update to the status page. Only include status if the user explicitly requests a status change (investigating to create; resolved to close).
+ - summarize: if the user asks for a summary or recap either directly, or indirectly by asking for context or wondering what's going on.
+ - noop: if the intent is unclear or doesn't match the options.
 
 Use exactly one tool to respond. Do not guess missing values. If required details are missing, use noop.`;
 
@@ -157,6 +159,26 @@ const PROMPT_DECISION_TOOLS = [
 					severity: { type: "string", enum: ["low", "medium", "high"] },
 				},
 				required: ["severity"],
+				additionalProperties: false,
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "add_status_page_update",
+			description: "Post an update to the public status page when explicitly requested.",
+			parameters: {
+				type: "object",
+				properties: {
+					message: { type: "string" },
+					status: {
+						type: "string",
+						enum: ["investigating", "mitigating", "resolved"],
+						description: "Only include when explicitly requested. 'investigating' creates the status page impact, 'resolved' closes it.",
+					},
+				},
+				required: ["message"],
 				additionalProperties: false,
 			},
 		},
@@ -308,6 +330,19 @@ Decide the best single action.`;
 				action: "update_severity",
 				severity: args.severity as PromptDecision["severity"],
 			};
+		case "add_status_page_update": {
+			if (typeof args.message !== "string") {
+				return { action: "noop" };
+			}
+			if (args.status && !["investigating", "mitigating", "resolved"].includes(String(args.status))) {
+				return { action: "noop" };
+			}
+			return {
+				action: "add_status_page_update",
+				message: args.message,
+				affectionStatus: args.status as PromptDecision["affectionStatus"],
+			};
+		}
 		case "summarize":
 			return { action: "summarize" };
 		default:

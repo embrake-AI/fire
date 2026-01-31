@@ -100,6 +100,7 @@ export type SenderParams = {
 		sourceAdapter: "slack" | "dashboard";
 		event: Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
 		eventId: number;
+		eventMetadata?: Record<string, string>;
 	};
 	summaryResponse: {
 		step: StepDo;
@@ -219,6 +220,7 @@ async function dispatchEvent(step: WorkflowStep, env: Env, payload: WorkflowEven
 				...baseParams,
 				event: payload.event.event_data,
 				eventId: payload.event.event_id,
+				eventMetadata: payload.eventMetadata,
 			});
 		}
 		default: {

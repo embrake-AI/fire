@@ -162,7 +162,7 @@ export async function addPrompt<E extends BasicContext>({
 	identifier,
 	id,
 	prompt,
-	userId: _userId,
+	userId,
 	ts,
 	channel,
 	threadTs,
@@ -214,6 +214,20 @@ export async function addPrompt<E extends BasicContext>({
 			return;
 		}
 		await incident.setSeverity(severity, adapter, { promptTs: ts, promptChannel: channel });
+		return;
+	}
+
+	if (decision.action === "add_status_page_update") {
+		if (!decision.message) {
+			return;
+		}
+		await incident.updateAffection({
+			message: decision.message,
+			...(decision.affectionStatus ? { status: decision.affectionStatus } : {}),
+			createdBy: userId,
+			adapter,
+			eventMetadata: { promptTs: ts, promptChannel: channel },
+		});
 		return;
 	}
 
