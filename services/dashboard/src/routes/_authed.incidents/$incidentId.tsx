@@ -204,11 +204,11 @@ function IncidentDetail() {
 								<IncidentHeader incident={state} />
 								<Tabs value={activeTab()} onChange={(value) => setActiveTab(value as "updates" | "timeline")}>
 									<TabsList class="h-9">
-										<TabsTrigger value="updates" class="text-xs px-3 py-1 h-8 gap-2">
-											Status page updates
-										</TabsTrigger>
 										<TabsTrigger value="timeline" class="text-xs px-3 py-1 h-8 gap-2">
 											Timeline
+										</TabsTrigger>
+										<TabsTrigger value="updates" class="text-xs px-3 py-1 h-8 gap-2">
+											Status page updates
 										</TabsTrigger>
 										<TabsIndicator />
 									</TabsList>
