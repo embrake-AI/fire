@@ -10,9 +10,10 @@ import { isApexDomain, isValidDomain, normalizeDomain } from "./status-pages.uti
 type StatusPageRow = InferSelectModel<typeof statusPage>;
 type ServiceRow = InferSelectModel<typeof service>;
 
-export type StatusPageService = Pick<ServiceRow, "id" | "name" | "description" | "imageUrl"> & {
+export type StatusPageService = Pick<ServiceRow, "id" | "name" | "imageUrl"> & {
 	position: number | null;
 	createdAt: Date | null;
+	description: string | null;
 };
 
 export type StatusPageSummary = Pick<
@@ -68,13 +69,13 @@ export const getStatusPages = createServerFn({ method: "GET" })
 				serviceLinks: {
 					columns: {
 						position: true,
+						description: true,
 					},
 					with: {
 						service: {
 							columns: {
 								id: true,
 								name: true,
-								description: true,
 								imageUrl: true,
 								createdAt: true,
 							},
@@ -91,7 +92,7 @@ export const getStatusPages = createServerFn({ method: "GET" })
 				.map((link) => ({
 					id: link.service!.id,
 					name: link.service!.name,
-					description: link.service!.description,
+					description: link.description,
 					imageUrl: link.service!.imageUrl,
 					position: link.position,
 					createdAt: link.service!.createdAt,
@@ -364,6 +365,37 @@ export const updateStatusPageServices = createServerFn({ method: "POST" })
 				);
 			}
 		});
+
+		return { success: true };
+	});
+
+export const updateStatusPageServiceDescription = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
+	.inputValidator((data: { statusPageId: string; serviceId: string; description: string | null }) => data)
+	.handler(async ({ context, data }) => {
+		const page = await db.query.statusPage.findFirst({
+			where: {
+				id: data.statusPageId,
+				clientId: context.clientId,
+			},
+			columns: {
+				id: true,
+			},
+		});
+
+		if (!page) {
+			throw new Error("Status page not found");
+		}
+
+		const [updated] = await db
+			.update(statusPageService)
+			.set({ description: data.description?.trim() || null })
+			.where(and(eq(statusPageService.statusPageId, data.statusPageId), eq(statusPageService.serviceId, data.serviceId)))
+			.returning();
+
+		if (!updated) {
+			throw new Error("Service not found on status page");
+		}
 
 		return { success: true };
 	});

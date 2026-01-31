@@ -9,9 +9,10 @@ type IncidentAffectionRow = InferSelectModel<typeof incidentAffection>;
 type IncidentAffectionServiceRow = InferSelectModel<typeof incidentAffectionService>;
 type IncidentAffectionUpdateRow = InferSelectModel<typeof incidentAffectionUpdate>;
 
-export type StatusPageService = Pick<ServiceRow, "id" | "name" | "description" | "imageUrl"> & {
+export type StatusPageService = Pick<ServiceRow, "id" | "name" | "imageUrl"> & {
 	position: number | null;
 	createdAt: Date | null;
+	description: string | null;
 };
 
 export type StatusPageSummary = Pick<
@@ -76,13 +77,13 @@ async function buildStatusPagePublicData(pageRow: StatusPageRow): Promise<Status
 		},
 		columns: {
 			position: true,
+			description: true,
 		},
 		with: {
 			service: {
 				columns: {
 					id: true,
 					name: true,
-					description: true,
 					imageUrl: true,
 					createdAt: true,
 				},
@@ -97,7 +98,7 @@ async function buildStatusPagePublicData(pageRow: StatusPageRow): Promise<Status
 			return {
 				id: row.service.id,
 				name: row.service.name,
-				description: row.service.description,
+				description: row.description,
 				imageUrl: row.service.imageUrl,
 				position: row.position,
 				createdAt: row.service.createdAt,

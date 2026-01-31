@@ -1,5 +1,23 @@
 import { createFileRoute } from "@tanstack/solid-router";
-import { Activity, AlertTriangle, ArrowRight, Check, CheckCircle, ExternalLink, Flame, Globe, GripVertical, ImageOff, ImageUp, LoaderCircle, Pencil, Plus, Server, X } from "lucide-solid";
+import {
+	Activity,
+	AlertTriangle,
+	ArrowRight,
+	Check,
+	CheckCircle,
+	ClipboardCopy,
+	ExternalLink,
+	Flame,
+	Globe,
+	GripVertical,
+	ImageOff,
+	ImageUp,
+	LoaderCircle,
+	Pencil,
+	Plus,
+	Server,
+	X,
+} from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, Show, Suspense } from "solid-js";
 import { EntityPicker } from "~/components/EntityPicker";
 import { ImageUploadPicker } from "~/components/ImageUploadPicker";
@@ -13,7 +31,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover
 import { Skeleton } from "~/components/ui/skeleton";
 import { useClient } from "~/lib/client/client.hooks";
 import { useServices } from "~/lib/services/services.hooks";
-import { useStatusPages, useUpdateStatusPage, useUpdateStatusPageServices, useVerifyCustomDomain } from "~/lib/status-pages/status-pages.hooks";
+import {
+	useStatusPages,
+	useUpdateStatusPage,
+	useUpdateStatusPageServiceDescription,
+	useUpdateStatusPageServices,
+	useVerifyCustomDomain,
+} from "~/lib/status-pages/status-pages.hooks";
 import { isApexDomain, isValidDomain, normalizeDomain } from "~/lib/status-pages/status-pages.utils";
 import { useUploadImage } from "~/lib/uploads/uploads.hooks";
 import { cn } from "~/lib/utils/client";
@@ -223,7 +247,6 @@ function BrowserChrome(props: { page: StatusPageData }) {
 		}
 	};
 
-
 	return (
 		<>
 			<div class="flex items-center gap-3 px-4 py-3 bg-slate-100 border-b border-border">
@@ -319,9 +342,7 @@ function BrowserChrome(props: { page: StatusPageData }) {
 						<Globe class="w-4 h-4" />
 						<span class="hidden sm:inline">Custom domain</span>
 						<Show when={displayCustomDomain()}>
-							<span class="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700">
-								{displayCustomDomain()}
-							</span>
+							<span class="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700">{displayCustomDomain()}</span>
 						</Show>
 					</button>
 				</div>
@@ -383,11 +404,7 @@ function BrowserChrome(props: { page: StatusPageData }) {
 									<div
 										class={cn(
 											"w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium transition-colors",
-											wizardStep() === step
-												? "bg-blue-500 text-white"
-												: wizardStep() > step
-													? "bg-emerald-500 text-white"
-													: "bg-muted text-muted-foreground",
+											wizardStep() === step ? "bg-blue-500 text-white" : wizardStep() > step ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground",
 										)}
 									>
 										<Show when={wizardStep() > step} fallback={step}>
@@ -438,7 +455,14 @@ function BrowserChrome(props: { page: StatusPageData }) {
 								when={!normalizedCustomDomain() && displayCustomDomain()}
 								fallback={
 									<Button onClick={handleAddDomain} disabled={updateStatusPageMutation.isPending || !normalizedCustomDomain()}>
-										<Show when={updateStatusPageMutation.isPending} fallback={<>{displayCustomDomain() ? "Update" : "Add Domain"} <ArrowRight class="w-4 h-4 ml-1" /></>}>
+										<Show
+											when={updateStatusPageMutation.isPending}
+											fallback={
+												<>
+													{displayCustomDomain() ? "Update" : "Add Domain"} <ArrowRight class="w-4 h-4 ml-1" />
+												</>
+											}
+										>
 											<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
 											{displayCustomDomain() ? "Updating..." : "Adding..."}
 										</Show>
@@ -470,13 +494,20 @@ function BrowserChrome(props: { page: StatusPageData }) {
 									</div>
 									<div>
 										<div class="text-muted-foreground">Value / Target:</div>
-										<div class="font-mono text-foreground break-all">{statusCnameTarget}</div>
+										<div class="flex items-center gap-2">
+											<div class="font-mono text-foreground break-all">{statusCnameTarget}</div>
+											<button
+												type="button"
+												class="p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+												onClick={() => navigator.clipboard.writeText(statusCnameTarget)}
+											>
+												<ClipboardCopy class="w-3.5 h-3.5" />
+											</button>
+										</div>
 									</div>
 								</div>
 							</div>
-							<p class="text-xs text-muted-foreground">
-								DNS changes can take up to hours to propagate, but usually happen within a few minutes.
-							</p>
+							<p class="text-xs text-muted-foreground">DNS changes can take up to hours to propagate, but usually happen within a few minutes.</p>
 						</div>
 						<DialogFooter class="gap-2">
 							<Button variant="outline" onClick={() => setWizardStep(1)}>
@@ -494,10 +525,7 @@ function BrowserChrome(props: { page: StatusPageData }) {
 							<div class="rounded-lg border p-4 space-y-2">
 								<div class="flex items-center justify-between">
 									<span class="text-sm font-medium">{displayCustomDomain()}</span>
-									<Show
-										when={verificationStatus() !== "idle"}
-										fallback={<span class="text-xs text-muted-foreground">Not checked</span>}
-									>
+									<Show when={verificationStatus() !== "idle"} fallback={<span class="text-xs text-muted-foreground">Not checked</span>}>
 										<Show when={verificationStatus() === "checking"}>
 											<span class="flex items-center gap-1 text-xs text-muted-foreground">
 												<LoaderCircle class="w-3 h-3 animate-spin" />
@@ -519,14 +547,10 @@ function BrowserChrome(props: { page: StatusPageData }) {
 									</Show>
 								</div>
 								<Show when={verificationStatus() === "misconfigured"}>
-									<p class="text-xs text-muted-foreground">
-										DNS is not properly configured. Make sure you've added the CNAME record and wait for propagation.
-									</p>
+									<p class="text-xs text-muted-foreground">DNS is not properly configured. Make sure you've added the CNAME record and wait for propagation.</p>
 								</Show>
 								<Show when={verificationStatus() === "verified"}>
-									<p class="text-xs text-emerald-600">
-										Your custom domain is properly configured and ready to use.
-									</p>
+									<p class="text-xs text-emerald-600">Your custom domain is properly configured and ready to use.</p>
 								</Show>
 							</div>
 						</div>
@@ -545,9 +569,7 @@ function BrowserChrome(props: { page: StatusPageData }) {
 									</Button>
 								}
 							>
-								<Button onClick={handleCloseWizard}>
-									Done
-								</Button>
+								<Button onClick={handleCloseWizard}>Done</Button>
 							</Show>
 						</DialogFooter>
 					</Show>
@@ -752,9 +774,12 @@ function ServicesList(props: { page: StatusPageData }) {
 	const servicesQuery = useServices();
 	const updateServicesMutation = useUpdateStatusPageServices();
 	const updateStatusPageMutation = useUpdateStatusPage();
+	const updateDescriptionMutation = useUpdateStatusPageServiceDescription();
 
 	const [draggedId, setDraggedId] = createSignal<string | null>(null);
 	const [dropTargetIndex, setDropTargetIndex] = createSignal<number | null>(null);
+	const [activeServiceId, setActiveServiceId] = createSignal<string | null>(null);
+	const [descriptionInput, setDescriptionInput] = createSignal("");
 
 	const displayMode = () => props.page.serviceDisplayMode || "bars_percentage";
 
@@ -806,6 +831,16 @@ function ServicesList(props: { page: StatusPageData }) {
 		if (draggedId()) {
 			setDropTargetIndex(index);
 		}
+	};
+
+	const handleSaveDescription = async (serviceId: string) => {
+		await updateDescriptionMutation.mutateAsync({
+			statusPageId: props.page.id,
+			serviceId,
+			description: descriptionInput().trim() || null,
+		});
+		setActiveServiceId(null);
+		setDescriptionInput("");
 	};
 
 	return (
@@ -869,7 +904,58 @@ function ServicesList(props: { page: StatusPageData }) {
 											<GripVertical class="w-4 h-4 text-muted-foreground cursor-grab" />
 											<div class="flex-1 min-w-0">
 												<div class="flex items-center justify-between">
-													<p class="text-sm font-medium text-foreground truncate">{service.name?.trim() || "Untitled service"}</p>
+													<div class="flex items-center gap-1.5">
+														<p class="text-sm font-medium text-foreground truncate">{service.name?.trim() || "Untitled service"}</p>
+														<Popover>
+															<PopoverTrigger
+																as="button"
+																type="button"
+																class={cn(
+																	"w-4 h-4 rounded-full text-[10px] font-semibold flex items-center justify-center cursor-pointer transition-colors",
+																	service.description?.trim()
+																		? "text-slate-500 bg-slate-100 border border-slate-200 hover:bg-slate-200 hover:text-slate-600"
+																		: "text-muted-foreground/40 bg-muted/50 hover:bg-muted hover:text-muted-foreground",
+																)}
+																title={service.description?.trim() || "Add description"}
+															>
+																?
+															</PopoverTrigger>
+															<PopoverContent class="w-64 p-3">
+																<form
+																	class="space-y-2"
+																	onSubmit={(e) => {
+																		e.preventDefault();
+																		handleSaveDescription(service.id);
+																	}}
+																>
+																	<Label for={`service-description-${service.id}`} class="text-xs font-medium">
+																		Description
+																	</Label>
+																	<textarea
+																		id={`service-description-${service.id}`}
+																		value={activeServiceId() === service.id ? descriptionInput() : (service.description ?? "")}
+																		onInput={(e) => setDescriptionInput(e.currentTarget.value)}
+																		placeholder="e.g., Login page and auth systems"
+																		class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
+																		rows={3}
+																		autofocus
+																		onFocus={() => {
+																			setActiveServiceId(service.id);
+																			setDescriptionInput(service.description ?? "");
+																		}}
+																	/>
+																	<div class="flex justify-end">
+																		<Button type="submit" size="sm" disabled={updateDescriptionMutation.isPending}>
+																			<Show when={updateDescriptionMutation.isPending} fallback="Save">
+																				<LoaderCircle class="w-3 h-3 animate-spin mr-1" />
+																				Saving
+																			</Show>
+																		</Button>
+																	</div>
+																</form>
+															</PopoverContent>
+														</Popover>
+													</div>
 													<div class="flex items-center gap-2">
 														<Show when={displayMode() === "bars_percentage"}>
 															<span class="text-xs text-slate-400">100% uptime</span>
@@ -977,15 +1063,10 @@ function Footer(props: { page: StatusPageData }) {
 	};
 
 	return (
-			<div class="pt-8 space-y-3">
+		<div class="pt-8 space-y-3">
 			<div class="flex items-center justify-between text-xs text-muted-foreground">
 				<span class="flex items-center gap-1.5">&larr; Incident History</span>
-				<a
-					href={appOrigin}
-					class="flex items-center gap-1.5 hover:text-muted-foreground transition-colors"
-					target="_blank"
-					rel="noreferrer"
-				>
+				<a href={appOrigin} class="flex items-center gap-1.5 hover:text-muted-foreground transition-colors" target="_blank" rel="noreferrer">
 					Powered by <Flame class="w-3.5 h-3.5 text-orange-500" />
 				</a>
 			</div>

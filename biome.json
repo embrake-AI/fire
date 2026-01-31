@@ -20,8 +20,10 @@
 			"!!**/.turbo",
 			"!!**/.wrangler",
 			"!!**/.output",
+			"!!**/.next",
 			"!!**/node_modules",
-			"!!**/*.gen.ts"
+			"!!**/*.gen.ts",
+			"!!**/*.zed"
 		]
 	},
 	"formatter": {

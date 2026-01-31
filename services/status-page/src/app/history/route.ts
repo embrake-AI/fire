@@ -1,7 +1,7 @@
+import type { NextRequest } from "next/server";
 import { buildIncidentHistoryResponse } from "@/lib/status-pages.render";
 import { fetchIncidentHistoryByDomain } from "@/lib/status-pages.server";
 import { normalizeDomain } from "@/lib/status-pages.utils";
-import type { NextRequest } from "next/server";
 
 export const revalidate = 30;
 

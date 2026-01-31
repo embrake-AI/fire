@@ -36,6 +36,7 @@ export const statusPageService = pgTable(
 			.notNull()
 			.references(() => service.id, { onDelete: "cascade" }),
 		position: integer("position"),
+		description: text("description"),
 	},
 	(table) => [
 		primaryKey({ columns: [table.statusPageId, table.serviceId] }),

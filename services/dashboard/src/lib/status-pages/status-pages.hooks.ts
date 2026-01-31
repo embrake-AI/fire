@@ -2,7 +2,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
 import type { getServices } from "../services/services";
-import { createStatusPage, deleteStatusPage, getStatusPages, updateStatusPage, updateStatusPageServices, verifyCustomDomain } from "./status-pages";
+import {
+	createStatusPage,
+	deleteStatusPage,
+	getStatusPages,
+	updateStatusPage,
+	updateStatusPageServiceDescription,
+	updateStatusPageServices,
+	verifyCustomDomain,
+} from "./status-pages";
 
 type GetStatusPagesResponse = Awaited<ReturnType<typeof getStatusPages>>;
 type GetServicesResponse = Awaited<ReturnType<typeof getServices>>;
@@ -200,7 +208,7 @@ export function useUpdateStatusPageServices(options?: { onSuccess?: () => void; 
 									serviceLookup.set(service.id, {
 										id: service.id,
 										name: service.name,
-										description: service.description,
+										description: null,
 										imageUrl: service.imageUrl,
 										createdAt: service.createdAt,
 									});
@@ -231,6 +239,53 @@ export function useUpdateStatusPageServices(options?: { onSuccess?: () => void; 
 		},
 
 		onSuccess: (_result, _variables) => {
+			options?.onSuccess?.();
+			queryClient.invalidateQueries({ queryKey: ["status-pages"] });
+		},
+
+		onError: (_err, _variables, context) => {
+			if (context?.previousStatusPages) {
+				queryClient.setQueryData(["status-pages"], context.previousStatusPages);
+			}
+			options?.onError?.();
+		},
+	}));
+}
+
+export function useUpdateStatusPageServiceDescription(options?: { onSuccess?: () => void; onError?: () => void }) {
+	const queryClient = useQueryClient();
+	const updateStatusPageServiceDescriptionFn = useServerFn(updateStatusPageServiceDescription);
+
+	return useMutation(() => ({
+		mutationFn: (data: { statusPageId: string; serviceId: string; description: string | null }) => updateStatusPageServiceDescriptionFn({ data }),
+
+		onMutate: async (data) => {
+			await queryClient.cancelQueries({ queryKey: ["status-pages"] });
+
+			const previousStatusPages = queryClient.getQueryData<GetStatusPagesResponse>(["status-pages"]);
+
+			if (previousStatusPages) {
+				queryClient.setQueryData<GetStatusPagesResponse>(["status-pages"], (old) =>
+					old?.map((page) => {
+						if (page.id !== data.statusPageId) return page;
+						return {
+							...page,
+							services: page.services.map((service) => {
+								if (service.id !== data.serviceId) return service;
+								return {
+									...service,
+									description: data.description?.trim() || null,
+								};
+							}),
+						};
+					}),
+				);
+			}
+
+			return { previousStatusPages };
+		},
+
+		onSuccess: () => {
 			options?.onSuccess?.();
 			queryClient.invalidateQueries({ queryKey: ["status-pages"] });
 		},

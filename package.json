@@ -24,10 +24,10 @@
 		"build:dashboard": "turbo run build --filter dashboard...",
 		"build:incidentd": "turbo run build --filter incidentd...",
 		"build:status-page": "turbo run build --filter status-page...",
-		"check": "turbo run type-check lint",
+		"check": "turbo run type-check && biome check",
 		"type-check": "turbo run type-check",
-		"lint": "turbo run lint",
-		"lint:fix": "turbo run lint -- --fix",
+		"lint": "biome check",
+		"lint:fix": "biome check --fix",
 		"clean": "turbo run clean && rm -rf node_modules",
 		"db:generate": "bun --filter @fire/db db:generate",
 		"db:migrate": "bun --filter @fire/db db:migrate"

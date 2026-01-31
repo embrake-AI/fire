@@ -9,7 +9,7 @@
 		"start": "wrangler dev",
 		"cf-typegen": "wrangler types",
 		"type-check": "bunx tsc --noEmit",
-		"lint": "biome check",
+		"lint": "echo 'Lint runs from root'",
 		"clean": "rm -rf node_modules .wrangler"
 	},
 	"devDependencies": {

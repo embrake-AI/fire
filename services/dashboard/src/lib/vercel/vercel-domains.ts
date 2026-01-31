@@ -1,7 +1,7 @@
 import { Vercel } from "@vercel/sdk";
 
 const vercel = new Vercel({ bearerToken: process.env.VERCEL_TOKEN });
-const projectId = process.env.VERCEL_PROJECT_ID!;
+const projectId = process.env.VERCEL_STATUS_PROJECT_ID!;
 
 export type DomainConfig = {
 	verified: boolean;
@@ -31,7 +31,7 @@ export async function removeDomainFromVercel(domain: string): Promise<void> {
 }
 
 export async function getDomainConfig(domain: string): Promise<DomainConfig> {
-	const config = await vercel.domains.getDomainConfig({ domain });
+	const config = await vercel.domains.getDomainConfig({ domain, projectIdOrName: projectId });
 	return {
 		verified: !config.misconfigured,
 		misconfigured: config.misconfigured,

@@ -1,7 +1,7 @@
+import type { NextRequest } from "next/server";
 import { buildStatusPageResponse } from "@/lib/status-pages.render";
 import { fetchPublicStatusPageByDomain } from "@/lib/status-pages.server";
 import { normalizeDomain } from "@/lib/status-pages.utils";
-import type { NextRequest } from "next/server";
 
 export const revalidate = 30;
 

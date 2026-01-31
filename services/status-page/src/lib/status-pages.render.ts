@@ -80,9 +80,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 	};
 
 	const getLastUpdate = (affectionId: string) => {
-		const affectionUpdates = updates
-			.filter((u) => u.affectionId === affectionId)
-			.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+		const affectionUpdates = updates.filter((u) => u.affectionId === affectionId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 		return affectionUpdates[0] ?? null;
 	};
 
@@ -101,18 +99,14 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 				</div>`;
 		}
 
-		const sortedActiveAffections = [...activeAffections].sort(
-			(a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-		);
+		const sortedActiveAffections = [...activeAffections].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
 		const incidentCards = sortedActiveAffections
 			.map((affection) => {
 				const severity = getAffectionSeverity(affection);
 				const colors = severityColors[severity];
 				const lastUpdate = getLastUpdate(affection.id);
-				const affectedServiceNames = affection.services
-					.map((s) => services.find((svc) => svc.id === s.id)?.name ?? "Unknown")
-					.slice(0, 3);
+				const affectedServiceNames = affection.services.map((s) => services.find((svc) => svc.id === s.id)?.name ?? "Unknown").slice(0, 3);
 				const moreCount = affection.services.length - 3;
 
 				return `
@@ -238,11 +232,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 					</div>`);
 			} else {
 				const dayStatus = getDayStatus(serviceId, dayDate);
-				const tooltipStatusClass = dayStatus.hasIncident
-					? dayStatus.impact === "major"
-						? "tooltip-major"
-						: "tooltip-partial"
-					: "tooltip-operational";
+				const tooltipStatusClass = dayStatus.hasIncident ? (dayStatus.impact === "major" ? "tooltip-major" : "tooltip-partial") : "tooltip-operational";
 				const tooltipIcon = dayStatus.hasIncident
 					? `<svg class="tooltip-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
 							<path d="M8 0C3.589 0 0 3.589 0 8C0 12.411 3.589 16 8 16C12.411 16 16 12.411 16 8C16 3.589 12.411 0 8 0ZM7 4C7 3.448 7.447 3 8 3C8.553 3 9 3.448 9 4V9C9 9.552 8.553 10 8 10C7.447 10 7 9.552 7 9V4ZM8 13C7.447 13 7 12.552 7 12C7 11.448 7.447 11 8 11C8.553 11 9 11.448 9 12C9 12.552 8.553 13 8 13Z" fill="currentColor"/>
@@ -250,9 +240,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 					: `<svg class="tooltip-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
 							<path d="M8 0C3.589 0 0 3.589 0 8C0 12.411 3.589 16 8 16C12.411 16 16 12.411 16 8C16 3.589 12.411 0 8 0ZM11.947 5.641C10.088 7.023 8.512 8.931 7.264 11.31C7.135 11.557 6.879 11.712 6.6 11.712C6.323 11.715 6.062 11.555 5.933 11.305C5.358 10.188 4.715 9.28 3.968 8.529C3.676 8.236 3.677 7.76 3.971 7.468C4.263 7.176 4.739 7.176 5.032 7.471C5.605 8.047 6.122 8.699 6.595 9.443C7.834 7.398 9.329 5.717 11.053 4.436C11.385 4.19 11.855 4.258 12.102 4.591C12.349 4.923 12.28 5.394 11.947 5.641Z" fill="currentColor"/>
 						</svg>`;
-				const tooltipText = dayStatus.hasIncident
-					? escapeHtml(dayStatus.incidentTitle || "Incident")
-					: "No incidents";
+				const tooltipText = dayStatus.hasIncident ? escapeHtml(dayStatus.incidentTitle || "Incident") : "No incidents";
 
 				bars.push(`
 					<div class="uptime-bar flex-1 h-4 rounded-sm ${dayStatus.color} min-w-0.75 cursor-pointer">
@@ -313,11 +301,22 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 			const showBars = displayMode === "bars" || displayMode === "bars_percentage";
 			const showPercentage = displayMode === "bars_percentage";
 			const uptime = calculateUptime(service.id, service.createdAt);
+			const hasDescription = !!service.description?.trim();
 
 			return `
 					<div class="rounded-lg border border-slate-200 bg-white p-4">
 						<div class="flex items-center justify-between">
-							<span class="text-sm font-medium text-slate-900">${escapeHtml(service.name?.trim() || "Untitled service")}</span>
+							<div class="flex items-center gap-1.5">
+								<span class="text-sm font-medium text-slate-900">${escapeHtml(service.name?.trim() || "Untitled service")}</span>
+								${
+									hasDescription
+										? `<div class="service-info-tooltip">
+											<button type="button" class="service-info-btn" tabindex="0" aria-label="More information about ${escapeHtml(service.name?.trim() || "this service")}">?</button>
+											<div class="service-info-content">${escapeHtml(service.description!)}</div>
+										</div>`
+										: ""
+								}
+							</div>
 							<div class="flex items-center gap-2">
 								${showPercentage ? `<span class="text-xs text-slate-400">${uptime}% uptime</span>` : ""}
 								<div class="flex items-center gap-1.5">
@@ -446,6 +445,78 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 			right: 12px;
 			transform: translateX(0);
 		}
+		/* Service info tooltip */
+		.service-info-tooltip {
+			position: relative;
+			display: inline-flex;
+		}
+		.service-info-btn {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 16px;
+			height: 16px;
+			font-size: 11px;
+			font-weight: 600;
+			color: #64748b;
+			background: #f1f5f9;
+			border: 1px solid #e2e8f0;
+			border-radius: 50%;
+			cursor: pointer;
+			transition: all 0.15s;
+		}
+		.service-info-btn:hover,
+		.service-info-btn:focus {
+			color: #475569;
+			background: #e2e8f0;
+			border-color: #cbd5e1;
+			outline: none;
+		}
+		.service-info-content {
+			position: absolute;
+			top: calc(100% + 8px);
+			left: 50%;
+			transform: translateX(-50%);
+			background: white;
+			border: 1px solid #e2e8f0;
+			border-radius: 8px;
+			padding: 8px 12px;
+			box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+			white-space: normal;
+			max-width: 250px;
+			min-width: 150px;
+			z-index: 50;
+			opacity: 0;
+			visibility: hidden;
+			transition: opacity 0.15s, visibility 0.15s;
+			pointer-events: none;
+			font-size: 13px;
+			color: #475569;
+			line-height: 1.4;
+		}
+		.service-info-content::before {
+			content: '';
+			position: absolute;
+			bottom: 100%;
+			left: 50%;
+			transform: translateX(-50%);
+			border: 6px solid transparent;
+			border-bottom-color: #e2e8f0;
+		}
+		.service-info-content::after {
+			content: '';
+			position: absolute;
+			bottom: 100%;
+			left: 50%;
+			transform: translateX(-50%);
+			border: 5px solid transparent;
+			border-bottom-color: white;
+		}
+		.service-info-tooltip:hover .service-info-content,
+		.service-info-btn:focus + .service-info-content {
+			opacity: 1;
+			visibility: visible;
+		}
 	</style>
 </head>
 <body class="bg-linear-to-b from-slate-50 to-white min-h-screen flex flex-col">
@@ -508,11 +579,7 @@ export function buildStatusPageResponse(data: StatusPagePublicData, basePath = "
 	});
 }
 
-function renderBaseHtml(options: {
-	title: string;
-	faviconUrl?: string | null;
-	content: string;
-}): string {
+function renderBaseHtml(options: { title: string; faviconUrl?: string | null; content: string }): string {
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -577,9 +644,7 @@ function renderIncidentHistoryHtml(data: IncidentHistoryData, basePath = ""): st
 					.map((incident) => {
 						const colors = severityColors[incident.severity];
 						const isResolved = !!incident.resolvedAt;
-						const dateRange = isResolved
-							? `${formatDate(incident.createdAt)} - ${formatDate(incident.resolvedAt!)}`
-							: `Started ${formatDate(incident.createdAt)}`;
+						const dateRange = isResolved ? `${formatDate(incident.createdAt)} - ${formatDate(incident.resolvedAt!)}` : `Started ${formatDate(incident.createdAt)}`;
 
 						return `
 				<a href="${basePath}/history/${incident.id}" class="block rounded-lg border ${isResolved ? "border-slate-200 bg-white" : `${colors.border} ${colors.bg}`} p-4 hover:shadow-md transition-shadow">
