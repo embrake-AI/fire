@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/solid-router";
-import { Activity, Check, ExternalLink, Flame, Globe, GripVertical, ImageUp, LoaderCircle, Pencil, Plus, Server, X } from "lucide-solid";
+import { Activity, Check, ExternalLink, Flame, Globe, GripVertical, ImageOff, ImageUp, LoaderCircle, Pencil, Plus, Server, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, Show, Suspense } from "solid-js";
 import { EntityPicker } from "~/components/EntityPicker";
 import { ImageUploadPicker } from "~/components/ImageUploadPicker";
@@ -195,7 +195,7 @@ function BrowserChrome(props: { page: StatusPageData }) {
 										setIsEditingFavicon(true);
 									}}
 								>
-									<Show when={props.page.faviconUrl} fallback={<Flame class="w-4 h-4 text-orange-500" />}>
+									<Show when={props.page.faviconUrl} fallback={<ImageOff class="w-4 h-4 text-rose-500" />}>
 										{(url) => <img src={url()} alt="Favicon" class="w-4 h-4 object-contain" />}
 									</Show>
 								</button>
@@ -225,7 +225,7 @@ function BrowserChrome(props: { page: StatusPageData }) {
 									setIsEditingFavicon(true);
 								}}
 							>
-								<Show when={props.page.faviconUrl} fallback={<Flame class="w-4 h-4 text-orange-500" />}>
+								<Show when={props.page.faviconUrl} fallback={<ImageOff class="w-4 h-4 text-rose-500" />}>
 									{(url) => <img src={url()} alt="Favicon" class="w-4 h-4 object-contain" />}
 								</Show>
 							</button>
