@@ -807,13 +807,7 @@ function SubscribeButton(props: { page: StatusPageData }) {
 						<Label for="status-page-support-url" class="text-xs font-medium">
 							Support site URL
 						</Label>
-						<Input
-							id="status-page-support-url"
-							type="url"
-							placeholder="https://help.example.com"
-							value={supportUrl()}
-							onInput={(e) => setSupportUrl(e.currentTarget.value)}
-						/>
+						<Input id="status-page-support-url" type="url" placeholder="https://help.example.com" value={supportUrl()} onInput={(e) => setSupportUrl(e.currentTarget.value)} />
 						<Show when={!hasSupportUrl() && !supportUrl().trim()}>
 							<p class="text-xs text-amber-600">Without a URL, this link won't appear on the public page.</p>
 						</Show>
