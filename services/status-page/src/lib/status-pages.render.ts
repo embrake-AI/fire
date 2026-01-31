@@ -13,8 +13,8 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 	const faviconUrl = page.faviconUrl;
 	const displayMode = page.serviceDisplayMode || "bars_percentage";
 	const historyFeedPaths = {
-		rss: `${basePath}/history/feed?format=rss`,
-		atom: `${basePath}/history/feed?format=atom`,
+		rss: `${basePath}/history/feed.rss`,
+		atom: `${basePath}/history/feed.atom`,
 	};
 	const subscribePopover = renderSubscribePopover({ feedPaths: historyFeedPaths, supportUrl: page.supportUrl });
 
@@ -663,7 +663,6 @@ function renderSubscribePopover(options: { feedPaths: { rss: string; atom: strin
 							<div class="text-[10px] font-medium text-slate-500 uppercase tracking-wide">RSS</div>
 							<div class="mt-1.5 flex items-center gap-1.5">
 								<input data-feed-path="${options.feedPaths.rss}" readonly class="flex-1 min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700" aria-label="RSS feed url">
-								<a href="${options.feedPaths.rss}" target="_blank" rel="noopener" class="px-2 py-1 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50 shrink-0">Open</a>
 								<button type="button" data-copy-input class="px-2 py-1 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50 shrink-0">Copy</button>
 							</div>
 						</div>
@@ -671,7 +670,6 @@ function renderSubscribePopover(options: { feedPaths: { rss: string; atom: strin
 							<div class="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Atom</div>
 							<div class="mt-1.5 flex items-center gap-1.5">
 								<input data-feed-path="${options.feedPaths.atom}" readonly class="flex-1 min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700" aria-label="Atom feed url">
-								<a href="${options.feedPaths.atom}" target="_blank" rel="noopener" class="px-2 py-1 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50 shrink-0">Open</a>
 								<button type="button" data-copy-input class="px-2 py-1 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50 shrink-0">Copy</button>
 							</div>
 						</div>
@@ -910,8 +908,8 @@ function renderIncidentDetailHtml(data: IncidentDetailData, basePath = ""): stri
 	const logoUrl = page.logoUrl || page.clientImage;
 	const isResolved = !!incident.resolvedAt;
 	const feedPaths = {
-		rss: `${basePath}/history/${incident.id}/feed?format=rss`,
-		atom: `${basePath}/history/${incident.id}/feed?format=atom`,
+		rss: `${basePath}/history/${incident.id}/feed.rss`,
+		atom: `${basePath}/history/${incident.id}/feed.atom`,
 	};
 
 	const severityColors = {

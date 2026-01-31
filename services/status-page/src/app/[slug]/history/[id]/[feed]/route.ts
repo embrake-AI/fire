@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
-import { buildHistoryFeedResponse, normalizeFeedFormat } from "@/lib/status-pages.feed";
-import { fetchIncidentHistoryBySlug } from "@/lib/status-pages.server";
+import { buildIncidentFeedResponse, type FeedFormat } from "@/lib/status-pages.feed";
+import { fetchIncidentDetailBySlug } from "@/lib/status-pages.server";
 import { normalizeDomain } from "@/lib/status-pages.utils";
 
 export const revalidate = 30;
@@ -21,10 +21,16 @@ function getRequestOrigin(request: NextRequest): string | null {
 	return `${protocol}://${rawHost}`;
 }
 
+function parseFeedFormat(feed: string): FeedFormat | null {
+	if (feed === "feed.rss") return "rss";
+	if (feed === "feed.atom") return "atom";
+	return null;
+}
+
 const PRIMARY_DOMAIN = process.env.VITE_STATUS_PAGE_DOMAIN ?? "";
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
-	const { slug } = await params;
+export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string; id: string; feed: string }> }) {
+	const { slug, id, feed } = await params;
 	const host = getRequestHost(request);
 
 	if (!PRIMARY_DOMAIN) {
@@ -35,18 +41,22 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 		return new Response("Not found", { status: 404 });
 	}
 
-	const data = await fetchIncidentHistoryBySlug(slug);
+	const format = parseFeedFormat(feed);
+	if (!format) {
+		return new Response("Not found", { status: 404 });
+	}
+
+	const data = await fetchIncidentDetailBySlug(slug, id);
 
 	if (!data) {
 		return new Response("Not found", { status: 404 });
 	}
 
 	const origin = getRequestOrigin(request) ?? request.nextUrl.origin;
-	const siteUrl = new URL(`/${slug}`, origin).toString();
-	const feedUrl = new URL(request.nextUrl.pathname + request.nextUrl.search, origin).toString();
-	const format = normalizeFeedFormat(request.nextUrl.searchParams.get("format"));
+	const siteUrl = new URL(`/${slug}/history/${id}`, origin).toString();
+	const feedUrl = new URL(request.nextUrl.pathname, origin).toString();
 
-	return buildHistoryFeedResponse({
+	return buildIncidentFeedResponse({
 		data,
 		format,
 		feedUrl,
