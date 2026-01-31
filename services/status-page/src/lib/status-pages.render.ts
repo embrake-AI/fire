@@ -13,8 +13,8 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 	const faviconUrl = page.faviconUrl;
 	const displayMode = page.serviceDisplayMode || "bars_percentage";
 	const historyFeedPaths = {
-		rss: `${basePath}/history/feed.rss`,
-		atom: `${basePath}/history/feed.atom`,
+		rss: `${basePath}/feed.rss`,
+		atom: `${basePath}/feed.atom`,
 	};
 	const subscribePopover = renderSubscribePopover({ feedPaths: historyFeedPaths, supportUrl: page.supportUrl });
 
@@ -908,8 +908,8 @@ function renderIncidentDetailHtml(data: IncidentDetailData, basePath = ""): stri
 	const logoUrl = page.logoUrl || page.clientImage;
 	const isResolved = !!incident.resolvedAt;
 	const feedPaths = {
-		rss: `${basePath}/history/${incident.id}/feed.rss`,
-		atom: `${basePath}/history/${incident.id}/feed.atom`,
+		rss: `${basePath}/feed.rss`,
+		atom: `${basePath}/feed.atom`,
 	};
 
 	const severityColors = {
