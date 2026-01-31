@@ -31,9 +31,23 @@ export async function removeDomainFromVercel(domain: string): Promise<void> {
 }
 
 export async function getDomainConfig(domain: string): Promise<DomainConfig> {
-	const config = await vercel.domains.getDomainConfig({ domain, projectIdOrName: projectId });
+	// Get domain details from project to check ownership verification
+	const domainInfo = await vercel.projects.getProjectDomain({
+		idOrName: projectId,
+		domain,
+	});
+
+	// Get DNS configuration status
+	const config = await vercel.domains.getDomainConfig({ domain });
+
+	// Domain is only fully verified when:
+	// 1. Ownership is verified (no verification needed)
+	// 2. DNS is properly configured (not misconfigured)
+	const ownershipVerified = domainInfo.verified === true;
+	const dnsConfigured = !config.misconfigured;
+
 	return {
-		verified: !config.misconfigured,
-		misconfigured: config.misconfigured,
+		verified: ownershipVerified && dnsConfigured,
+		misconfigured: !ownershipVerified || config.misconfigured,
 	};
 }
