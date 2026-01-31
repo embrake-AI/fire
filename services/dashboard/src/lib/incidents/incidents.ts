@@ -21,6 +21,8 @@ export const getIncidents = createServerFn({
 	});
 
 export type IncidentEvent = IS_Event & { id: number; created_at: string; adapter: "slack" | "dashboard" };
+export type IncidentTimelineItem = { created_at: string; text: string };
+export type IncidentAction = { id: string; description: string };
 
 export const getIncidentById = createServerFn({ method: "GET" })
 	.inputValidator((data: { id: string }) => data)
@@ -322,22 +324,45 @@ export const getAnalysisById = createServerFn({ method: "GET" })
 	.inputValidator((data: { id: string }) => data)
 	.middleware([authMiddleware])
 	.handler(async ({ data, context }) => {
-		const [analysis] = await db
-			.select()
-			.from(incidentAnalysis)
-			.where(and(eq(incidentAnalysis.id, data.id), eq(incidentAnalysis.clientId, context.clientId)));
+		const analysis = await db.query.incidentAnalysis.findFirst({
+			where: {
+				id: data.id,
+				clientId: context.clientId,
+			},
+			with: {
+				actions: {
+					columns: {
+						id: true,
+						description: true,
+					},
+					orderBy: (actions, { asc }) => [asc(actions.createdAt)],
+				},
+			},
+		});
 
 		// Return null if not found - analysis might still be calculating
-		return analysis ?? null;
+		if (!analysis) {
+			return null;
+		}
+		return analysis;
 	});
 
-export type IncidentAnalysis = NonNullable<Awaited<ReturnType<typeof getAnalysisById>>>;
+export type IncidentAnalysisRow = typeof incidentAnalysis.$inferSelect;
+export type IncidentAnalysis = IncidentAnalysisRow & { actions: IncidentAction[] };
 
-export function computeIncidentMetrics(analysis: IncidentAnalysis) {
+export function computeIncidentMetrics(analysis: IncidentAnalysisRow) {
 	const events = analysis.events;
+	if (!events.length) {
+		return {
+			timeToFirstResponse: null,
+			timeToAssigneeResponse: null,
+			timeToMitigate: null,
+			totalDuration: null,
+		};
+	}
 
 	// assumes events are ordered
-	const startedAt = new Date(analysis.events[0].created_at).getTime();
+	const startedAt = new Date(events[0].created_at).getTime();
 
 	let timeToFirstResponse: number | null = null;
 	let timeToAssigneeResponse: number | null = null;
@@ -352,7 +377,7 @@ export function computeIncidentMetrics(analysis: IncidentAnalysis) {
 			if (timeToFirstResponse === null) {
 				timeToFirstResponse = new Date(event.created_at).getTime() - startedAt;
 			}
-			if (assignees.has(event.event_data.userId)) {
+			if (timeToAssigneeResponse === null && assignees.has(event.event_data.userId)) {
 				assignees.add(event.event_data.userId);
 				timeToAssigneeResponse = new Date(event.created_at).getTime() - startedAt;
 			}

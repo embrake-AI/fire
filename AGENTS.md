@@ -14,7 +14,7 @@ bun add <package>        # Add a dependency
 bun run dev              # Start all dev servers - RUN IT TO UPDATE `routeTree.gen.ts`, do not edit manually
 
 # Building
-bun run build            # Build all services
+bun run build            # Build all services. - RUN TO UPDATE TYPES, for example when modifying packages/*
 
 # Code Quality
 bun run check            # Run both type-check and lint - RUN IT ALWAYS BEFORE COMMITTING

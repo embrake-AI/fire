@@ -17,6 +17,7 @@ declare namespace Cloudflare {
 		incidentd: Service<typeof import("./src/index").default>;
 		db: Hyperdrive;
 		INCIDENT_WORKFLOW: Workflow<Parameters<import("./src/index").IncidentWorkflow['run']>[0]['payload']>;
+		INCIDENT_ANALYSIS_WORKFLOW: Workflow<Parameters<import("./src/index").IncidentAnalysisWorkflow['run']>[0]['payload']>;
 	}
 }
 interface Env extends Cloudflare.Env {}

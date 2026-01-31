@@ -27,6 +27,11 @@
 			"binding": "INCIDENT_WORKFLOW",
 			"class_name": "IncidentWorkflow",
 		},
+		{
+			"name": "incident-analysis-workflow",
+			"binding": "INCIDENT_ANALYSIS_WORKFLOW",
+			"class_name": "IncidentAnalysisWorkflow",
+		},
 	],
 	"observability": {
 		"enabled": true,

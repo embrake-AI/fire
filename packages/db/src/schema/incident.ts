@@ -1,5 +1,5 @@
 import type { IS_Event } from "@fire/common";
-import { jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { client } from "./auth";
 import { entryPoint } from "./entry-point";
 import { rotation } from "./rotation";
@@ -15,6 +15,11 @@ export type IncidentEventData = IS_Event & {
 	id: number;
 	adapter: "slack" | "dashboard";
 	created_at: string;
+};
+
+export type IncidentTimelineItem = {
+	created_at: string;
+	text: string;
 };
 
 /**
@@ -34,6 +39,9 @@ export const incidentAnalysis = pgTable("incident_analysis", {
 	source: incidentSource("source").notNull(),
 	prompt: text("prompt").notNull(),
 	summary: text("summary").notNull(),
+	timeline: jsonb("timeline").$type<IncidentTimelineItem[]>(),
+	rootCause: text("root_cause"),
+	impact: text("impact"),
 	events: jsonb("events").$type<IncidentEventData[]>().notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 	resolvedAt: timestamp("resolved_at", { withTimezone: true }).defaultNow().notNull(),
@@ -41,3 +49,16 @@ export const incidentAnalysis = pgTable("incident_analysis", {
 	rotationId: uuid("rotation_id").references(() => rotation.id, { onDelete: "set null" }),
 	teamId: uuid("team_id").references(() => team.id, { onDelete: "set null" }),
 });
+
+export const incidentAction = pgTable(
+	"incident_action",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		incidentId: text("incident_id")
+			.notNull()
+			.references(() => incidentAnalysis.id, { onDelete: "cascade" }),
+		description: text("description").notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(table) => [index("incident_action_incident_idx").on(table.incidentId)],
+);

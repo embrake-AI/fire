@@ -1,4 +1,4 @@
-import type { EntryPoint, EventLog, IS } from "@fire/common";
+import type { EntryPoint, IS, IS_Event } from "@fire/common";
 import { ASSERT } from "../lib/utils";
 
 type IncidentInfo = {
@@ -6,6 +6,18 @@ type IncidentInfo = {
 	severity: IS["severity"];
 	title: string;
 	description: string;
+};
+
+type IncidentPostmortemTimelineItem = {
+	created_at: string;
+	text: string;
+};
+
+export type IncidentPostmortem = {
+	timeline: IncidentPostmortemTimelineItem[];
+	rootCause: string;
+	impact: string;
+	actions: string[];
 };
 
 export type PromptDecision = {
@@ -121,6 +133,46 @@ Your summary should:
 
 Keep the summary to 2-5 sentences, focusing on the most important aspects.`;
 
+const POSTMORTEM_SYSTEM_PROMPT = `You are an incident post-mortem analyst. Given incident details and a timeline of events, produce a structured post-mortem.
+
+Requirements:
+- timeline: pick the most important events (chronological). Each item needs "created_at" (ISO 8601) and "text" (short sentence).
+- rootCause: concise paragraph. If unclear, say "Root cause not determined from available data."
+- impact: concise paragraph describing what was impacted and severity.
+- actions: 0-6 concrete follow-ups written as short imperative sentences.
+
+Do not include markdown. Only use the information provided.`;
+
+const POSTMORTEM_RESPONSE_SCHEMA = {
+	type: "object",
+	properties: {
+		timeline: {
+			type: "array",
+			items: {
+				type: "object",
+				properties: {
+					created_at: { type: "string", description: "ISO 8601 timestamp" },
+					text: { type: "string" },
+				},
+				required: ["created_at", "text"],
+				additionalProperties: false,
+			},
+			minItems: 2,
+			maxItems: 10,
+		},
+		rootCause: { type: "string" },
+		impact: { type: "string" },
+		actions: {
+			type: "array",
+			items: { type: "string" },
+			minItems: 0,
+			maxItems: 10,
+		},
+	},
+	required: ["timeline", "rootCause", "impact", "actions"],
+	additionalProperties: false,
+} as const;
+
 const PROMPT_DECISION_SYSTEM_PROMPT = `You are an incident operations assistant. Given a user's @fire prompt and the current incident status/severity, decide the single best action:
 
 - update_status: only if the user explicitly asks to mark the incident as mitigating or resolved.
@@ -213,10 +265,15 @@ const PROMPT_DECISION_TOOLS = [
 
 export async function generateIncidentSummary(
 	incident: { title: string; description: string; severity: IS["severity"]; prompt: string },
-	events: Pick<EventLog, "event_type" | "event_data" | "created_at">[],
+	events: Array<{ event_type: IS_Event["event_type"]; event_data: IS_Event["event_data"] | string; created_at: string }>,
 	openaiApiKey: string,
 ): Promise<string> {
-	const eventDescriptions = events.map((e) => `[${e.created_at}] ${e.event_type}: ${e.event_data}`).join("\n");
+	const eventDescriptions = events
+		.map((e) => {
+			const data = typeof e.event_data === "string" ? e.event_data : JSON.stringify(e.event_data);
+			return `[${e.created_at}] ${e.event_type}: ${data}`;
+		})
+		.join("\n");
 
 	const userMessage = `Incident: ${incident.title}
 Description: ${incident.description}
@@ -256,6 +313,80 @@ Generate a summary of this incident.`;
 	ASSERT(content, "No response content from OpenAI");
 
 	return content;
+}
+
+function extractStatus(event: { event_type: string; event_data: unknown }) {
+	if (event.event_type !== "STATUS_UPDATE") return null;
+	const data = event.event_data as { status?: string };
+	return typeof data?.status === "string" ? data.status : null;
+}
+
+export async function generateIncidentPostmortem(
+	incident: { title: string; description: string; severity: IS["severity"]; prompt: string; createdAt: Date },
+	events: Array<{ event_type: IS_Event["event_type"]; event_data: IS_Event["event_data"]; created_at: string }>,
+	openaiApiKey: string,
+): Promise<IncidentPostmortem> {
+	const startedAt = events[0]?.created_at ?? null;
+	const firstResponseAt = events.find((event) => event.event_type === "MESSAGE_ADDED")?.created_at ?? null;
+	const mitigatedAt = events.find((event) => extractStatus(event) === "mitigating")?.created_at ?? null;
+	const resolvedAt = [...events].reverse().find((event) => extractStatus(event) === "resolved")?.created_at ?? null;
+
+	const eventDescriptions = events.map((e) => `[${e.created_at}] ${e.event_type}: ${JSON.stringify(e.event_data)}`).join("\n");
+
+	const userMessage = `Incident: ${incident.title}
+Description: ${incident.description}
+Severity: ${incident.severity}
+Original Report: ${incident.prompt}
+Created At: ${incident.createdAt.toISOString()}
+
+Timing:
+- startedAt: ${startedAt ?? "unknown"}
+- firstResponseAt: ${firstResponseAt ?? "unknown"}
+- mitigatedAt: ${mitigatedAt ?? "unknown"}
+- resolvedAt: ${resolvedAt ?? "unknown"}
+
+Timeline Events:
+${eventDescriptions}
+
+Generate the post-mortem.`;
+
+	const response = await fetch("https://api.openai.com/v1/chat/completions", {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${openaiApiKey}`,
+		},
+		body: JSON.stringify({
+			model: "gpt-4o-mini",
+			messages: [
+				{ role: "system", content: POSTMORTEM_SYSTEM_PROMPT },
+				{ role: "user", content: userMessage },
+			],
+			response_format: {
+				type: "json_schema",
+				json_schema: {
+					name: "incident_postmortem",
+					strict: true,
+					schema: POSTMORTEM_RESPONSE_SCHEMA,
+				},
+			},
+		}),
+	});
+
+	if (!response.ok) {
+		const error = await response.text();
+		throw new Error(`OpenAI API error: ${response.status} - ${error}`);
+	}
+
+	const data = (await response.json()) as {
+		choices: Array<{ message: { content: string } }>;
+	};
+
+	const content = data.choices[0]?.message?.content;
+	ASSERT(content, "No response content from OpenAI");
+
+	const parsed = JSON.parse(content) as IncidentPostmortem;
+	return parsed;
 }
 
 export async function decidePromptAction(

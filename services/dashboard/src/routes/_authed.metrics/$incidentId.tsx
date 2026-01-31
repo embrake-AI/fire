@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft, ChartColumn, Clock, FileText, Sparkles } from "lucide-solid";
 import type { Accessor } from "solid-js";
-import { createEffect, createMemo, createSignal, Index, Match, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Index, Match, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
 import { UserDisplay } from "~/components/MaybeUser";
 import { Timeline } from "~/components/Timeline";
 import { Badge } from "~/components/ui/badge";
@@ -147,6 +147,7 @@ function AnalysisDetail() {
 								<div class="space-y-6">
 									<AnalysisHeader analysis={data} />
 									<InsightsCard analysis={data} />
+									<PostmortemCard analysis={data} />
 									<Timeline events={data().events} />
 								</div>
 							)}
@@ -235,6 +236,92 @@ function formatDurationMs(ms: number | null): string {
 	if (hours > 0) return `${hours}h ${minutes % 60}m`;
 	if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
 	return `${seconds}s`;
+}
+
+function formatPostmortemTimestamp(value: string) {
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) {
+		return value;
+	}
+	return date.toLocaleString(undefined, {
+		month: "short",
+		day: "numeric",
+		hour: "2-digit",
+		minute: "2-digit",
+	});
+}
+
+function PostmortemCard(props: { analysis: Accessor<IncidentAnalysis> }) {
+	const analysis = () => props.analysis();
+	const timeline = () => analysis().timeline ?? [];
+	const actions = () => analysis().actions ?? [];
+	const impact = () => analysis().impact?.trim() ?? "";
+	const rootCause = () => analysis().rootCause?.trim() ?? "";
+	const hasContent = () => timeline().length > 0 || actions().length > 0 || impact().length > 0 || rootCause().length > 0;
+
+	return (
+		<Card>
+			<CardHeader>
+				<div class="flex items-center justify-between">
+					<h3 class="text-lg font-semibold flex items-center gap-2">
+						<FileText class="w-5 h-5 text-blue-500" />
+						Post-mortem
+					</h3>
+				</div>
+			</CardHeader>
+			<CardContent>
+				<Show when={hasContent()} fallback={<p class="text-sm text-muted-foreground">Post-mortem is being generated. Check back in a moment.</p>}>
+					<div class="space-y-6">
+						<Show when={timeline().length > 0}>
+							<div class="space-y-3">
+								<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Timeline</h4>
+								<div class="space-y-3">
+									<For each={timeline()}>
+										{(item) => (
+											<div class="flex flex-col gap-1 md:flex-row md:gap-4">
+												<span class="text-xs text-muted-foreground w-32 shrink-0">{formatPostmortemTimestamp(item.created_at)}</span>
+												<p class="text-sm text-foreground leading-relaxed">{item.text}</p>
+											</div>
+										)}
+									</For>
+								</div>
+							</div>
+						</Show>
+
+						<Show when={impact().length > 0}>
+							<div class="space-y-2">
+								<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Impact</h4>
+								<p class="text-sm text-muted-foreground leading-relaxed">{impact()}</p>
+							</div>
+						</Show>
+
+						<Show when={rootCause().length > 0}>
+							<div class="space-y-2">
+								<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Root cause</h4>
+								<p class="text-sm text-muted-foreground leading-relaxed">{rootCause()}</p>
+							</div>
+						</Show>
+
+						<Show when={actions().length > 0}>
+							<div class="space-y-2">
+								<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</h4>
+								<div class="space-y-2">
+									<For each={actions()}>
+										{(action) => (
+											<div class="flex items-start gap-3">
+												<span class="mt-1 h-1.5 w-1.5 rounded-full bg-blue-500" />
+												<p class="text-sm text-muted-foreground leading-relaxed">{action.description}</p>
+											</div>
+										)}
+									</For>
+								</div>
+							</div>
+						</Show>
+					</div>
+				</Show>
+			</CardContent>
+		</Card>
+	);
 }
 
 function InsightsCard(props: { analysis: Accessor<IncidentAnalysis> }) {

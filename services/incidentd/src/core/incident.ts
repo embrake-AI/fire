@@ -1,9 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 import type { EntryPoint, EventLog, IS, IS_Event } from "@fire/common";
-import { incidentAnalysis } from "@fire/db/schema";
+import type { IncidentEventData } from "@fire/db/schema";
+import type { IncidentAnalysisWorkflowPayload } from "../dispatcher/analysis-workflow";
 import { INCIDENT_WORKFLOW_EVENT_TYPE, type IncidentWorkflowPayload, type SummaryResponsePayload } from "../dispatcher/workflow";
 import type { Metadata } from "../handler";
-import { getDB } from "../lib/db";
 import { calculateIncidentInfo, generateIncidentSummary } from "./idontknowhowtonamethisitswhereillplacecallstoai";
 
 export type DOState = IS & {
@@ -208,6 +208,52 @@ export class Incident extends DurableObject<Env> {
 		await instance.sendEvent({ type: INCIDENT_WORKFLOW_EVENT_TYPE, payload });
 	}
 
+	private async startAnalysisWorkflow() {
+		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
+		const events = this.ctx.storage.sql
+			.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "adapter" | "created_at">>("SELECT id, event_type, event_data, adapter, created_at FROM event_log ORDER BY id ASC")
+			.toArray();
+
+		const eventsForStorage: IncidentEventData[] = events.map((event) => ({
+			id: event.id,
+			event_type: event.event_type,
+			event_data: JSON.parse(event.event_data),
+			adapter: event.adapter,
+			created_at: event.created_at,
+		}));
+
+		const createdAt = state.createdAt instanceof Date ? state.createdAt.toISOString() : new Date(state.createdAt).toISOString();
+
+		const payload: IncidentAnalysisWorkflowPayload = {
+			incidentId: state.id,
+			metadata: state.metadata,
+			incident: {
+				title: state.title,
+				description: state.description,
+				severity: state.severity,
+				assignee: state.assignee.slackId,
+				createdBy: state.createdBy,
+				source: state.source,
+				prompt: state.prompt,
+				entryPointId: state.entryPointId,
+				rotationId: state.rotationId,
+				teamId: state.teamId,
+				createdAt,
+			},
+			events: eventsForStorage,
+		};
+
+		const workflowId = `analysis:${state.id}`;
+		try {
+			await this.env.INCIDENT_ANALYSIS_WORKFLOW.create({ id: workflowId, params: payload });
+		} catch (error) {
+			if (error instanceof Error && /already.*exist/i.test(error.message)) {
+				return;
+			}
+			throw error;
+		}
+	}
+
 	private async dispatchToWorkflow(event: EventLog, state: DOState) {
 		const payload = this.buildWorkflowPayload(event, state);
 		const workflowId = state.id;
@@ -407,54 +453,8 @@ export class Incident extends DurableObject<Env> {
 		});
 	}
 
-	private async persistAnalysis() {
-		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
-		const events = this.ctx.storage.sql
-			.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "adapter" | "created_at">>("SELECT id, event_type, event_data, adapter, created_at FROM event_log ORDER BY id ASC")
-			.toArray();
-
-		const eventsForStorage = events.map((e) => ({
-			id: e.id,
-			event_type: e.event_type,
-			event_data: JSON.parse(e.event_data),
-			adapter: e.adapter,
-			created_at: e.created_at,
-			// TODO: Add userId to the event data
-		}));
-
-		const summary = await generateIncidentSummary(
-			{
-				title: state.title,
-				description: state.description,
-				severity: state.severity,
-				prompt: state.prompt,
-			},
-			eventsForStorage,
-			this.env.OPENAI_API_KEY,
-		);
-
-		const db = getDB(this.env.db);
-		await db.insert(incidentAnalysis).values({
-			id: state.id,
-			clientId: state.metadata.clientId,
-			title: state.title,
-			description: state.description,
-			severity: state.severity,
-			assignee: state.assignee.slackId,
-			createdBy: state.createdBy,
-			source: state.source,
-			prompt: state.prompt,
-			summary,
-			events: eventsForStorage,
-			createdAt: state.createdAt,
-			entryPointId: state.entryPointId,
-			rotationId: state.rotationId,
-			teamId: state.teamId,
-		});
-	}
-
 	private async destroy() {
-		await this.persistAnalysis();
+		await this.startAnalysisWorkflow();
 		await Promise.all([this.ctx.storage.deleteAlarm(), this.ctx.storage.deleteAll()]);
 	}
 

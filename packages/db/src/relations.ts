@@ -114,6 +114,18 @@ export const relations = defineRelations(schema, (r) => ({
 			to: r.incidentAffection.id,
 		}),
 	},
+	incidentAnalysis: {
+		actions: r.many.incidentAction({
+			from: r.incidentAnalysis.id,
+			to: r.incidentAction.incidentId,
+		}),
+	},
+	incidentAction: {
+		incident: r.one.incidentAnalysis({
+			from: r.incidentAction.incidentId,
+			to: r.incidentAnalysis.id,
+		}),
+	},
 	serviceDependency: {
 		baseService: r.one.service({
 			from: r.serviceDependency.baseServiceId,
