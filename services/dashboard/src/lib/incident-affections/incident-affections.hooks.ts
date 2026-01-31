@@ -67,8 +67,7 @@ export function useCreateIncidentAffection(options?: { onSuccess?: () => void; o
 			return { previous };
 		},
 
-		onSuccess: (_result, variables) => {
-			queryClient.invalidateQueries({ queryKey: ["incident-affection", variables.incidentId] });
+		onSuccess: () => {
 			options?.onSuccess?.();
 		},
 
@@ -112,7 +111,6 @@ export function useAddIncidentAffectionUpdate(incidentId: Accessor<string>, opti
 		},
 
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["incident-affection", incidentId()] });
 			options?.onSuccess?.();
 		},
 
