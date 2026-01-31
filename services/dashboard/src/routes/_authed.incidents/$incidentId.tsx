@@ -423,12 +423,15 @@ function IncidentAffectionSection(props: { incidentId: string; incidentStatus: I
 
 	const services = () => servicesQuery.data ?? [];
 
-	const handleCreateAffection = async (data: { title: string; initialMessage: string; services: { id: string; impact: AffectionImpact }[] }) => {
+	const handleCreateAffection = async (data: { title: string; initialMessage: string; services: SelectedService[] }) => {
 		await createAffectionMutation.mutateAsync({
 			incidentId: props.incidentId,
 			title: data.title,
 			initialMessage: data.initialMessage,
-			services: data.services,
+			services: data.services.map((s) => ({ id: s.id, impact: s.impact })),
+			_optimistic: {
+				services: data.services,
+			},
 		});
 		setCreateOpen(false);
 	};
@@ -608,7 +611,7 @@ function ImpactBadge(props: { impact: AffectionImpact }) {
 function CreateAffectionDialogContent(props: {
 	services: ServiceListItem[];
 	isSubmitting: boolean;
-	onSubmit: (data: { title: string; initialMessage: string; services: { id: string; impact: AffectionImpact }[] }) => void;
+	onSubmit: (data: { title: string; initialMessage: string; services: SelectedService[] }) => void;
 	onClose: () => void;
 }) {
 	const [title, setTitle] = createSignal("");
@@ -653,7 +656,7 @@ function CreateAffectionDialogContent(props: {
 		props.onSubmit({
 			title: title().trim(),
 			initialMessage: message().trim(),
-			services: selectedServices().map((service) => ({ id: service.id, impact: service.impact })),
+			services: selectedServices(),
 		});
 	};
 
