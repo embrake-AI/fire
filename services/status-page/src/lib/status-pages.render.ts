@@ -579,7 +579,7 @@ export function buildStatusPageResponse(data: StatusPagePublicData, basePath = "
 	});
 }
 
-function renderBaseHtml(options: { title: string; faviconUrl?: string | null; content: string }): string {
+function renderBaseHtml(options: { title: string; faviconUrl?: string | null; head?: string; content: string }): string {
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -587,6 +587,7 @@ function renderBaseHtml(options: { title: string; faviconUrl?: string | null; co
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>${escapeHtml(options.title)}</title>
 	${options.faviconUrl ? `<link rel="icon" href="${escapeHtml(options.faviconUrl)}">` : ""}
+	${options.head ?? ""}
 	<script src="https://cdn.tailwindcss.com"></script>
 	<style>
 		body {
@@ -742,6 +743,10 @@ function renderIncidentDetailHtml(data: IncidentDetailData, basePath = ""): stri
 	const { page, incident } = data;
 	const logoUrl = page.logoUrl || page.clientImage;
 	const isResolved = !!incident.resolvedAt;
+	const feedPaths = {
+		rss: `${basePath}/history/${incident.id}/feed?format=rss`,
+		atom: `${basePath}/history/${incident.id}/feed?format=atom`,
+	};
 
 	const severityColors = {
 		partial: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200", dot: "bg-orange-500" },
@@ -813,7 +818,12 @@ function renderIncidentDetailHtml(data: IncidentDetailData, basePath = ""): stri
 				}
 				<div class="text-base font-semibold text-slate-900">${escapeHtml(page.name)}</div>
 			</a>
-			<a href="${basePath}/history" class="text-sm text-slate-500 hover:text-slate-700 transition-colors">&larr; All incidents</a>
+			<div class="flex items-center gap-3">
+				<a href="${basePath}/history" class="text-sm text-slate-500 hover:text-slate-700 transition-colors">&larr; All incidents</a>
+				<button type="button" data-subscribe-open class="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+					Subscribe to updates
+				</button>
+			</div>
 		</header>
 
 		<div class="rounded-lg ${isResolved ? "border border-slate-200 bg-white" : `${colors.border} ${colors.bg} border`} p-6 mb-6">
@@ -857,10 +867,159 @@ function renderIncidentDetailHtml(data: IncidentDetailData, basePath = ""): stri
 		</div>
 	</footer>`;
 
+	const subscribeModal = `
+	<div id="subscribe-modal" class="fixed inset-0 z-50 hidden items-center justify-center">
+		<div class="absolute inset-0 bg-slate-900/40" data-subscribe-close></div>
+		<div role="dialog" aria-modal="true" aria-label="Subscribe to updates" class="relative z-10 w-[min(620px,90vw)] bg-white rounded-xl border border-slate-200 shadow-xl">
+			<div class="flex items-center justify-between p-4 border-b border-slate-100">
+				<h3 class="text-base font-semibold text-slate-900">Subscribe to updates</h3>
+				<button type="button" data-subscribe-close class="h-8 w-8 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-50 flex items-center justify-center">
+					<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+						<path d="M17 7 7 17M7 7l10 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+					</svg>
+				</button>
+			</div>
+			<div class="p-4">
+				<div role="tablist" class="flex border-b border-slate-100 text-sm">
+					<button type="button" class="subscribe-tab px-3 py-2 font-medium border-b-2" data-subscribe-tab="rss" data-active="true" aria-selected="true">RSS</button>
+					<button type="button" class="subscribe-tab px-3 py-2 font-medium border-b-2" data-subscribe-tab="slack" data-active="false" aria-selected="false">Slack</button>
+				</div>
+				<div class="pt-4">
+					<div class="subscribe-panel space-y-4" data-subscribe-panel="rss" data-active="true">
+						<p class="text-sm text-slate-600">Use any feed reader. Choose the format that works best for you.</p>
+						<div class="space-y-4">
+							<div>
+								<div class="text-xs font-medium text-slate-500 uppercase tracking-wide">RSS</div>
+								<div class="mt-2 flex items-center gap-2">
+									<input id="subscribe-rss-url" data-feed-path="${feedPaths.rss}" readonly class="flex-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700" aria-label="RSS feed url">
+									<a href="${feedPaths.rss}" class="px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50">Open</a>
+									<button type="button" data-copy-target="subscribe-rss-url" class="px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50">Copy</button>
+								</div>
+							</div>
+							<div>
+								<div class="text-xs font-medium text-slate-500 uppercase tracking-wide">Atom</div>
+								<div class="mt-2 flex items-center gap-2">
+									<input id="subscribe-atom-url" data-feed-path="${feedPaths.atom}" readonly class="flex-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700" aria-label="Atom feed url">
+									<a href="${feedPaths.atom}" class="px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50">Open</a>
+									<button type="button" data-copy-target="subscribe-atom-url" class="px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50">Copy</button>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="subscribe-panel space-y-3 hidden" data-subscribe-panel="slack" data-active="false">
+						<p class="text-sm text-slate-600">In Slack, run the command below to follow updates in a channel.</p>
+						<div class="flex items-center gap-2">
+							<input id="subscribe-slack-command" data-feed-command="${feedPaths.rss}" readonly class="flex-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700" aria-label="Slack feed command">
+							<button type="button" data-copy-target="subscribe-slack-command" class="px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50">Copy</button>
+						</div>
+						<p class="text-xs text-slate-400">Requires Slack's /feed app to be installed.</p>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<script>
+		(function () {
+			const modal = document.getElementById("subscribe-modal");
+			if (!modal) return;
+			const body = document.body;
+			const openButtons = document.querySelectorAll("[data-subscribe-open]");
+			const closeButtons = modal.querySelectorAll("[data-subscribe-close]");
+			const openModal = () => {
+				modal.classList.remove("hidden");
+				modal.classList.add("flex");
+				body.classList.add("overflow-hidden");
+			};
+			const closeModal = () => {
+				modal.classList.add("hidden");
+				modal.classList.remove("flex");
+				body.classList.remove("overflow-hidden");
+			};
+			openButtons.forEach((button) => button.addEventListener("click", openModal));
+			closeButtons.forEach((button) => button.addEventListener("click", closeModal));
+			document.addEventListener("keydown", (event) => {
+				if (event.key === "Escape") closeModal();
+			});
+			const feedInputs = modal.querySelectorAll("[data-feed-path]");
+			feedInputs.forEach((input) => {
+				const path = input.getAttribute("data-feed-path");
+				if (!path) return;
+				input.value = new URL(path, window.location.origin).toString();
+			});
+			const commandInputs = modal.querySelectorAll("[data-feed-command]");
+			commandInputs.forEach((input) => {
+				const path = input.getAttribute("data-feed-command");
+				if (!path) return;
+				const url = new URL(path, window.location.origin).toString();
+				input.value = "/feed " + url;
+			});
+			const copyButtons = modal.querySelectorAll("[data-copy-target]");
+			copyButtons.forEach((button) => {
+				button.addEventListener("click", () => {
+					const targetId = button.getAttribute("data-copy-target");
+					if (!targetId) return;
+					const input = document.getElementById(targetId);
+					if (!input || !("value" in input)) return;
+					const value = input.value;
+					if (!value) return;
+					if (navigator.clipboard && window.isSecureContext) {
+						navigator.clipboard.writeText(value);
+					} else {
+						input.focus();
+						input.select();
+						document.execCommand("copy");
+					}
+					const original = button.textContent || "Copy";
+					button.textContent = "Copied";
+					window.setTimeout(() => {
+						button.textContent = original;
+					}, 1500);
+				});
+			});
+			const tabs = modal.querySelectorAll("[data-subscribe-tab]");
+			const panels = modal.querySelectorAll("[data-subscribe-panel]");
+			const setActive = (name) => {
+				tabs.forEach((tab) => {
+					const active = tab.getAttribute("data-subscribe-tab") === name;
+					tab.setAttribute("data-active", active ? "true" : "false");
+					tab.setAttribute("aria-selected", active ? "true" : "false");
+				});
+				panels.forEach((panel) => {
+					const active = panel.getAttribute("data-subscribe-panel") === name;
+					panel.setAttribute("data-active", active ? "true" : "false");
+					panel.classList.toggle("hidden", !active);
+				});
+			};
+			tabs.forEach((tab) => {
+				tab.addEventListener("click", () => {
+					const name = tab.getAttribute("data-subscribe-tab");
+					if (name) setActive(name);
+				});
+			});
+		})();
+	</script>`;
+
 	return renderBaseHtml({
 		title: `${incident.title} - ${page.name}`,
 		faviconUrl: page.faviconUrl,
-		content,
+		head: `
+			<link rel="alternate" type="application/rss+xml" title="RSS - ${escapeHtml(incident.title)}" href="${feedPaths.rss}">
+			<link rel="alternate" type="application/atom+xml" title="Atom - ${escapeHtml(incident.title)}" href="${feedPaths.atom}">
+			<style>
+				.subscribe-tab[data-active="true"] {
+					border-bottom-color: #0f172a;
+					color: #0f172a;
+				}
+				.subscribe-tab[data-active="false"] {
+					border-bottom-color: transparent;
+					color: #64748b;
+				}
+				.subscribe-tab[data-active="false"]:hover {
+					color: #0f172a;
+				}
+			</style>
+		`,
+		content: `${content}${subscribeModal}`,
 	});
 }
 
