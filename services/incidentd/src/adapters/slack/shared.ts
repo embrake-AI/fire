@@ -7,9 +7,17 @@ export function incidentChannelIdentifier(channelId: string): string {
 }
 
 export async function addReaction(botToken: string, channel: string, timestamp: string, name: string): Promise<void> {
-	await fetch("https://slack.com/api/reactions.add", {
-		method: "POST",
-		headers: { Authorization: `Bearer ${botToken}`, "Content-Type": "application/json" },
-		body: JSON.stringify({ name, channel, timestamp }),
-	}).catch(() => {});
+	try {
+		const response = await fetch("https://slack.com/api/reactions.add", {
+			method: "POST",
+			headers: { Authorization: `Bearer ${botToken}`, "Content-Type": "application/json" },
+			body: JSON.stringify({ name, channel, timestamp }),
+		});
+		if (!response.ok) {
+			const body = await response.text().catch(() => "");
+			console.error("Slack add reaction failed", { status: response.status, body });
+		}
+	} catch (error) {
+		console.error("Slack add reaction error", error);
+	}
 }
