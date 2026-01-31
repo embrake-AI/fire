@@ -640,9 +640,10 @@ function formatDateTime(date: Date): string {
 
 function renderSubscribeModal(options: { feedPaths: { rss: string; atom: string }; supportUrl?: string | null }): string {
 	const supportUrl = options.supportUrl?.trim();
+	const showSupport = !!supportUrl;
 	const supportHtml = supportUrl
 		? `Visit our <a href="${escapeHtml(supportUrl)}" target="_blank" rel="noopener" class="text-slate-700 underline underline-offset-4 hover:text-slate-900">support site</a>.`
-		: "Support site is not configured.";
+		: "";
 
 	return `
 	<div id="subscribe-modal" class="fixed inset-0 z-50 hidden items-center justify-center">
@@ -660,7 +661,7 @@ function renderSubscribeModal(options: { feedPaths: { rss: string; atom: string 
 				<div role="tablist" class="flex border-b border-slate-100 text-sm">
 					<button type="button" class="subscribe-tab px-3 py-2 font-medium border-b-2" data-subscribe-tab="rss" data-active="true" aria-selected="true">RSS</button>
 					<button type="button" class="subscribe-tab px-3 py-2 font-medium border-b-2" data-subscribe-tab="slack" data-active="false" aria-selected="false">Slack</button>
-					<button type="button" class="subscribe-tab px-3 py-2 font-medium border-b-2" data-subscribe-tab="support" data-active="false" aria-selected="false">Support</button>
+					${showSupport ? '<button type="button" class="subscribe-tab px-3 py-2 font-medium border-b-2" data-subscribe-tab="support" data-active="false" aria-selected="false">Support</button>' : ""}
 				</div>
 				<div class="pt-4">
 					<div class="subscribe-panel space-y-4" data-subscribe-panel="rss" data-active="true">
@@ -670,7 +671,7 @@ function renderSubscribeModal(options: { feedPaths: { rss: string; atom: string 
 								<div class="text-xs font-medium text-slate-500 uppercase tracking-wide">RSS</div>
 								<div class="mt-2 flex items-center gap-2">
 									<input id="subscribe-rss-url" data-feed-path="${options.feedPaths.rss}" readonly class="flex-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700" aria-label="RSS feed url">
-									<a href="${options.feedPaths.rss}" class="px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50">Open</a>
+									<a href="${options.feedPaths.rss}" target="_blank" rel="noopener" class="px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50">Open</a>
 									<button type="button" data-copy-target="subscribe-rss-url" class="px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50">Copy</button>
 								</div>
 							</div>
@@ -678,7 +679,7 @@ function renderSubscribeModal(options: { feedPaths: { rss: string; atom: string 
 								<div class="text-xs font-medium text-slate-500 uppercase tracking-wide">Atom</div>
 								<div class="mt-2 flex items-center gap-2">
 									<input id="subscribe-atom-url" data-feed-path="${options.feedPaths.atom}" readonly class="flex-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700" aria-label="Atom feed url">
-									<a href="${options.feedPaths.atom}" class="px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50">Open</a>
+									<a href="${options.feedPaths.atom}" target="_blank" rel="noopener" class="px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50">Open</a>
 									<button type="button" data-copy-target="subscribe-atom-url" class="px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50">Copy</button>
 								</div>
 							</div>
@@ -692,9 +693,13 @@ function renderSubscribeModal(options: { feedPaths: { rss: string; atom: string 
 						</div>
 						<p class="text-xs text-slate-400">Requires Slack's /feed app to be installed.</p>
 					</div>
-					<div class="subscribe-panel space-y-3 hidden" data-subscribe-panel="support" data-active="false">
+					${
+						showSupport
+							? `<div class="subscribe-panel space-y-3 hidden" data-subscribe-panel="support" data-active="false">
 						<p class="text-sm text-slate-600">${supportHtml}</p>
-					</div>
+					</div>`
+							: ""
+					}
 				</div>
 			</div>
 		</div>

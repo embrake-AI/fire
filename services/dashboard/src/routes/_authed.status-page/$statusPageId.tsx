@@ -96,6 +96,7 @@ function BrowserFrame(props: { page: StatusPageData }) {
 					</Button>
 				</div>
 				<StatusBanner />
+				<SubscribeSettings page={props.page} />
 				<ServicesList page={props.page} />
 				<Footer page={props.page} />
 			</div>
@@ -762,6 +763,48 @@ function StatusBanner() {
 	);
 }
 
+// --- Subscribe Settings ---
+
+function SubscribeSettings(props: { page: StatusPageData }) {
+	const updateStatusPageMutation = useUpdateStatusPage();
+	const [supportUrl, setSupportUrl] = createSignal(props.page.supportUrl ?? "");
+
+	createEffect(() => {
+		setSupportUrl(props.page.supportUrl ?? "");
+	});
+
+	const hasChanges = createMemo(() => supportUrl().trim() !== (props.page.supportUrl ?? ""));
+
+	const handleSave = async () => {
+		await updateStatusPageMutation.mutateAsync({ id: props.page.id, supportUrl: supportUrl().trim() || null });
+	};
+
+	return (
+		<div class="rounded-lg border border-dashed border-border p-4 bg-white/70">
+			<div class="flex items-start justify-between gap-4">
+				<div>
+					<p class="text-sm font-medium text-foreground">Subscribe settings</p>
+					<p class="text-xs text-muted-foreground mt-1">Used in the “Subscribe to updates” modal.</p>
+				</div>
+			</div>
+			<div class="mt-4 flex items-end gap-3">
+				<div class="flex-1 space-y-1">
+					<Label for="status-page-support-url" class="text-xs font-medium">
+						Support site URL
+					</Label>
+					<Input id="status-page-support-url" type="url" placeholder="https://help.example.com" value={supportUrl()} onInput={(e) => setSupportUrl(e.currentTarget.value)} />
+				</div>
+				<Button size="sm" onClick={handleSave} disabled={updateStatusPageMutation.isPending || !hasChanges()}>
+					<Show when={updateStatusPageMutation.isPending} fallback="Save">
+						<LoaderCircle class="w-3 h-3 animate-spin mr-1" />
+						Saving
+					</Show>
+				</Button>
+			</div>
+		</div>
+	);
+}
+
 // --- Services List ---
 
 const DISPLAY_MODE_OPTIONS = [
@@ -1044,15 +1087,12 @@ function Footer(props: { page: StatusPageData }) {
 
 	const [isEditingPrivacy, setIsEditingPrivacy] = createSignal(false);
 	const [isEditingTerms, setIsEditingTerms] = createSignal(false);
-	const [isEditingSupport, setIsEditingSupport] = createSignal(false);
 	const [privacyUrl, setPrivacyUrl] = createSignal(props.page.privacyPolicyUrl ?? "");
 	const [termsUrl, setTermsUrl] = createSignal(props.page.termsOfServiceUrl ?? "");
-	const [supportUrl, setSupportUrl] = createSignal(props.page.supportUrl ?? "");
 
 	createEffect(() => {
 		setPrivacyUrl(props.page.privacyPolicyUrl ?? "");
 		setTermsUrl(props.page.termsOfServiceUrl ?? "");
-		setSupportUrl(props.page.supportUrl ?? "");
 	});
 
 	const handleSavePrivacy = async () => {
@@ -1063,11 +1103,6 @@ function Footer(props: { page: StatusPageData }) {
 	const handleSaveTerms = async () => {
 		await updateStatusPageMutation.mutateAsync({ id: props.page.id, termsOfServiceUrl: termsUrl().trim() || null });
 		setIsEditingTerms(false);
-	};
-
-	const handleSaveSupport = async () => {
-		await updateStatusPageMutation.mutateAsync({ id: props.page.id, supportUrl: supportUrl().trim() || null });
-		setIsEditingSupport(false);
 	};
 
 	return (
@@ -1098,17 +1133,6 @@ function Footer(props: { page: StatusPageData }) {
 					value={termsUrl()}
 					setValue={setTermsUrl}
 					onSave={handleSaveTerms}
-					isPending={updateStatusPageMutation.isPending}
-				/>
-				<span>&middot;</span>
-				<EditableFooterLink
-					label="Support site"
-					url={props.page.supportUrl}
-					isEditing={isEditingSupport()}
-					setIsEditing={setIsEditingSupport}
-					value={supportUrl()}
-					setValue={setSupportUrl}
-					onSave={handleSaveSupport}
 					isPending={updateStatusPageMutation.isPending}
 				/>
 			</div>
