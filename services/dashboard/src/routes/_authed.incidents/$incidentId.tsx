@@ -1,4 +1,5 @@
 import type { IS } from "@fire/common";
+import { Popover as PopoverPrimitive } from "@kobalte/core/popover";
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
@@ -32,6 +33,7 @@ import { useUpdateIncidentAssignee, useUpdateIncidentSeverity, useUpdateIncident
 import type { getServices } from "~/lib/services/services";
 import { useServices } from "~/lib/services/services.hooks";
 import { usePossibleSlackUsers, useUserBySlackId } from "~/lib/users/users.hooks";
+import { cn } from "~/lib/utils/client";
 
 type ServiceListItem = Awaited<ReturnType<typeof getServices>>[number];
 
@@ -68,6 +70,9 @@ const IMPACT_CONFIG: Record<AffectionImpact, { label: string; class: string }> =
 		class: "border-red-200 bg-red-50 text-red-700",
 	},
 };
+
+const INLINE_POPOVER_CONTENT_CLASS =
+	"z-50 w-72 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-none animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95";
 
 function formatAffectionTime(value: Date) {
 	return new Date(value).toLocaleString(undefined, {
@@ -656,15 +661,15 @@ function CreateAffectionDialogContent(props: {
 						Affected services
 					</label>
 					<div class="flex items-center justify-between gap-2">
-						<Popover>
-							<PopoverTrigger as={Button} size="sm" variant="outline" disabled={availableEntities().length === 0 || props.isSubmitting}>
+						<PopoverPrimitive>
+							<PopoverPrimitive.Trigger as={Button} size="sm" variant="outline" disabled={availableEntities().length === 0 || props.isSubmitting}>
 								<Plus class="w-4 h-4" />
 								Add service
-							</PopoverTrigger>
-							<PopoverContent class="p-0" style={{ width: "240px" }}>
+							</PopoverPrimitive.Trigger>
+							<PopoverPrimitive.Content class={cn(INLINE_POPOVER_CONTENT_CLASS, "p-0")} style={{ width: "240px" }}>
 								<EntityPicker onSelect={handleAddService} entities={availableEntities} placeholder="Select a service" emptyMessage="No services to add." />
-							</PopoverContent>
-						</Popover>
+							</PopoverPrimitive.Content>
+						</PopoverPrimitive>
 						<span class="text-xs text-muted-foreground">{selectedServices().length} selected</span>
 					</div>
 					<Show when={selectedServices().length > 0} fallback={<p class="text-xs text-muted-foreground">Select at least one service to continue.</p>}>
@@ -853,15 +858,15 @@ function EditAffectionServicesDialogContent(props: {
 			</DialogHeader>
 			<div class="space-y-4 py-4">
 				<div class="flex items-center justify-between gap-2">
-					<Popover>
-						<PopoverTrigger as={Button} size="sm" variant="outline" disabled={availableEntities().length === 0 || props.isSubmitting}>
+					<PopoverPrimitive>
+						<PopoverPrimitive.Trigger as={Button} size="sm" variant="outline" disabled={availableEntities().length === 0 || props.isSubmitting}>
 							<Plus class="w-4 h-4" />
 							Add service
-						</PopoverTrigger>
-						<PopoverContent class="p-0" style={{ width: "240px" }}>
+						</PopoverPrimitive.Trigger>
+						<PopoverPrimitive.Content class={cn(INLINE_POPOVER_CONTENT_CLASS, "p-0")} style={{ width: "240px" }}>
 							<EntityPicker onSelect={handleAddService} entities={availableEntities} placeholder="Select a service" emptyMessage="No services to add." />
-						</PopoverContent>
-					</Popover>
+						</PopoverPrimitive.Content>
+					</PopoverPrimitive>
 					<span class="text-xs text-muted-foreground">{selectedServices().length} selected</span>
 				</div>
 				<Show when={selectedServices().length > 0} fallback={<p class="text-xs text-muted-foreground">Select at least one service to continue.</p>}>
