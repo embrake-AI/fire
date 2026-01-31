@@ -243,7 +243,7 @@ export class Incident extends DurableObject<Env> {
 			events: eventsForStorage,
 		};
 
-		const workflowId = `analysis:${state.id}`;
+		const workflowId = `analysis-${state.id}`;
 		try {
 			await this.env.INCIDENT_ANALYSIS_WORKFLOW.create({ id: workflowId, params: payload });
 		} catch (error) {
