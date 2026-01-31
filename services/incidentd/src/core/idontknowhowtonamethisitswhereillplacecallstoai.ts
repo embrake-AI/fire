@@ -136,10 +136,10 @@ Keep the summary to 2-5 sentences, focusing on the most important aspects.`;
 const POSTMORTEM_SYSTEM_PROMPT = `You are an incident post-mortem analyst. Given incident details and a timeline of events, produce a structured post-mortem.
 
 Requirements:
-- timeline: pick the most important events (chronological). Each item needs "created_at" (ISO 8601) and "text" (short sentence).
+- timeline: pick only the MOST IMPORTANT events (chronological). Each item needs "created_at" (ISO 8601) and "text" (short sentence). Keep this short and strictly include at most one event per event type (e.g. only one severity update, only one assignee change, only one status transition).
 - rootCause: concise paragraph. If unclear, say "Root cause not determined from available data."
 - impact: concise paragraph describing what was impacted and severity.
-- actions: 0-6 concrete follow-ups written as short imperative sentences.
+- actions: 0-6 concrete follow-ups written as short imperative sentences. Only include actions that are clearly relevant to the incident, and prefer fewer actions over more.
 
 Do not include markdown. Only use the information provided.`;
 
@@ -157,8 +157,8 @@ const POSTMORTEM_RESPONSE_SCHEMA = {
 				required: ["created_at", "text"],
 				additionalProperties: false,
 			},
-			minItems: 2,
-			maxItems: 10,
+			minItems: 1,
+			maxItems: 6,
 		},
 		rootCause: { type: "string" },
 		impact: { type: "string" },
@@ -166,7 +166,7 @@ const POSTMORTEM_RESPONSE_SCHEMA = {
 			type: "array",
 			items: { type: "string" },
 			minItems: 0,
-			maxItems: 10,
+			maxItems: 6,
 		},
 	},
 	required: ["timeline", "rootCause", "impact", "actions"],
