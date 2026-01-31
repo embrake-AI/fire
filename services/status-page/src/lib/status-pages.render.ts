@@ -966,7 +966,7 @@ function renderIncidentDetailHtml(data: IncidentDetailData, basePath = ""): stri
 					.join("")
 			: `<p class="text-sm text-slate-500">No updates posted yet</p>`;
 
-	const subscribePopover = renderSubscribePopover({ feedPaths, supportUrl: page.supportUrl });
+	const _subscribePopover = renderSubscribePopover({ feedPaths, supportUrl: page.supportUrl });
 	const rootPath = basePath || "/";
 	const content = `
 	<div class="flex-1 max-w-2xl mx-auto px-4 py-12 md:py-16 w-full">
@@ -983,15 +983,7 @@ function renderIncidentDetailHtml(data: IncidentDetailData, basePath = ""): stri
 				}
 				<div class="text-base font-semibold text-slate-900">${escapeHtml(page.name)}</div>
 			</a>
-			<div class="flex items-center gap-3">
-				<a href="${basePath}/history" class="text-sm text-slate-500 hover:text-slate-700 transition-colors">&larr; All incidents</a>
-				<div class="relative">
-					<button type="button" data-subscribe-toggle class="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-						Subscribe to updates
-					</button>
-					${subscribePopover}
-				</div>
-			</div>
+			<a href="${basePath}/history" class="text-sm text-slate-500 hover:text-slate-700 transition-colors">&larr; All incidents</a>
 		</header>
 
 		<div class="rounded-lg ${isResolved ? "border border-slate-200 bg-white" : `${colors.border} ${colors.bg} border`} p-6 mb-6">

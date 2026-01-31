@@ -19,6 +19,7 @@ import { Input } from "~/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
+import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Textarea } from "~/components/ui/textarea";
 import type { AffectionImpact, AffectionStatus, IncidentAffectionData } from "~/lib/incident-affections/incident-affections";
 import {
@@ -162,6 +163,7 @@ function IncidentDetail() {
 	}));
 	const incident = () => incidentQuery.data;
 	const hasSlackContext = createMemo(() => !!incident()?.context?.thread && !!incident()?.context?.channel);
+	const [activeTab, setActiveTab] = createSignal<"updates" | "timeline">("timeline");
 
 	createEffect(() => {
 		if (incidentQuery.data?.error === "NOT_FOUND") {
@@ -200,15 +202,30 @@ function IncidentDetail() {
 						{(state) => (
 							<div class="space-y-6">
 								<IncidentHeader incident={state} />
-								<IncidentAffectionSection incidentId={state().id} incidentStatus={state().status} />
-								<Show when={incident()?.events}>{(events) => <Timeline events={events()} />}</Show>
-								<Show when={incident()?.events}>
-									{(_) => {
-										const events = incident()?.events ?? [];
-										const lastEventId = events.length > 0 ? events[events.length - 1].id : 0;
-										return <SlackMessageInput incidentId={state().id} lastEventId={lastEventId} hasSlackContext={hasSlackContext()} />;
-									}}
-								</Show>
+								<Tabs value={activeTab()} onChange={(value) => setActiveTab(value as "updates" | "timeline")}>
+									<TabsList class="h-9">
+										<TabsTrigger value="updates" class="text-xs px-3 py-1 h-8 gap-2">
+											Status page updates
+										</TabsTrigger>
+										<TabsTrigger value="timeline" class="text-xs px-3 py-1 h-8 gap-2">
+											Timeline
+										</TabsTrigger>
+										<TabsIndicator />
+									</TabsList>
+									<TabsContent value="updates">
+										<IncidentAffectionSection incidentId={state().id} incidentStatus={state().status} />
+									</TabsContent>
+									<TabsContent value="timeline">
+										<Show when={incident()?.events}>{(events) => <Timeline events={events()} />}</Show>
+										<Show when={incident()?.events}>
+											{(_) => {
+												const events = incident()?.events ?? [];
+												const lastEventId = events.length > 0 ? events[events.length - 1].id : 0;
+												return <SlackMessageInput incidentId={state().id} lastEventId={lastEventId} hasSlackContext={hasSlackContext()} />;
+											}}
+										</Show>
+									</TabsContent>
+								</Tabs>
 							</div>
 						)}
 					</Show>
