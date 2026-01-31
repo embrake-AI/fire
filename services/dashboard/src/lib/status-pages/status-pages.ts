@@ -4,7 +4,8 @@ import type { InferSelectModel } from "drizzle-orm";
 import { and, eq, inArray } from "drizzle-orm";
 import { authMiddleware } from "../auth/auth-middleware";
 import { db } from "../db";
-import { isValidDomain, normalizeDomain } from "./status-pages.utils";
+import { addDomainToVercel, getDomainConfig, removeDomainFromVercel } from "../vercel/vercel-domains";
+import { isApexDomain, isValidDomain, normalizeDomain } from "./status-pages.utils";
 
 type StatusPageRow = InferSelectModel<typeof statusPage>;
 type ServiceRow = InferSelectModel<typeof service>;
@@ -229,6 +230,9 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 			if (normalizedDomain && !isValidDomain(normalizedDomain)) {
 				throw new Error("Custom domain is invalid");
 			}
+			if (normalizedDomain && isApexDomain(normalizedDomain)) {
+				throw new Error("Apex domains are not supported. Please use a subdomain (e.g., status.example.com)");
+			}
 			if (normalizedDomain) {
 				const existing = await db.query.statusPage.findFirst({
 					where: {
@@ -242,6 +246,26 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 					throw new Error("Custom domain is already in use");
 				}
 			}
+
+			const currentPage = await db.query.statusPage.findFirst({
+				where: {
+					id: data.id,
+					clientId: context.clientId,
+				},
+				columns: {
+					customDomain: true,
+				},
+			});
+			const currentDomain = normalizeDomain(currentPage?.customDomain);
+
+			if (currentDomain && currentDomain !== normalizedDomain) {
+				await removeDomainFromVercel(currentDomain);
+			}
+
+			if (normalizedDomain && normalizedDomain !== currentDomain) {
+				await addDomainToVercel(normalizedDomain);
+			}
+
 			updateFields.customDomain = normalizedDomain;
 		}
 		if (data.privacyPolicyUrl !== undefined) {
@@ -342,4 +366,36 @@ export const updateStatusPageServices = createServerFn({ method: "POST" })
 		});
 
 		return { success: true };
+	});
+
+export const verifyCustomDomain = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
+	.inputValidator((data: { id: string }) => data)
+	.handler(async ({ context, data }) => {
+		const page = await db.query.statusPage.findFirst({
+			where: {
+				id: data.id,
+				clientId: context.clientId,
+			},
+			columns: {
+				id: true,
+				customDomain: true,
+			},
+		});
+
+		if (!page) {
+			throw new Error("Status page not found");
+		}
+
+		const domain = normalizeDomain(page.customDomain);
+		if (!domain) {
+			throw new Error("No custom domain configured");
+		}
+
+		const config = await getDomainConfig(domain);
+		return {
+			domain,
+			verified: config.verified,
+			misconfigured: config.misconfigured,
+		};
 	});

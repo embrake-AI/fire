@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/solid-router";
-import { Activity, Check, ExternalLink, Flame, Globe, GripVertical, ImageOff, ImageUp, LoaderCircle, Pencil, Plus, Server, X } from "lucide-solid";
+import { Activity, AlertTriangle, ArrowRight, Check, CheckCircle, ExternalLink, Flame, Globe, GripVertical, ImageOff, ImageUp, LoaderCircle, Pencil, Plus, Server, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, Show, Suspense } from "solid-js";
 import { EntityPicker } from "~/components/EntityPicker";
 import { ImageUploadPicker } from "~/components/ImageUploadPicker";
@@ -13,8 +13,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover
 import { Skeleton } from "~/components/ui/skeleton";
 import { useClient } from "~/lib/client/client.hooks";
 import { useServices } from "~/lib/services/services.hooks";
-import { useStatusPages, useUpdateStatusPage, useUpdateStatusPageServices } from "~/lib/status-pages/status-pages.hooks";
-import { isValidDomain, normalizeDomain } from "~/lib/status-pages/status-pages.utils";
+import { useStatusPages, useUpdateStatusPage, useUpdateStatusPageServices, useVerifyCustomDomain } from "~/lib/status-pages/status-pages.hooks";
+import { isApexDomain, isValidDomain, normalizeDomain } from "~/lib/status-pages/status-pages.utils";
 import { useUploadImage } from "~/lib/uploads/uploads.hooks";
 import { cn } from "~/lib/utils/client";
 
@@ -81,9 +81,12 @@ function BrowserFrame(props: { page: StatusPageData }) {
 
 // --- Browser Chrome ---
 
+type WizardStep = 1 | 2 | 3;
+
 function BrowserChrome(props: { page: StatusPageData }) {
 	const updateStatusPageMutation = useUpdateStatusPage();
 	const uploadImageMutation = useUploadImage("status-page");
+	const verifyDomainMutation = useVerifyCustomDomain();
 	const [isEditingSlug, setIsEditingSlug] = createSignal(false);
 	const [isEditingFavicon, setIsEditingFavicon] = createSignal(false);
 	const [slug, setSlug] = createSignal(props.page.slug);
@@ -91,22 +94,20 @@ function BrowserChrome(props: { page: StatusPageData }) {
 	const [faviconFile, setFaviconFile] = createSignal<File | null>(null);
 	const [droppedFaviconUrl, setDroppedFaviconUrl] = createSignal("");
 	const [faviconValidationError, setFaviconValidationError] = createSignal<string | null>(null);
-	const [isEditingCustomDomain, setIsEditingCustomDomain] = createSignal(false);
-	const [customDomain, setCustomDomain] = createSignal(props.page.customDomain ?? "");
+	const [isCustomDomainWizardOpen, setIsCustomDomainWizardOpen] = createSignal(false);
+	const [wizardStep, setWizardStep] = createSignal<WizardStep>(1);
+	const [customDomain, setCustomDomain] = createSignal("");
 	const [customDomainError, setCustomDomainError] = createSignal<string | null>(null);
+	const [verificationStatus, setVerificationStatus] = createSignal<"idle" | "checking" | "verified" | "misconfigured">("idle");
 
 	createEffect(() => {
 		setSlug(props.page.slug);
 		setSlugError(null);
-		setCustomDomain(props.page.customDomain ?? "");
-		setCustomDomainError(null);
 	});
 
 	const normalizedSlug = createMemo(() => toSlug(slug()));
 	const hasSlugChanges = createMemo(() => normalizedSlug() !== props.page.slug);
 	const normalizedCustomDomain = createMemo(() => normalizeDomain(customDomain()) ?? "");
-	const savedCustomDomain = createMemo(() => normalizeDomain(props.page.customDomain ?? "") ?? "");
-	const hasCustomDomainChanges = createMemo(() => normalizedCustomDomain() !== savedCustomDomain());
 	const displayCustomDomain = createMemo(() => normalizeDomain(props.page.customDomain ?? "") ?? "");
 	const hasCustomDomain = createMemo(() => !!displayCustomDomain());
 	const statusDomain = normalizeDomain(import.meta.env.VITE_STATUS_PAGE_DOMAIN as string) ?? "";
@@ -117,6 +118,28 @@ function BrowserChrome(props: { page: StatusPageData }) {
 		return `https://${statusDomain}/${props.page.slug}`;
 	});
 	const statusCnameTarget = statusDomain;
+
+	const handleOpenWizard = () => {
+		const existingDomain = displayCustomDomain();
+		if (existingDomain) {
+			setCustomDomain(existingDomain);
+			setWizardStep(2);
+		} else {
+			setCustomDomain("");
+			setWizardStep(1);
+		}
+		setCustomDomainError(null);
+		setVerificationStatus("idle");
+		setIsCustomDomainWizardOpen(true);
+	};
+
+	const handleCloseWizard = () => {
+		setIsCustomDomainWizardOpen(false);
+		setCustomDomain("");
+		setCustomDomainError(null);
+		setVerificationStatus("idle");
+		setWizardStep(1);
+	};
 
 	const handleSaveSlug = async () => {
 		const nextSlug = normalizedSlug();
@@ -154,7 +177,7 @@ function BrowserChrome(props: { page: StatusPageData }) {
 		updateStatusPageMutation.mutate({ id: props.page.id, faviconUrl: uploadedUrl || null });
 	};
 
-	const handleSaveCustomDomain = async () => {
+	const handleAddDomain = async () => {
 		const rawInput = customDomain().trim();
 		const nextDomain = normalizedCustomDomain();
 		if (rawInput && !nextDomain) {
@@ -165,14 +188,41 @@ function BrowserChrome(props: { page: StatusPageData }) {
 			setCustomDomainError("Enter a valid domain (e.g., status.example.com)");
 			return;
 		}
+		if (nextDomain && isApexDomain(nextDomain)) {
+			setCustomDomainError("Apex domains are not supported. Please use a subdomain (e.g., status.example.com)");
+			return;
+		}
+		if (!nextDomain && !displayCustomDomain()) {
+			setCustomDomainError("Domain is required");
+			return;
+		}
 		setCustomDomainError(null);
 		try {
 			await updateStatusPageMutation.mutateAsync({ id: props.page.id, customDomain: nextDomain || null });
-			setIsEditingCustomDomain(false);
+			if (nextDomain) {
+				setWizardStep(2);
+			} else {
+				handleCloseWizard();
+			}
 		} catch (err) {
-			setCustomDomainError(err instanceof Error ? err.message : "Unable to update custom domain");
+			setCustomDomainError(err instanceof Error ? err.message : "Unable to update domain");
 		}
 	};
+
+	const handleVerifyDomain = async () => {
+		setVerificationStatus("checking");
+		try {
+			const result = await verifyDomainMutation.mutateAsync(props.page.id);
+			if (result.verified) {
+				setVerificationStatus("verified");
+			} else {
+				setVerificationStatus("misconfigured");
+			}
+		} catch {
+			setVerificationStatus("misconfigured");
+		}
+	};
+
 
 	return (
 		<>
@@ -263,14 +313,16 @@ function BrowserChrome(props: { page: StatusPageData }) {
 					</Show>
 					<button
 						type="button"
-						class="flex items-center gap-1.5 shrink-0 text-sm text-muted-foreground/60 hover:text-foreground transition-colors"
-						onClick={() => setIsEditingCustomDomain(true)}
+						class="flex items-center gap-1.5 shrink-0 text-sm text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
+						onClick={handleOpenWizard}
 					>
 						<Globe class="w-4 h-4" />
 						<span class="hidden sm:inline">Custom domain</span>
-						<span class={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium", displayCustomDomain() ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground")}>
-							{displayCustomDomain() || "Add"}
-						</span>
+						<Show when={displayCustomDomain()}>
+							<span class="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700">
+								{displayCustomDomain()}
+							</span>
+						</Show>
 					</button>
 				</div>
 			</div>
@@ -312,49 +364,193 @@ function BrowserChrome(props: { page: StatusPageData }) {
 				</DialogContent>
 			</Dialog>
 
-			<Dialog open={isEditingCustomDomain()} onOpenChange={setIsEditingCustomDomain}>
+			<Dialog open={isCustomDomainWizardOpen()} onOpenChange={(open) => !open && handleCloseWizard()}>
 				<DialogContent>
 					<DialogHeader>
 						<DialogTitle>Custom domain</DialogTitle>
-						<DialogDescription>Point your domain to this status page.</DialogDescription>
+						<DialogDescription>
+							<Show when={wizardStep() === 1}>Enter your custom domain to get started.</Show>
+							<Show when={wizardStep() === 2}>Configure your DNS to point to our servers.</Show>
+							<Show when={wizardStep() === 3}>Verify that your domain is properly configured.</Show>
+						</DialogDescription>
 					</DialogHeader>
-					<div class="space-y-3">
-						<div class="space-y-1.5">
-							<Label for="status-page-custom-domain">Domain</Label>
-							<Input
-								id="status-page-custom-domain"
-								placeholder="status.example.com"
-								value={customDomain()}
-								onInput={(e) => {
-									setCustomDomain(e.currentTarget.value);
-									setCustomDomainError(null);
-								}}
-								autofocus
-							/>
-							<Show when={customDomainError()}>
-								<p class="text-xs text-red-600">{customDomainError()}</p>
+
+					{/* Step Indicator */}
+					<div class="flex items-center justify-center gap-2 py-2">
+						<For each={[1, 2, 3] as const}>
+							{(step) => (
+								<div class="flex items-center gap-2">
+									<div
+										class={cn(
+											"w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium transition-colors",
+											wizardStep() === step
+												? "bg-blue-500 text-white"
+												: wizardStep() > step
+													? "bg-emerald-500 text-white"
+													: "bg-muted text-muted-foreground",
+										)}
+									>
+										<Show when={wizardStep() > step} fallback={step}>
+											<Check class="w-3 h-3" />
+										</Show>
+									</div>
+									<Show when={step < 3}>
+										<div class={cn("w-8 h-0.5", wizardStep() > step ? "bg-emerald-500" : "bg-muted")} />
+									</Show>
+								</div>
+							)}
+						</For>
+					</div>
+
+					{/* Step 1: Add Domain */}
+					<Show when={wizardStep() === 1}>
+						<div class="space-y-3">
+							<div class="space-y-1.5">
+								<Label for="status-page-custom-domain">Domain</Label>
+								<Input
+									id="status-page-custom-domain"
+									placeholder="status.example.com"
+									value={customDomain()}
+									onInput={(e) => {
+										setCustomDomain(e.currentTarget.value);
+										setCustomDomainError(null);
+									}}
+									autofocus
+								/>
+								<p class="text-xs text-muted-foreground">
+									Use a subdomain like <span class="font-medium">status.example.com</span>. Apex domains (e.g., example.com) are not supported.
+								</p>
+								<Show when={customDomainError()}>
+									<p class="text-xs text-red-600">{customDomainError()}</p>
+								</Show>
+							</div>
+							<Show when={normalizedCustomDomain()}>
+								<p class="text-xs text-muted-foreground">
+									Public URL: <span class="font-medium">{`https://${normalizedCustomDomain()}`}</span>
+								</p>
 							</Show>
 						</div>
-						<Show when={normalizedCustomDomain()}>
-							<p class="text-xs text-muted-foreground">
-								Public URL: <span class="font-medium">{`https://${normalizedCustomDomain()}`}</span>
-							</p>
-						</Show>
-							<p class="text-xs text-muted-foreground">
-								Create a CNAME record from your domain to <span class="font-medium">{statusCnameTarget}</span>.
-							</p>
-					</div>
-					<DialogFooter class="gap-2">
-						<Button variant="outline" onClick={() => setIsEditingCustomDomain(false)}>
-							Cancel
-						</Button>
-						<Button onClick={handleSaveCustomDomain} disabled={updateStatusPageMutation.isPending || !!customDomainError() || !hasCustomDomainChanges()}>
-							<Show when={updateStatusPageMutation.isPending} fallback="Save">
-								<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-								Saving...
+						<DialogFooter class="gap-2">
+							<Button variant="outline" onClick={handleCloseWizard}>
+								Cancel
+							</Button>
+							<Show
+								when={!normalizedCustomDomain() && displayCustomDomain()}
+								fallback={
+									<Button onClick={handleAddDomain} disabled={updateStatusPageMutation.isPending || !normalizedCustomDomain()}>
+										<Show when={updateStatusPageMutation.isPending} fallback={<>{displayCustomDomain() ? "Update" : "Add Domain"} <ArrowRight class="w-4 h-4 ml-1" /></>}>
+											<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+											{displayCustomDomain() ? "Updating..." : "Adding..."}
+										</Show>
+									</Button>
+								}
+							>
+								<Button variant="destructive" onClick={handleAddDomain} disabled={updateStatusPageMutation.isPending}>
+									<Show when={updateStatusPageMutation.isPending} fallback="Remove Domain">
+										<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+										Removing...
+									</Show>
+								</Button>
 							</Show>
-						</Button>
-					</DialogFooter>
+						</DialogFooter>
+					</Show>
+
+					{/* Step 2: Configure DNS */}
+					<Show when={wizardStep() === 2}>
+						<div class="space-y-4">
+							<div class="rounded-lg bg-slate-50 border border-slate-200 p-4 space-y-3">
+								<p class="text-sm font-medium text-foreground">DNS Configuration</p>
+								<p class="text-sm text-muted-foreground">
+									Create a <span class="font-mono bg-slate-200 px-1 rounded">CNAME</span> record with the following settings:
+								</p>
+								<div class="space-y-2 text-sm">
+									<div>
+										<div class="text-muted-foreground">Name / Host:</div>
+										<div class="font-mono text-foreground break-all">{displayCustomDomain()}</div>
+									</div>
+									<div>
+										<div class="text-muted-foreground">Value / Target:</div>
+										<div class="font-mono text-foreground break-all">{statusCnameTarget}</div>
+									</div>
+								</div>
+							</div>
+							<p class="text-xs text-muted-foreground">
+								DNS changes can take up to hours to propagate, but usually happen within a few minutes.
+							</p>
+						</div>
+						<DialogFooter class="gap-2">
+							<Button variant="outline" onClick={() => setWizardStep(1)}>
+								Back
+							</Button>
+							<Button onClick={() => setWizardStep(3)}>
+								Next <ArrowRight class="w-4 h-4 ml-1" />
+							</Button>
+						</DialogFooter>
+					</Show>
+
+					{/* Step 3: Verify */}
+					<Show when={wizardStep() === 3}>
+						<div class="space-y-4">
+							<div class="rounded-lg border p-4 space-y-2">
+								<div class="flex items-center justify-between">
+									<span class="text-sm font-medium">{displayCustomDomain()}</span>
+									<Show
+										when={verificationStatus() !== "idle"}
+										fallback={<span class="text-xs text-muted-foreground">Not checked</span>}
+									>
+										<Show when={verificationStatus() === "checking"}>
+											<span class="flex items-center gap-1 text-xs text-muted-foreground">
+												<LoaderCircle class="w-3 h-3 animate-spin" />
+												Checking...
+											</span>
+										</Show>
+										<Show when={verificationStatus() === "verified"}>
+											<span class="flex items-center gap-1 text-xs text-emerald-600">
+												<CheckCircle class="w-3 h-3" />
+												Verified
+											</span>
+										</Show>
+										<Show when={verificationStatus() === "misconfigured"}>
+											<span class="flex items-center gap-1 text-xs text-amber-600">
+												<AlertTriangle class="w-3 h-3" />
+												Not configured
+											</span>
+										</Show>
+									</Show>
+								</div>
+								<Show when={verificationStatus() === "misconfigured"}>
+									<p class="text-xs text-muted-foreground">
+										DNS is not properly configured. Make sure you've added the CNAME record and wait for propagation.
+									</p>
+								</Show>
+								<Show when={verificationStatus() === "verified"}>
+									<p class="text-xs text-emerald-600">
+										Your custom domain is properly configured and ready to use.
+									</p>
+								</Show>
+							</div>
+						</div>
+						<DialogFooter class="gap-2">
+							<Button variant="outline" onClick={() => setWizardStep(2)}>
+								Back
+							</Button>
+							<Show
+								when={verificationStatus() === "verified"}
+								fallback={
+									<Button onClick={handleVerifyDomain} disabled={verifyDomainMutation.isPending}>
+										<Show when={verifyDomainMutation.isPending} fallback="Verify Configuration">
+											<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+											Verifying...
+										</Show>
+									</Button>
+								}
+							>
+								<Button onClick={handleCloseWizard}>
+									Done
+								</Button>
+							</Show>
+						</DialogFooter>
+					</Show>
 				</DialogContent>
 			</Dialog>
 		</>

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
 import type { getServices } from "../services/services";
-import { createStatusPage, deleteStatusPage, getStatusPages, updateStatusPage, updateStatusPageServices } from "./status-pages";
+import { createStatusPage, deleteStatusPage, getStatusPages, updateStatusPage, updateStatusPageServices, verifyCustomDomain } from "./status-pages";
 
 type GetStatusPagesResponse = Awaited<ReturnType<typeof getStatusPages>>;
 type GetServicesResponse = Awaited<ReturnType<typeof getServices>>;
@@ -241,5 +241,13 @@ export function useUpdateStatusPageServices(options?: { onSuccess?: () => void; 
 			}
 			options?.onError?.();
 		},
+	}));
+}
+
+export function useVerifyCustomDomain() {
+	const verifyCustomDomainFn = useServerFn(verifyCustomDomain);
+
+	return useMutation(() => ({
+		mutationFn: (id: string) => verifyCustomDomainFn({ data: { id } }),
 	}));
 }

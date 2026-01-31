@@ -29,3 +29,8 @@ export function isValidDomain(domain: string): boolean {
 	if (domain.startsWith("-") || domain.endsWith("-")) return false;
 	return true;
 }
+
+export function isApexDomain(domain: string): boolean {
+	const parts = domain.split(".");
+	return parts.length <= 2;
+}

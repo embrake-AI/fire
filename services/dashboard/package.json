@@ -13,6 +13,7 @@
 		"clean": "rm -rf .output node_modules .vercel"
 	},
 	"dependencies": {
+		"@vercel/sdk": "^1.0.0",
 		"@ark-ui/solid": "^5.30.0",
 		"@fire/common": "workspace:*",
 		"@fire/db": "workspace:*",
