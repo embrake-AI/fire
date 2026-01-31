@@ -2,6 +2,8 @@
 
 SolidJS dashboard with Vite, TanStack Router, and TanStack Query.
 
+**Stack**: SolidJS, TanStack Start/Router/Query, Tailwind CSS, Ark UI
+
 ## Package Management
 
 This monorepo uses **bun**. Run commands from the monorepo root or this directory:
@@ -14,6 +16,58 @@ bun run test       # Run tests with vitest
 bun run type-check # TypeScript type checking
 bun run lint       # Run biome linter
 ```
+
+**Route Generation**: TanStack Router auto-generates route types from file structure. After adding new route files, run `bun run dev` to regenerate route types.
+
+---
+
+## Server Functions with Auth Middleware
+
+All API calls go through server functions with auth middleware. See `src/lib/rotations/rotations.ts`:
+
+```tsx
+export const createRotation = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .inputValidator((data: CreateRotationInput) => data)
+  .handler(async ({ data, context }) => {
+    // context.clientId, context.userId available from middleware
+    const [newRotation] = await db.insert(rotation).values({ ... }).returning();
+    return { id: newRotation.id };
+  });
+```
+
+---
+
+## Query Hooks with Optimistic Updates
+
+Mutations use optimistic cache updates with rollback. See `src/lib/rotations/rotations.hooks.ts`:
+
+```tsx
+export function useCreateRotation(options?: { onMutate?: (tempId: string) => void }) {
+  const queryClient = useQueryClient();
+  return useMutation(() => ({
+    mutationFn: (data) => createRotationFn({ data }),
+    onMutate: async (newData) => {
+      const previousData = queryClient.getQueryData(["rotations"]);
+      const tempId = `temp-${Date.now()}`;
+      queryClient.setQueryData(["rotations"], (old) => [optimisticItem, ...(old ?? [])]);
+      options?.onMutate?.(tempId);
+      return { previousData, tempId };
+    },
+    onSuccess: (result, _vars, context) => {
+      // Replace temp ID with real ID
+      queryClient.setQueryData(["rotations"], (old) =>
+        old?.map((r) => (r.id === context?.tempId ? { ...r, id: result.id } : r))
+      );
+    },
+    onError: (_err, _vars, context) => {
+      queryClient.setQueryData(["rotations"], context?.previousData);
+    },
+  }));
+}
+```
+
+---
 
 ## Static Shell + Suspense Pattern
 

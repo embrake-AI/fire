@@ -44,6 +44,35 @@ This provides at-least-once delivery with strong transactional consistency.
 | Dispatcher | `dispatcher/workflow.ts` | Workflow dispatcher for side effects      |
 | Senders    | `adapters/*/sender/`   | Send updates to external systems          |
 
+## Hono Route Handlers
+
+Routes use middleware for auth verification. See `src/adapters/dashboard/receiver/routes.ts`:
+
+```ts
+const dashboardRoutes = new Hono<DashboardContext>()
+  .use(verifyDashboardRequestMiddleware);
+
+dashboardRoutes.post("/:id/severity", async (c) => {
+  const { severity } = await c.req.json<{ severity: IS["severity"] }>();
+  const incident = await updateSeverity({ c, id: c.req.param("id"), severity });
+  return c.json({ incident });
+});
+```
+
+## Handler Orchestration
+
+Handlers coordinate DO, D1, and senders. See `src/handler/index.ts`:
+
+```ts
+export async function startIncident({ c, incident, entryPoint }): Promise<string> {
+  const id = c.env.INCIDENT.idFromName(incident.id);
+  const stub = c.env.INCIDENT.get(id);
+  await stub.start(incident, entryPoint);  // DO is source of truth
+  // D1 insert happens after DO confirms
+  return incident.id;
+}
+```
+
 ## Adding New Adapters
 
 When adding support for a new external system (e.g., PagerDuty, email):
