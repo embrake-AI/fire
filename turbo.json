@@ -6,7 +6,7 @@
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],
-			"outputs": [".output/**", "dist/**", ".vercel/output/**"],
+			"outputs": [".next/**", ".output/**", "dist/**", ".vercel/output/**"],
 			"inputs": ["$TURBO_DEFAULT$", ".env"]
 		},
 		"type-check": {},
