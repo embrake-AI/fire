@@ -41,8 +41,18 @@ function toSlug(value: string) {
 	return value
 		.toLowerCase()
 		.trim()
-		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/[^a-z0-9-]+/g, "-")
 		.replace(/^-+|-+$/g, "");
+}
+
+function validateSlug(slug: string): string | null {
+	if (slug.includes(".")) {
+		return "Slug cannot contain dots";
+	}
+	if (slug === "feed" || slug.startsWith("feed.")) {
+		return "This slug is reserved";
+	}
+	return null;
 }
 
 export const getStatusPages = createServerFn({ method: "GET" })
@@ -126,6 +136,10 @@ export const createStatusPage = createServerFn({ method: "POST" })
 		if (!trimmedName) {
 			throw new Error("Status page name is required");
 		}
+		const slugError = validateSlug(data.slug);
+		if (slugError) {
+			throw new Error(slugError);
+		}
 		const slug = toSlug(data.slug);
 		if (!slug) {
 			throw new Error("Status page slug is required");
@@ -205,6 +219,10 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 			updateFields.name = trimmedName;
 		}
 		if (data.slug !== undefined) {
+			const slugError = validateSlug(data.slug);
+			if (slugError) {
+				throw new Error(slugError);
+			}
 			const nextSlug = toSlug(data.slug);
 			if (!nextSlug) {
 				throw new Error("Status page slug is required");

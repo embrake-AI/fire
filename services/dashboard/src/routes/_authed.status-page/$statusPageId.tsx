@@ -52,8 +52,18 @@ function toSlug(value: string) {
 	return value
 		.toLowerCase()
 		.trim()
-		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/[^a-z0-9-]+/g, "-")
 		.replace(/^-+|-+$/g, "");
+}
+
+function validateSlug(slug: string): string | null {
+	if (slug.includes(".")) {
+		return "Slug cannot contain dots";
+	}
+	if (slug === "feed" || slug.startsWith("feed.")) {
+		return "This slug is reserved";
+	}
+	return null;
 }
 
 function StatusPageDetailsPage() {
@@ -164,6 +174,11 @@ function BrowserChrome(props: { page: StatusPageData }) {
 	};
 
 	const handleSaveSlug = async () => {
+		const validationError = validateSlug(slug());
+		if (validationError) {
+			setSlugError(validationError);
+			return;
+		}
 		const nextSlug = normalizedSlug();
 		if (!nextSlug) {
 			setSlugError("Slug is required");

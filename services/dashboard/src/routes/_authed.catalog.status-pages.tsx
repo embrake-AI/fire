@@ -93,8 +93,18 @@ function toSlug(value: string) {
 	return value
 		.toLowerCase()
 		.trim()
-		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/[^a-z0-9-]+/g, "-")
 		.replace(/^-+|-+$/g, "");
+}
+
+function validateSlug(slug: string): string | null {
+	if (slug.includes(".")) {
+		return "Slug cannot contain dots";
+	}
+	if (slug === "feed" || slug.startsWith("feed.")) {
+		return "This slug is reserved";
+	}
+	return null;
 }
 
 interface CreateStatusPageFormProps {
@@ -107,6 +117,7 @@ function CreateStatusPageForm(props: CreateStatusPageFormProps) {
 	const [name, setName] = createSignal("");
 	const [slug, setSlug] = createSignal("");
 	const [slugEdited, setSlugEdited] = createSignal(false);
+	const [slugError, setSlugError] = createSignal<string | null>(null);
 
 	const derivedSlug = createMemo(() => (slugEdited() ? slug() : toSlug(name())));
 	const previewSlug = createMemo(() => toSlug(derivedSlug()));
@@ -116,15 +127,22 @@ function CreateStatusPageForm(props: CreateStatusPageFormProps) {
 		if (!slugEdited()) {
 			setSlug(toSlug(value));
 		}
+		setSlugError(null);
 	};
 
 	const handleSlugChange = (value: string) => {
 		setSlugEdited(true);
 		setSlug(value);
+		setSlugError(null);
 	};
 
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
+		const error = validateSlug(derivedSlug());
+		if (error) {
+			setSlugError(error);
+			return;
+		}
 		props.onSubmit(name(), derivedSlug());
 	};
 
@@ -147,7 +165,10 @@ function CreateStatusPageForm(props: CreateStatusPageFormProps) {
 						<span class="text-sm text-muted-foreground shrink-0">/status/</span>
 						<Input id="status-page-slug" placeholder="public-status" value={derivedSlug()} onInput={(e) => handleSlugChange(e.currentTarget.value)} class="flex-1" />
 					</div>
-					<Show when={previewSlug()}>
+					<Show when={slugError()}>
+						<p class="text-xs text-red-600">{slugError()}</p>
+					</Show>
+					<Show when={previewSlug() && !slugError()}>
 						<p class="text-xs text-muted-foreground">Will create /status/{previewSlug()}</p>
 					</Show>
 				</div>
