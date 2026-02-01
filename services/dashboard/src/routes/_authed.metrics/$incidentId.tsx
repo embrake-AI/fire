@@ -309,14 +309,14 @@ function fromDatetimeLocal(value: string): string {
 function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelineItem[] }) {
 	const mutation = useUpdateAnalysisTimeline(() => props.incidentId);
 
-	const updateItem = (index: number, field: "text" | "created_at", value: string) => {
-		const updated = [...props.timeline];
-		updated[index] = { ...updated[index], [field]: value };
-		mutation.mutate(updated);
+	const sorted = createMemo(() => [...props.timeline].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+
+	const updateItem = (item: IncidentTimelineItem, field: "text" | "created_at", value: string) => {
+		mutation.mutate(props.timeline.map((t) => (t === item ? { ...t, [field]: value } : t)));
 	};
 
-	const deleteItem = (index: number) => {
-		mutation.mutate(props.timeline.filter((_, i) => i !== index));
+	const deleteItem = (item: IncidentTimelineItem) => {
+		mutation.mutate(props.timeline.filter((t) => t !== item));
 	};
 
 	const addItem = () => {
@@ -334,19 +334,19 @@ function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelin
 			</div>
 			<Show when={props.timeline.length > 0} fallback={<p class="text-sm text-muted-foreground">No timeline entries</p>}>
 				<div class="space-y-3">
-					<For each={props.timeline}>
-						{(item, index) => (
+					<For each={sorted()}>
+						{(item) => (
 							<div class="flex items-start gap-3 group">
 								<input
 									type="datetime-local"
 									value={toDatetimeLocal(item.created_at)}
-									onChange={(e) => updateItem(index(), "created_at", fromDatetimeLocal(e.currentTarget.value))}
+									onChange={(e) => updateItem(item, "created_at", fromDatetimeLocal(e.currentTarget.value))}
 									class="w-44 shrink-0 px-2 py-1.5 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-blue-500"
 								/>
 								<input
 									type="text"
 									value={item.text}
-									onInput={(e) => updateItem(index(), "text", e.currentTarget.value)}
+									onInput={(e) => updateItem(item, "text", e.currentTarget.value)}
 									placeholder="What happened..."
 									class="flex-1 px-2 py-1.5 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-blue-500"
 								/>
@@ -354,7 +354,7 @@ function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelin
 									variant="ghost"
 									size="icon"
 									class="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-									onClick={() => deleteItem(index())}
+									onClick={() => deleteItem(item)}
 								>
 									<Trash2 class="w-4 h-4" />
 								</Button>
@@ -389,8 +389,7 @@ function EditableActions(props: { incidentId: string; actions: IncidentAction[] 
 				<div class="space-y-3">
 					<For each={props.actions}>
 						{(action) => (
-							<div class="flex items-start gap-3 group">
-								<span class="mt-3 h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" />
+							<div class="flex items-start gap-2 group">
 								<div class="flex-1">
 									<AutoSaveTextarea
 										value={action.description}

@@ -71,8 +71,7 @@ export function useUpdateAnalysisTimeline(incidentId: Accessor<string>) {
 			await queryClient.cancelQueries({ queryKey: ["analysis", incidentId()] });
 			const previous = queryClient.getQueryData<IncidentAnalysis>(["analysis", incidentId()]);
 			if (previous) {
-				const filtered = timeline.filter((item) => item.text.trim().length > 0);
-				queryClient.setQueryData(["analysis", incidentId()], { ...previous, timeline: filtered.length ? filtered : null });
+				queryClient.setQueryData(["analysis", incidentId()], { ...previous, timeline: timeline.length ? timeline : null });
 			}
 			return { previous };
 		},

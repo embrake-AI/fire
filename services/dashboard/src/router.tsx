@@ -7,6 +7,7 @@ const queryClientOptions: QueryClientConfig = {
 	defaultOptions: {
 		queries: {
 			retry: 1,
+			refetchIntervalInBackground: false,
 		},
 		mutations: {
 			retry: 0,
