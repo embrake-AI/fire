@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft, ChartColumn, Clock, ExternalLink, FileText, LoaderCircle, Plus, Trash2 } from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, Show, Suspense, Switch } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { NotionIcon } from "~/components/icons/NotionIcon";
 import { UserDisplay } from "~/components/MaybeUser";
 import { Timeline } from "~/components/Timeline";
@@ -426,7 +427,7 @@ function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelin
 	const mutation = useUpdateAnalysisTimeline(() => props.incidentId);
 
 	type TimelineEntry = IncidentTimelineItem & { localId: string };
-	const [items, setItems] = createSignal<TimelineEntry[]>([]);
+	const [items, setItems] = createStore<TimelineEntry[]>([]);
 	let idCounter = 0;
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -437,18 +438,17 @@ function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelin
 		on(
 			() => props.incidentId,
 			() => {
+				idCounter = 0;
 				setItems(props.timeline.map((item) => ({ ...item, localId: makeLocalId() })));
-			}
-		)
+			},
+		),
 	);
 
-	const sortedItems = createMemo(() =>
-		[...items()].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-	);
+	const sortedItems = createMemo(() => [...items].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
 
 	const save = () => {
 		clearTimeout(saveTimer);
-		const payload = items().map(({ created_at, text }) => ({ created_at, text }));
+		const payload = items.map(({ created_at, text }) => ({ created_at, text }));
 		mutation.mutate(payload);
 	};
 
@@ -460,17 +460,24 @@ function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelin
 	onCleanup(() => clearTimeout(saveTimer));
 
 	const updateItem = (localId: string, field: "text" | "created_at", value: string) => {
-		setItems((prev) => prev.map((item) => (item.localId === localId ? { ...item, [field]: value } : item)));
+		const index = items.findIndex((item) => item.localId === localId);
+		if (index === -1) return;
+		setItems(index, field, value);
 		debouncedSave();
 	};
 
 	const deleteItem = (localId: string) => {
-		setItems((prev) => prev.filter((item) => item.localId !== localId));
+		setItems(
+			reconcile(
+				items.filter((item) => item.localId !== localId),
+				{ key: "localId" },
+			),
+		);
 		save();
 	};
 
 	const addItem = () => {
-		setItems((prev) => [...prev, { localId: makeLocalId(), created_at: new Date().toISOString(), text: "" }]);
+		setItems(reconcile([...items, { localId: makeLocalId(), created_at: new Date().toISOString(), text: "" }], { key: "localId" }));
 		save();
 	};
 
@@ -522,6 +529,11 @@ function EditableActions(props: { incidentId: string; actions: IncidentAction[] 
 	const updateMutation = useUpdateIncidentAction(() => props.incidentId);
 	const deleteMutation = useDeleteIncidentAction(() => props.incidentId);
 	const createMutation = useCreateIncidentAction(() => props.incidentId);
+	const [actions, setActions] = createStore<IncidentAction[]>(props.actions);
+
+	createEffect(() => {
+		setActions(reconcile(props.actions, { key: "id" }));
+	});
 
 	const addAction = () => {
 		createMutation.mutate("");
@@ -536,9 +548,9 @@ function EditableActions(props: { incidentId: string; actions: IncidentAction[] 
 					Add action
 				</Button>
 			</div>
-			<Show when={props.actions.length > 0} fallback={<p class="text-sm text-muted-foreground">No follow-up actions</p>}>
+			<Show when={actions.length > 0} fallback={<p class="text-sm text-muted-foreground">No follow-up actions</p>}>
 				<div class="space-y-3">
-					<For each={props.actions}>
+					<For each={actions}>
 						{(action) => (
 							<div class="flex items-start gap-2 group">
 								<div class="flex-1">
