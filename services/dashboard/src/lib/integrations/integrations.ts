@@ -1,3 +1,4 @@
+import type { SlackIntegrationData } from "@fire/db/schema";
 import { integration, userIntegration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, eq } from "drizzle-orm";
@@ -50,7 +51,7 @@ export const getUserIntegrations = createServerFn({ method: "GET" })
  */
 export const getInstallUrl = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
-	.inputValidator((data: { platform: "slack"; type: "workspace" | "user" }) => data)
+	.inputValidator((data: { platform: "slack" | "notion"; type: "workspace" | "user" }) => data)
 	.handler(async ({ context, data }) => {
 		const { userId, clientId } = context;
 
@@ -69,6 +70,17 @@ export const getInstallUrl = createServerFn({ method: "POST" })
 
 			return authorize.toString();
 		}
+
+		if (data.platform === "notion") {
+			const authorize = new URL("https://api.notion.com/v1/oauth/authorize");
+			authorize.searchParams.set("client_id", mustGetEnv("NOTION_CLIENT_ID"));
+			authorize.searchParams.set("response_type", "code");
+			authorize.searchParams.set("owner", "user");
+			authorize.searchParams.set("redirect_uri", `${mustGetEnv("VITE_APP_URL")}/notion/oauth/callback`);
+			authorize.searchParams.set("state", state);
+
+			return authorize.toString();
+		}
 	});
 
 /**
@@ -80,7 +92,7 @@ export const getInstallUrl = createServerFn({ method: "POST" })
  */
 export const disconnectWorkspaceIntegration = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
-	.inputValidator((data: "slack") => data)
+	.inputValidator((data: "slack" | "notion") => data)
 	.handler(async ({ context, data }) => {
 		const { clientId } = context;
 
@@ -93,12 +105,16 @@ export const disconnectWorkspaceIntegration = createServerFn({ method: "POST" })
 			.where(and(eq(integration.clientId, clientId), eq(integration.platform, data)))
 			.returning({ data: integration.data });
 
-		if (data === "slack" && result?.data?.botToken) {
-			const revoke = new URL("https://slack.com/api/auth.revoke");
-			revoke.searchParams.set("client_id", mustGetEnv("SLACK_CLIENT_ID"));
-			revoke.searchParams.set("token", result.data.botToken);
-			await fetch(revoke.toString());
+		if (data === "slack" && result?.data) {
+			const slackData = result.data as SlackIntegrationData;
+			if (slackData.botToken) {
+				const revoke = new URL("https://slack.com/api/auth.revoke");
+				revoke.searchParams.set("client_id", mustGetEnv("SLACK_CLIENT_ID"));
+				revoke.searchParams.set("token", slackData.botToken);
+				await fetch(revoke.toString());
+			}
 		}
+		// Note: Notion doesn't have a token revocation endpoint
 
 		return { success: true };
 	});
@@ -142,11 +158,16 @@ export const getSlackBotChannels = createServerFn({ method: "GET" })
 			.where(and(eq(integration.clientId, clientId), eq(integration.platform, "slack")))
 			.limit(1);
 
-		if (!slackIntegration?.data?.botToken) {
+		if (!slackIntegration?.data) {
 			return [];
 		}
 
-		return fetchSlackBotChannels(slackIntegration.data.botToken);
+		const slackData = slackIntegration.data as SlackIntegrationData;
+		if (!slackData.botToken) {
+			return [];
+		}
+
+		return fetchSlackBotChannels(slackData.botToken);
 	});
 
 /**
@@ -164,9 +185,14 @@ export const getSlackEmojis = createServerFn({ method: "GET" })
 			.where(and(eq(integration.clientId, clientId), eq(integration.platform, "slack")))
 			.limit(1);
 
-		if (!slackIntegration?.data?.botToken) {
+		if (!slackIntegration?.data) {
 			return {};
 		}
 
-		return fetchSlackEmojis(slackIntegration.data.botToken);
+		const slackData = slackIntegration.data as SlackIntegrationData;
+		if (!slackData.botToken) {
+			return {};
+		}
+
+		return fetchSlackEmojis(slackData.botToken);
 	});

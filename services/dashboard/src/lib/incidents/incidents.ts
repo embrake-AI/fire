@@ -1,4 +1,5 @@
 import type { EntryPoint, IS, IS_Event, ListIncidentsElement } from "@fire/common";
+import type { SlackIntegrationData } from "@fire/db/schema";
 import { entryPoint, incidentAnalysis, integration, rotation, user, userIntegration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
@@ -147,7 +148,8 @@ export const sendSlackMessage = createServerFn({ method: "POST" })
 			if (!slackIntegration) {
 				throw new Error("Slack integration not found");
 			}
-			slackUserId = slackIntegration.data.botUserId;
+			const slackData = slackIntegration.data as SlackIntegrationData;
+			slackUserId = slackData.botUserId;
 		}
 
 		const messageId = `dashboard-${data.lastEventId + 1}`;
@@ -234,9 +236,11 @@ export const startIncident = createServerFn({ method: "POST" })
 		};
 		if (data.channel) {
 			const slackIntegration = client.integrations.find((i) => i.platform === "slack");
-			const botToken = slackIntegration?.data?.botToken;
-			if (botToken) {
-				metadata.botToken = botToken;
+			if (slackIntegration?.data) {
+				const slackData = slackIntegration.data as SlackIntegrationData;
+				if (slackData.botToken) {
+					metadata.botToken = slackData.botToken;
+				}
 			}
 		}
 		const entryPoints: EntryPoint[] = client.entryPoints

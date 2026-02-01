@@ -1,0 +1,1 @@
+ALTER TYPE "platform_type" ADD VALUE 'notion';

@@ -6,15 +6,13 @@ import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, For, Index, Match, onCleanup, Show, Suspense, Switch } from "solid-js";
 import { createStore } from "solid-js/store";
 import { NotionIcon } from "~/components/icons/NotionIcon";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "~/components/ui/dialog";
-import { useIntegrations } from "~/lib/integrations/integrations.hooks";
-import { exportToNotion, getNotionPages } from "~/lib/notion/notion-export";
 import { UserDisplay } from "~/components/MaybeUser";
 import { Timeline } from "~/components/Timeline";
 import { AutoSaveTextarea } from "~/components/ui/auto-save-textarea";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "~/components/ui/dialog";
 import { Skeleton } from "~/components/ui/skeleton";
 import { getSeverity, getStatus } from "~/lib/incident-config";
 import {
@@ -26,6 +24,8 @@ import {
 	useUpdateIncidentAction,
 } from "~/lib/incidents/incident-analysis.hooks";
 import { computeIncidentMetrics, getAnalysisById, getIncidents, type IncidentAction, type IncidentAnalysis, type IncidentTimelineItem } from "~/lib/incidents/incidents";
+import { useIntegrations } from "~/lib/integrations/integrations.hooks";
+import { exportToNotion, getNotionPages } from "~/lib/notion/notion-export";
 import { useUserBySlackId } from "~/lib/users/users.hooks";
 
 function AnalysisSkeleton() {
@@ -338,12 +338,7 @@ function ExportToNotionDialog(props: { incidentId: string; title: string }) {
 					fallback={
 						<div class="space-y-4">
 							<p class="text-sm text-muted-foreground">Post-mortem exported successfully.</p>
-							<a
-								href={exportedUrl()!}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium"
-							>
+							<a href={exportedUrl()!} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium">
 								<ExternalLink class="w-4 h-4" />
 								Open in Notion
 							</a>
@@ -372,9 +367,7 @@ function ExportToNotionDialog(props: { incidentId: string; title: string }) {
 								{(page) => (
 									<button
 										type="button"
-										class={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm ${
-											selectedPageId() === page.id ? "bg-blue-100 text-blue-900" : "hover:bg-muted"
-										}`}
+										class={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm ${selectedPageId() === page.id ? "bg-blue-100 text-blue-900" : "hover:bg-muted"}`}
 										onClick={() => setSelectedPageId(page.id)}
 									>
 										<span class="mr-2">{page.icon || "\u{1F4C4}"}</span>

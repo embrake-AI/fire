@@ -1,4 +1,5 @@
 import { emailInDomains } from "@fire/common";
+import type { SlackIntegrationData } from "@fire/db/schema";
 import { client, integration, team, teamMember, user } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, count, eq } from "drizzle-orm";
@@ -157,10 +158,11 @@ export const addSlackUserAsTeamMember = createServerFn({ method: "POST" })
 			.where(and(eq(integration.clientId, context.clientId), eq(integration.platform, "slack")))
 			.limit(1);
 
-		const botToken = clientWithSlackIntegration?.integration?.data?.botToken;
-		if (!botToken) {
+		if (!clientWithSlackIntegration?.integration?.data) {
 			throw new Error("Slack integration not found");
 		}
+		const slackData = clientWithSlackIntegration.integration.data as SlackIntegrationData;
+		const botToken = slackData.botToken;
 
 		const slackUser = await fetchSlackUserById(botToken, data.slackUserId);
 		if (!slackUser) {

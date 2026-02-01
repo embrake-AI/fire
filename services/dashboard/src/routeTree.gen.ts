@@ -19,6 +19,7 @@ import { Route as AuthedCatalogRouteImport } from './routes/_authed.catalog'
 import { Route as ApiMetricsIndexRouteImport } from './routes/api/metrics/index'
 import { Route as AuthedMetricsIndexRouteImport } from './routes/_authed.metrics/index'
 import { Route as SlackOauthCallbackRouteImport } from './routes/slack/oauth/callback'
+import { Route as NotionOauthCallbackRouteImport } from './routes/notion/oauth/callback'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedTeamsTeamIdRouteImport } from './routes/_authed.teams/$teamId'
 import { Route as AuthedStatusPageStatusPageIdRouteImport } from './routes/_authed.status-page/$statusPageId'
@@ -89,6 +90,11 @@ const AuthedMetricsIndexRoute = AuthedMetricsIndexRouteImport.update({
 const SlackOauthCallbackRoute = SlackOauthCallbackRouteImport.update({
   id: '/slack/oauth/callback',
   path: '/slack/oauth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotionOauthCallbackRoute = NotionOauthCallbackRouteImport.update({
+  id: '/notion/oauth/callback',
+  path: '/notion/oauth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -235,6 +241,7 @@ export interface FileRoutesByFullPath {
   '/status-page/$statusPageId': typeof AuthedStatusPageStatusPageIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/notion/oauth/callback': typeof NotionOauthCallbackRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/metrics': typeof AuthedMetricsIndexRoute
   '/api/metrics': typeof ApiMetricsIndexRoute
@@ -268,6 +275,7 @@ export interface FileRoutesByTo {
   '/status-page/$statusPageId': typeof AuthedStatusPageStatusPageIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/notion/oauth/callback': typeof NotionOauthCallbackRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/metrics': typeof AuthedMetricsIndexRoute
   '/api/metrics': typeof ApiMetricsIndexRoute
@@ -303,6 +311,7 @@ export interface FileRoutesById {
   '/_authed/status-page/$statusPageId': typeof AuthedStatusPageStatusPageIdRoute
   '/_authed/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/notion/oauth/callback': typeof NotionOauthCallbackRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/_authed/metrics/': typeof AuthedMetricsIndexRoute
   '/api/metrics/': typeof ApiMetricsIndexRoute
@@ -338,6 +347,7 @@ export interface FileRouteTypes {
     | '/status-page/$statusPageId'
     | '/teams/$teamId'
     | '/api/auth/$'
+    | '/notion/oauth/callback'
     | '/slack/oauth/callback'
     | '/metrics'
     | '/api/metrics'
@@ -371,6 +381,7 @@ export interface FileRouteTypes {
     | '/status-page/$statusPageId'
     | '/teams/$teamId'
     | '/api/auth/$'
+    | '/notion/oauth/callback'
     | '/slack/oauth/callback'
     | '/metrics'
     | '/api/metrics'
@@ -405,6 +416,7 @@ export interface FileRouteTypes {
     | '/_authed/status-page/$statusPageId'
     | '/_authed/teams/$teamId'
     | '/api/auth/$'
+    | '/notion/oauth/callback'
     | '/slack/oauth/callback'
     | '/_authed/metrics/'
     | '/api/metrics/'
@@ -425,6 +437,7 @@ export interface RootRouteChildren {
   ApiUploadRoute: typeof ApiUploadRoute
   AuthErrorRoute: typeof AuthErrorRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  NotionOauthCallbackRoute: typeof NotionOauthCallbackRoute
   SlackOauthCallbackRoute: typeof SlackOauthCallbackRoute
   ApiMetricsIndexRoute: typeof ApiMetricsIndexRoute
 }
@@ -499,6 +512,13 @@ declare module '@tanstack/solid-router' {
       path: '/slack/oauth/callback'
       fullPath: '/slack/oauth/callback'
       preLoaderRoute: typeof SlackOauthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notion/oauth/callback': {
+      id: '/notion/oauth/callback'
+      path: '/notion/oauth/callback'
+      fullPath: '/notion/oauth/callback'
+      preLoaderRoute: typeof NotionOauthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -754,6 +774,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiUploadRoute: ApiUploadRoute,
   AuthErrorRoute: AuthErrorRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  NotionOauthCallbackRoute: NotionOauthCallbackRoute,
   SlackOauthCallbackRoute: SlackOauthCallbackRoute,
   ApiMetricsIndexRoute: ApiMetricsIndexRoute,
 }

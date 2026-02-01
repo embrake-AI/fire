@@ -1,4 +1,5 @@
 import { emailInDomains } from "@fire/common";
+import type { SlackIntegrationData } from "@fire/db/schema";
 import { client, entryPoint, integration, rotation, user } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq } from "drizzle-orm";
@@ -59,11 +60,15 @@ export const getSlackUsers = createServerFn({
 })
 	.middleware([authMiddleware])
 	.handler(async ({ context }) => {
-		const [slackIntegration] = await db.select().from(integration).where(eq(integration.clientId, context.clientId)).limit(1);
-		const slackIntegrationData = slackIntegration?.data;
-		if (!slackIntegrationData) {
+		const [slackIntegration] = await db
+			.select()
+			.from(integration)
+			.where(and(eq(integration.clientId, context.clientId), eq(integration.platform, "slack")))
+			.limit(1);
+		if (!slackIntegration?.data) {
 			return [];
 		}
+		const slackIntegrationData = slackIntegration.data as SlackIntegrationData;
 		const slackUsers = await fetchSlackUsers(slackIntegrationData.botToken);
 		return slackUsers;
 	});
@@ -121,10 +126,11 @@ export const createEntryPointFromSlackUser = createServerFn({ method: "POST" })
 			.where(and(eq(integration.clientId, context.clientId), eq(integration.platform, "slack")))
 			.limit(1);
 
-		const botToken = clientWithSlackIntegration?.integration?.data?.botToken;
-		if (!botToken) {
+		if (!clientWithSlackIntegration?.integration?.data) {
 			throw new Error("Slack integration not found");
 		}
+		const slackData = clientWithSlackIntegration.integration.data as SlackIntegrationData;
+		const botToken = slackData.botToken;
 
 		const slackUser = await fetchSlackUserById(botToken, data.slackUserId);
 		if (!slackUser) {

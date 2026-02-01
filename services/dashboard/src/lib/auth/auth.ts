@@ -1,3 +1,4 @@
+import type { SlackIntegrationData } from "@fire/db/schema";
 import { client, integration, user as userTable } from "@fire/db/schema";
 import { APIError, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -103,7 +104,8 @@ export const auth = betterAuth({
 						});
 					}
 
-					const slackId = await lookupSlackUserIdByEmail(slackIntegration.data.botToken, user.email);
+					const slackData = slackIntegration.data as SlackIntegrationData;
+					const slackId = await lookupSlackUserIdByEmail(slackData.botToken, user.email);
 					if (!slackId) {
 						throw new APIError("BAD_REQUEST", {
 							message: "User not found in Slack workspace. Please ensure you're using the same email as your Slack account.",

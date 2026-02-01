@@ -1,7 +1,7 @@
 import { jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { client, user } from "./auth";
 
-export const platformType = pgEnum("platform_type", ["slack"]);
+export const platformType = pgEnum("platform_type", ["slack", "notion"]);
 
 /**
  * Slack-specific integration data stored in the JSONB `data` column.
@@ -17,6 +17,22 @@ export type SlackIntegrationData = {
 };
 
 /**
+ * Notion-specific integration data stored in the JSONB `data` column.
+ */
+export type NotionIntegrationData = {
+	workspaceId: string;
+	workspaceName: string | null;
+	workspaceIcon: string | null;
+	accessToken: string;
+	botId: string;
+};
+
+/**
+ * Union type for all supported platform integration data.
+ */
+export type IntegrationData = SlackIntegrationData | NotionIntegrationData;
+
+/**
  * Integration table for storing platform connections per client.
  * Each client can have one integration per platform (e.g., one Slack workspace).
  */
@@ -29,7 +45,7 @@ export const integration = pgTable(
 			.references(() => client.id, { onDelete: "cascade" }),
 		createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
 		platform: platformType("platform").notNull(),
-		data: jsonb("data").$type<SlackIntegrationData>().notNull(),
+		data: jsonb("data").$type<IntegrationData>().notNull(),
 		installedAt: timestamp("installed_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 	},

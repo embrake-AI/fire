@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { LoaderCircle } from "lucide-solid";
 import { createSignal, onMount, Show, Suspense } from "solid-js";
+import { NotionIcon } from "~/components/icons/NotionIcon";
 import { SlackIcon } from "~/components/icons/SlackIcon";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -74,7 +75,7 @@ function IntegrationsContent() {
 		}
 	});
 
-	const handleConnect = async (platform: "slack") => {
+	const handleConnect = async (platform: "slack" | "notion") => {
 		setIsConnecting(true);
 		try {
 			const url = await getInstallUrlFn({ data: { platform, type: "workspace" } });
@@ -88,7 +89,7 @@ function IntegrationsContent() {
 
 	const disconnectFn = useServerFn(disconnectWorkspaceIntegration);
 	const disconnectMutation = useMutation(() => ({
-		mutationFn: (platform: "slack") => disconnectFn({ data: platform }),
+		mutationFn: (platform: "slack" | "notion") => disconnectFn({ data: platform }),
 		onSuccess: async (_, platform) => {
 			await queryClient.invalidateQueries({ queryKey: ["workspace_integrations"] });
 			await queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -100,7 +101,7 @@ function IntegrationsContent() {
 		},
 	}));
 
-	const isConnected = (platform: "slack") => {
+	const isConnected = (platform: "slack" | "notion") => {
 		return integrationsQuery.data?.some((i) => i.platform === platform) ?? false;
 	};
 
@@ -129,6 +130,35 @@ function IntegrationsContent() {
 						}
 					>
 						<Button onClick={() => disconnectMutation.mutate("slack")} disabled={disconnectMutation.isPending} variant="outline">
+							<Show when={disconnectMutation.isPending}>
+								<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+							</Show>
+							Disconnect
+						</Button>
+					</Show>
+				</div>
+				<div class="flex items-center justify-between py-3">
+					<div class="flex items-center gap-3">
+						<div class="flex items-center justify-center size-10 rounded-lg bg-muted">
+							<NotionIcon class="size-5" />
+						</div>
+						<span class="text-sm font-medium text-foreground">Notion</span>
+						<Show when={isConnected("notion")}>
+							<Badge class="bg-emerald-100 text-emerald-700 border-emerald-200">Connected</Badge>
+						</Show>
+					</div>
+					<Show
+						when={isConnected("notion")}
+						fallback={
+							<Button onClick={() => handleConnect("notion")} disabled={isConnecting()}>
+								<Show when={isConnecting()}>
+									<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+								</Show>
+								Connect
+							</Button>
+						}
+					>
+						<Button onClick={() => disconnectMutation.mutate("notion")} disabled={disconnectMutation.isPending} variant="outline">
 							<Show when={disconnectMutation.isPending}>
 								<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
 							</Show>
