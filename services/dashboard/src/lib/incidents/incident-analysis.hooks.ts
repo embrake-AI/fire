@@ -20,10 +20,6 @@ export function useUpdateAnalysisImpact(incidentId: Accessor<string>) {
 			return { previous };
 		},
 
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["analysis", incidentId()] });
-		},
-
 		onError: (_err, _variables, context) => {
 			if (context?.previous) {
 				queryClient.setQueryData(["analysis", incidentId()], context.previous);
@@ -48,10 +44,6 @@ export function useUpdateAnalysisRootCause(incidentId: Accessor<string>) {
 			return { previous };
 		},
 
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["analysis", incidentId()] });
-		},
-
 		onError: (_err, _variables, context) => {
 			if (context?.previous) {
 				queryClient.setQueryData(["analysis", incidentId()], context.previous);
@@ -74,10 +66,6 @@ export function useUpdateAnalysisTimeline(incidentId: Accessor<string>) {
 				queryClient.setQueryData(["analysis", incidentId()], { ...previous, timeline: timeline.length ? timeline : null });
 			}
 			return { previous };
-		},
-
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["analysis", incidentId()] });
 		},
 
 		onError: (_err, _variables, context) => {

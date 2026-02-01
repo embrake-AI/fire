@@ -3,8 +3,7 @@ import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft, ChartColumn, Clock, ExternalLink, FileText, LoaderCircle, Plus, Trash2 } from "lucide-solid";
 import type { Accessor } from "solid-js";
-import { createEffect, createMemo, createSignal, For, Index, Match, onCleanup, Show, Suspense, Switch } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, Show, Suspense, Switch } from "solid-js";
 import { NotionIcon } from "~/components/icons/NotionIcon";
 import { UserDisplay } from "~/components/MaybeUser";
 import { Timeline } from "~/components/Timeline";
@@ -426,107 +425,54 @@ function fromDatetimeLocal(value: string): string {
 function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelineItem[] }) {
 	const mutation = useUpdateAnalysisTimeline(() => props.incidentId);
 
-	type TimelineDraft = IncidentTimelineItem & { id: string; isDraft?: boolean };
-	const [items, setItems] = createStore<TimelineDraft[]>([]);
-	const [dirty, setDirty] = createSignal(false);
+	type TimelineEntry = IncidentTimelineItem & { localId: string };
+	const [items, setItems] = createSignal<TimelineEntry[]>([]);
+	let idCounter = 0;
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
-	let nextId = 0;
 
-	const makeId = () => `timeline-${Date.now()}-${nextId++}`;
+	const makeLocalId = () => `local-${idCounter++}`;
 
-	const getTime = (value: string) => {
-		const parsed = Date.parse(value);
-		return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
-	};
-
-	const sortItems = (list: TimelineDraft[]) =>
-		[...list].sort((a, b) => {
-			const timeA = getTime(a.created_at);
-			const timeB = getTime(b.created_at);
-			if (timeA !== timeB) return timeA - timeB;
-			return a.id.localeCompare(b.id);
-		});
-
-	const serializeItems = (list: TimelineDraft[]) => list.map(({ created_at, text }) => ({ created_at, text }));
-
-	const timelineEqual = (a: IncidentTimelineItem[], b: IncidentTimelineItem[]) => {
-		if (a.length !== b.length) return false;
-		return a.every((item, index) => item.created_at === b[index]?.created_at && item.text === b[index]?.text);
-	};
-
-	const syncedItems = createMemo(() => sortItems(items));
-
-	const preparePayload = () => {
-		const normalized = sortItems(items).filter((item) => !item.isDraft || item.text.trim().length > 0);
-		return serializeItems(normalized);
-	};
-
-	const saveTimeline = async () => {
-		clearTimeout(saveTimer);
-		const payload = preparePayload();
-		if (timelineEqual(payload, props.timeline)) {
-			if (dirty()) setDirty(false);
-			return;
-		}
-		const draftIds = items.filter((item) => item.isDraft && item.text.trim().length > 0).map((item) => item.id);
-		if (draftIds.length > 0) {
-			for (const id of draftIds) {
-				setItems((candidate) => candidate.id === id, "isDraft", false);
+	// Initialize from props only when incidentId changes (not when timeline updates from server)
+	createEffect(
+		on(
+			() => props.incidentId,
+			() => {
+				setItems(props.timeline.map((item) => ({ ...item, localId: makeLocalId() })));
 			}
-		}
+		)
+	);
+
+	const sortedItems = createMemo(() =>
+		[...items()].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+	);
+
+	const save = () => {
+		clearTimeout(saveTimer);
+		const payload = items().map(({ created_at, text }) => ({ created_at, text }));
 		mutation.mutate(payload);
 	};
 
-	const scheduleSave = () => {
+	const debouncedSave = () => {
 		clearTimeout(saveTimer);
-		saveTimer = setTimeout(() => {
-			void saveTimeline();
-		}, 500);
+		saveTimer = setTimeout(save, 500);
 	};
 
-	const updateItem = (item: TimelineDraft, field: "text" | "created_at", value: string) => {
-		setDirty(true);
-		setItems((candidate) => candidate.id === item.id, field, value);
-		const nextText = field === "text" ? value : item.text;
-		const shouldSave = !item.isDraft || nextText.trim().length > 0;
-		if (shouldSave) {
-			scheduleSave();
-		}
+	onCleanup(() => clearTimeout(saveTimer));
+
+	const updateItem = (localId: string, field: "text" | "created_at", value: string) => {
+		setItems((prev) => prev.map((item) => (item.localId === localId ? { ...item, [field]: value } : item)));
+		debouncedSave();
 	};
 
-	const deleteItem = (item: TimelineDraft) => {
-		setDirty(true);
-		setItems((current) => current.filter((entry) => entry.id !== item.id));
-		void saveTimeline();
+	const deleteItem = (localId: string) => {
+		setItems((prev) => prev.filter((item) => item.localId !== localId));
+		save();
 	};
 
 	const addItem = () => {
-		setDirty(true);
-		setItems((current) => [...current, { id: makeId(), created_at: new Date().toISOString(), text: "", isDraft: true }]);
+		setItems((prev) => [...prev, { localId: makeLocalId(), created_at: new Date().toISOString(), text: "" }]);
+		save();
 	};
-
-	const handleBlur = (item: TimelineDraft) => {
-		if (item.isDraft && item.text.trim().length === 0) {
-			setItems((current) => current.filter((entry) => entry.id !== item.id));
-			return;
-		}
-		void saveTimeline();
-	};
-
-	createEffect(() => {
-		const serverTimeline = props.timeline;
-		const localSerialized = preparePayload();
-		if (timelineEqual(serverTimeline, localSerialized)) {
-			if (dirty()) setDirty(false);
-			return;
-		}
-		if (dirty()) return;
-		setItems(serverTimeline.map((item) => ({ ...item, id: makeId(), isDraft: false })));
-	});
-
-	onCleanup(() => {
-		clearTimeout(saveTimer);
-	});
 
 	return (
 		<div class="space-y-3">
@@ -537,23 +483,21 @@ function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelin
 					Add entry
 				</Button>
 			</div>
-			<Show when={syncedItems().length > 0} fallback={<p class="text-sm text-muted-foreground">No timeline entries</p>}>
+			<Show when={sortedItems().length > 0} fallback={<p class="text-sm text-muted-foreground">No timeline entries</p>}>
 				<div class="space-y-3">
-					<For each={syncedItems()}>
+					<For each={sortedItems()}>
 						{(item) => (
 							<div class="flex items-start gap-3 group">
 								<input
 									type="datetime-local"
 									value={toDatetimeLocal(item.created_at)}
-									onChange={(e) => updateItem(item, "created_at", fromDatetimeLocal(e.currentTarget.value))}
-									onBlur={() => handleBlur(item)}
+									onChange={(e) => updateItem(item.localId, "created_at", fromDatetimeLocal(e.currentTarget.value))}
 									class="w-44 shrink-0 px-2 py-1.5 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-blue-500"
 								/>
 								<input
 									type="text"
 									value={item.text}
-									onInput={(e) => updateItem(item, "text", e.currentTarget.value)}
-									onBlur={() => handleBlur(item)}
+									onInput={(e) => updateItem(item.localId, "text", e.currentTarget.value)}
 									placeholder="What happened..."
 									class="flex-1 px-2 py-1.5 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-blue-500"
 								/>
@@ -561,7 +505,7 @@ function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelin
 									variant="ghost"
 									size="icon"
 									class="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-									onClick={() => deleteItem(item)}
+									onClick={() => deleteItem(item.localId)}
 								>
 									<Trash2 class="w-4 h-4" />
 								</Button>
