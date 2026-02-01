@@ -105,10 +105,6 @@ export function useUpdateIncidentAction(incidentId: Accessor<string>) {
 			return { previous };
 		},
 
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["analysis", incidentId()] });
-		},
-
 		onError: (_err, _variables, context) => {
 			if (context?.previous) {
 				queryClient.setQueryData(["analysis", incidentId()], context.previous);
