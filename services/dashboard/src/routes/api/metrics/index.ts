@@ -103,7 +103,6 @@ export const Route = createFileRoute("/api/metrics/")({
 						assignee: incident.assignee,
 						createdAt: incident.createdAt,
 						resolvedAt: incident.resolvedAt,
-						summary: incident.summary,
 						entryPointId: incident.entryPointId,
 						entryPointPrompt,
 						rotationId: incident.rotationId,

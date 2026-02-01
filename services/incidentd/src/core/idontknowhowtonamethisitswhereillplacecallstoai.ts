@@ -357,7 +357,7 @@ Generate the post-mortem.`;
 			Authorization: `Bearer ${openaiApiKey}`,
 		},
 		body: JSON.stringify({
-			model: "gpt-4o-mini",
+			model: "gpt-5.2",
 			messages: [
 				{ role: "system", content: POSTMORTEM_SYSTEM_PROMPT },
 				{ role: "user", content: userMessage },

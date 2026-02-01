@@ -38,7 +38,6 @@ export const incidentAnalysis = pgTable("incident_analysis", {
 	createdBy: text("created_by").notNull(),
 	source: incidentSource("source").notNull(),
 	prompt: text("prompt").notNull(),
-	summary: text("summary").notNull(),
 	timeline: jsonb("timeline").$type<IncidentTimelineItem[]>(),
 	rootCause: text("root_cause"),
 	impact: text("impact"),

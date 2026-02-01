@@ -439,7 +439,6 @@ export const getMetrics = createServerFn({ method: "GET" })
 			createdAt: incident.createdAt,
 			resolvedAt: incident.resolvedAt,
 			metrics: computeIncidentMetrics(incident),
-			summary: incident.summary,
 			entryPointId: incident.entryPointId,
 			rotationId: incident.rotationId,
 			teamId: incident.teamId,

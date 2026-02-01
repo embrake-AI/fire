@@ -1,17 +1,26 @@
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { ArrowLeft, ChartColumn, Clock, FileText, Sparkles } from "lucide-solid";
+import { ArrowLeft, ChartColumn, Clock, FileText, Plus, Trash2 } from "lucide-solid";
 import type { Accessor } from "solid-js";
-import { createEffect, createMemo, createSignal, For, Index, Match, onCleanup, onMount, Show, Suspense, Switch } from "solid-js";
+import { createMemo, For, Index, Match, Show, Suspense, Switch } from "solid-js";
 import { UserDisplay } from "~/components/MaybeUser";
 import { Timeline } from "~/components/Timeline";
+import { AutoSaveTextarea } from "~/components/ui/auto-save-textarea";
 import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { getSeverity, getStatus } from "~/lib/incident-config";
-import { computeIncidentMetrics, getAnalysisById, getIncidents, type IncidentAnalysis } from "~/lib/incidents/incidents";
+import {
+	useCreateIncidentAction,
+	useDeleteIncidentAction,
+	useUpdateAnalysisImpact,
+	useUpdateAnalysisRootCause,
+	useUpdateAnalysisTimeline,
+	useUpdateIncidentAction,
+} from "~/lib/incidents/incident-analysis.hooks";
+import { computeIncidentMetrics, getAnalysisById, getIncidents, type IncidentAction, type IncidentAnalysis, type IncidentTimelineItem } from "~/lib/incidents/incidents";
 import { useUserBySlackId } from "~/lib/users/users.hooks";
 
 function AnalysisSkeleton() {
@@ -146,7 +155,7 @@ function AnalysisDetail() {
 							{(data) => (
 								<div class="space-y-6">
 									<AnalysisHeader analysis={data} />
-									<InsightsCard analysis={data} />
+									<MetricsCard analysis={data} />
 									<PostmortemCard analysis={data} />
 									<Timeline events={data().events} />
 								</div>
@@ -238,26 +247,8 @@ function formatDurationMs(ms: number | null): string {
 	return `${seconds}s`;
 }
 
-function formatPostmortemTimestamp(value: string) {
-	const date = new Date(value);
-	if (Number.isNaN(date.getTime())) {
-		return value;
-	}
-	return date.toLocaleString(undefined, {
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-	});
-}
-
 function PostmortemCard(props: { analysis: Accessor<IncidentAnalysis> }) {
 	const analysis = () => props.analysis();
-	const timeline = () => analysis().timeline ?? [];
-	const actions = () => analysis().actions ?? [];
-	const impact = () => analysis().impact?.trim() ?? "";
-	const rootCause = () => analysis().rootCause?.trim() ?? "";
-	const hasContent = () => timeline().length > 0 || actions().length > 0 || impact().length > 0 || rootCause().length > 0;
 
 	return (
 		<Card>
@@ -270,170 +261,184 @@ function PostmortemCard(props: { analysis: Accessor<IncidentAnalysis> }) {
 				</div>
 			</CardHeader>
 			<CardContent>
-				<Show when={hasContent()} fallback={<p class="text-sm text-muted-foreground">No post mortem auto generated</p>}>
-					<div class="space-y-6">
-						<Show when={timeline().length > 0}>
-							<div class="space-y-3">
-								<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Timeline</h4>
-								<div class="space-y-3">
-									<For each={timeline()}>
-										{(item) => (
-											<div class="flex flex-col gap-1 md:flex-row md:gap-4">
-												<span class="text-xs text-muted-foreground w-32 shrink-0">{formatPostmortemTimestamp(item.created_at)}</span>
-												<p class="text-sm text-foreground leading-relaxed">{item.text}</p>
-											</div>
-										)}
-									</For>
-								</div>
-							</div>
-						</Show>
-
-						<Show when={impact().length > 0}>
-							<div class="space-y-2">
-								<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Impact</h4>
-								<p class="text-sm text-muted-foreground leading-relaxed">{impact()}</p>
-							</div>
-						</Show>
-
-						<Show when={rootCause().length > 0}>
-							<div class="space-y-2">
-								<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Root cause</h4>
-								<p class="text-sm text-muted-foreground leading-relaxed">{rootCause()}</p>
-							</div>
-						</Show>
-
-						<Show when={actions().length > 0}>
-							<div class="space-y-2">
-								<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</h4>
-								<div class="space-y-2">
-									<For each={actions()}>
-										{(action) => (
-											<div class="flex items-start gap-3">
-												<span class="mt-1 h-1.5 w-1.5 rounded-full bg-blue-500" />
-												<p class="text-sm text-muted-foreground leading-relaxed">{action.description}</p>
-											</div>
-										)}
-									</For>
-								</div>
-							</div>
-						</Show>
-					</div>
-				</Show>
+				<div class="space-y-6">
+					<EditableTimeline incidentId={analysis().id} timeline={analysis().timeline ?? []} />
+					<EditableImpact incidentId={analysis().id} value={analysis().impact ?? ""} />
+					<EditableRootCause incidentId={analysis().id} value={analysis().rootCause ?? ""} />
+					<EditableActions incidentId={analysis().id} actions={analysis().actions ?? []} />
+				</div>
 			</CardContent>
 		</Card>
 	);
 }
 
-function InsightsCard(props: { analysis: Accessor<IncidentAnalysis> }) {
-	const metrics = createMemo(() => computeIncidentMetrics(props.analysis()));
-	const [tab, setTab] = createSignal<"summary" | "metrics">("summary");
-	const [mounted, setMounted] = createSignal(false);
-
-	let summaryEl: HTMLDivElement | undefined;
-	let metricsEl: HTMLDivElement | undefined;
-	let wrapEl: HTMLDivElement | undefined;
-
-	const MIN_H = 120;
-	const [h, setH] = createSignal<number>(MIN_H);
-
-	const measure = () => {
-		const el = tab() === "summary" ? summaryEl : metricsEl;
-		if (!el) return;
-		const next = Math.max(MIN_H, Math.ceil(el.scrollHeight));
-		setH(next);
-	};
-
-	let ro: ResizeObserver | undefined;
-	onMount(() => {
-		requestAnimationFrame(() => {
-			measure();
-			setMounted(true);
-		});
-
-		ro = new ResizeObserver(() => requestAnimationFrame(measure));
-		if (summaryEl) ro.observe(summaryEl);
-		if (metricsEl) ro.observe(metricsEl);
-	});
-
-	onCleanup(() => ro?.disconnect());
-
-	createEffect(() => {
-		tab();
-		requestAnimationFrame(measure);
-	});
+function EditableImpact(props: { incidentId: string; value: string }) {
+	const mutation = useUpdateAnalysisImpact(() => props.incidentId);
 
 	return (
-		<Tabs value={tab()} onChange={setTab}>
+		<div class="space-y-2">
+			<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Impact</h4>
+			<AutoSaveTextarea value={props.value} onSave={async (value) => void (await mutation.mutateAsync(value))} placeholder="Describe the impact..." rows={2} />
+		</div>
+	);
+}
+
+function EditableRootCause(props: { incidentId: string; value: string }) {
+	const mutation = useUpdateAnalysisRootCause(() => props.incidentId);
+
+	return (
+		<div class="space-y-2">
+			<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Root cause</h4>
+			<AutoSaveTextarea value={props.value} onSave={async (value) => void (await mutation.mutateAsync(value))} placeholder="Describe the root cause..." rows={2} />
+		</div>
+	);
+}
+
+function toDatetimeLocal(isoString: string): string {
+	const date = new Date(isoString);
+	if (Number.isNaN(date.getTime())) return "";
+	const pad = (n: number) => n.toString().padStart(2, "0");
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function fromDatetimeLocal(value: string): string {
+	const date = new Date(value);
+	return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelineItem[] }) {
+	const mutation = useUpdateAnalysisTimeline(() => props.incidentId);
+
+	const updateItem = (index: number, field: "text" | "created_at", value: string) => {
+		const updated = [...props.timeline];
+		updated[index] = { ...updated[index], [field]: value };
+		mutation.mutate(updated);
+	};
+
+	const deleteItem = (index: number) => {
+		mutation.mutate(props.timeline.filter((_, i) => i !== index));
+	};
+
+	const addItem = () => {
+		mutation.mutate([...props.timeline, { created_at: new Date().toISOString(), text: "" }]);
+	};
+
+	return (
+		<div class="space-y-3">
+			<div class="flex items-center justify-between">
+				<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Timeline</h4>
+				<Button variant="ghost" size="sm" class="h-7 text-xs gap-1" onClick={addItem}>
+					<Plus class="w-3.5 h-3.5" />
+					Add entry
+				</Button>
+			</div>
+			<Show when={props.timeline.length > 0} fallback={<p class="text-sm text-muted-foreground">No timeline entries</p>}>
+				<div class="space-y-3">
+					<For each={props.timeline}>
+						{(item, index) => (
+							<div class="flex items-start gap-3 group">
+								<input
+									type="datetime-local"
+									value={toDatetimeLocal(item.created_at)}
+									onChange={(e) => updateItem(index(), "created_at", fromDatetimeLocal(e.currentTarget.value))}
+									class="w-44 shrink-0 px-2 py-1.5 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-blue-500"
+								/>
+								<input
+									type="text"
+									value={item.text}
+									onInput={(e) => updateItem(index(), "text", e.currentTarget.value)}
+									placeholder="What happened..."
+									class="flex-1 px-2 py-1.5 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-blue-500"
+								/>
+								<Button
+									variant="ghost"
+									size="icon"
+									class="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+									onClick={() => deleteItem(index())}
+								>
+									<Trash2 class="w-4 h-4" />
+								</Button>
+							</div>
+						)}
+					</For>
+				</div>
+			</Show>
+		</div>
+	);
+}
+
+function EditableActions(props: { incidentId: string; actions: IncidentAction[] }) {
+	const updateMutation = useUpdateIncidentAction(() => props.incidentId);
+	const deleteMutation = useDeleteIncidentAction(() => props.incidentId);
+	const createMutation = useCreateIncidentAction(() => props.incidentId);
+
+	const addAction = () => {
+		createMutation.mutate("");
+	};
+
+	return (
+		<div class="space-y-3">
+			<div class="flex items-center justify-between">
+				<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</h4>
+				<Button variant="ghost" size="sm" class="h-7 text-xs gap-1" onClick={addAction}>
+					<Plus class="w-3.5 h-3.5" />
+					Add action
+				</Button>
+			</div>
+			<Show when={props.actions.length > 0} fallback={<p class="text-sm text-muted-foreground">No follow-up actions</p>}>
+				<div class="space-y-3">
+					<For each={props.actions}>
+						{(action) => (
+							<div class="flex items-start gap-3 group">
+								<span class="mt-3 h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" />
+								<div class="flex-1">
+									<AutoSaveTextarea
+										value={action.description}
+										onSave={async (value) => void (await updateMutation.mutateAsync({ id: action.id, description: value }))}
+										placeholder="Describe the action..."
+										rows={1}
+									/>
+								</div>
+								<Button
+									variant="ghost"
+									size="icon"
+									class="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+									onClick={() => deleteMutation.mutate(action.id)}
+								>
+									<Trash2 class="w-4 h-4" />
+								</Button>
+							</div>
+						)}
+					</For>
+				</div>
+			</Show>
+		</div>
+	);
+}
+
+function MetricsCard(props: { analysis: Accessor<IncidentAnalysis> }) {
+	const metrics = createMemo(() => computeIncidentMetrics(props.analysis()));
+
+	return (
+		<div>
 			<div class="flex items-center justify-between mb-3">
 				<h3 class="text-lg font-semibold flex items-center gap-2">
-					<Sparkles class="w-5 h-5 text-blue-500" />
-					Insights
+					<ChartColumn class="w-5 h-5 text-blue-500" />
+					Metrics
 				</h3>
-
-				<TabsList class="h-8">
-					<TabsTrigger value="summary" class="text-xs px-3 py-1 h-7 gap-1.5">
-						<Sparkles class="w-3.5 h-3.5" />
-						Summary
-					</TabsTrigger>
-
-					<TabsTrigger value="metrics" class="text-xs px-3 py-1 h-7 gap-1.5">
-						<ChartColumn class="w-3.5 h-3.5" />
-						Metrics
-					</TabsTrigger>
-
-					<Show when={mounted()}>
-						<TabsIndicator />
-					</Show>
-				</TabsList>
 			</div>
 
 			<Card class="border-l-4 border-l-blue-500">
 				<CardContent class="py-5">
-					{/* Animated height wrapper */}
-					<div ref={wrapEl} class="overflow-hidden transition-[height] duration-200 ease-out" style={{ height: `${h()}px` }}>
-						{/* Panels overlaid; wrapper animates height */}
-						<div class="relative h-full">
-							<TabsContent value="summary" class="mt-0 absolute inset-0" classList={{ "pointer-events-none opacity-0": tab() !== "summary" }}>
-								<div class="h-full flex items-center justify-center">
-									<div ref={summaryEl} class="w-full">
-										<p class="text-muted-foreground leading-relaxed">{props.analysis().summary}</p>
-									</div>
-								</div>
-							</TabsContent>
-
-							<TabsContent value="metrics" class="mt-0 absolute inset-0" classList={{ "pointer-events-none opacity-0": tab() !== "metrics" }}>
-								<div class="h-full flex items-center justify-center">
-									<div ref={metricsEl} class="w-full">
-										<div class="grid grid-cols-2 md:grid-cols-4 gap-4 justify-items-center">
-											<MetricItem label="First Response" value={formatDurationMs(metrics().timeToFirstResponse)} description="Time until first message" />
-											<MetricItem label="Assignee Response" value={formatDurationMs(metrics().timeToAssigneeResponse)} description="Time until assignee responded" />
-											<MetricItem label="Time to Mitigate" value={formatDurationMs(metrics().timeToMitigate)} description="Time until status changed to mitigating" />
-											<MetricItem label="Total Duration" value={formatDurationMs(metrics().totalDuration)} description="Total incident duration" />
-										</div>
-									</div>
-								</div>
-							</TabsContent>
-
-							{/* Spacer keeps layout measurable even with absolute panels */}
-							<div class="invisible">
-								{tab() === "summary" ? (
-									<div ref={summaryEl}>
-										<p class="leading-relaxed">{props.analysis().summary}</p>
-									</div>
-								) : (
-									<div ref={metricsEl} class="grid grid-cols-2 md:grid-cols-4 gap-4">
-										<div />
-										<div />
-										<div />
-										<div />
-									</div>
-								)}
-							</div>
-						</div>
+					<div class="grid grid-cols-2 md:grid-cols-4 gap-4 justify-items-center">
+						<MetricItem label="First Response" value={formatDurationMs(metrics().timeToFirstResponse)} description="Time until first message" />
+						<MetricItem label="Assignee Response" value={formatDurationMs(metrics().timeToAssigneeResponse)} description="Time until assignee responded" />
+						<MetricItem label="Time to Mitigate" value={formatDurationMs(metrics().timeToMitigate)} description="Time until status changed to mitigating" />
+						<MetricItem label="Total Duration" value={formatDurationMs(metrics().totalDuration)} description="Total incident duration" />
 					</div>
 				</CardContent>
 			</Card>
-		</Tabs>
+		</div>
 	);
 }
 

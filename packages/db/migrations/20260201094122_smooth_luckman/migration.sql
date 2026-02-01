@@ -1,0 +1,1 @@
+ALTER TABLE "incident_analysis" DROP COLUMN "summary";

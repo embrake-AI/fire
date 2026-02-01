@@ -2,7 +2,7 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloud
 import type { IS, IS_Event } from "@fire/common";
 import { type IncidentEventData, incidentAction, incidentAnalysis } from "@fire/db/schema";
 import { and, eq } from "drizzle-orm";
-import { generateIncidentPostmortem, generateIncidentSummary } from "../core/idontknowhowtonamethisitswhereillplacecallstoai";
+import { generateIncidentPostmortem } from "../core/idontknowhowtonamethisitswhereillplacecallstoai";
 import type { Metadata } from "../handler";
 import { getDB } from "../lib/db";
 
@@ -41,23 +41,6 @@ export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAn
 	async run(event: WorkflowEvent<IncidentAnalysisWorkflowPayload>, step: WorkflowStep) {
 		const payload = event.payload;
 		const { incidentId, incident, metadata, events } = payload;
-
-		const summary = await step.do(`generate-summary:${incidentId}`, { retries: { limit: 5, delay: "30 seconds", backoff: "exponential" } }, async () =>
-			generateIncidentSummary(
-				{
-					title: incident.title,
-					description: incident.description,
-					severity: incident.severity,
-					prompt: incident.prompt,
-				},
-				events.map((eventItem) => ({
-					event_type: eventItem.event_type,
-					event_data: eventItem.event_data,
-					created_at: eventItem.created_at,
-				})),
-				this.env.OPENAI_API_KEY,
-			),
-		);
 
 		const postmortem = await step.do(`generate-postmortem:${incidentId}`, { retries: { limit: 5, delay: "30 seconds", backoff: "exponential" } }, async () =>
 			generateIncidentPostmortem(
@@ -108,7 +91,6 @@ export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAn
 					createdBy: incident.createdBy,
 					source: incident.source,
 					prompt: incident.prompt,
-					summary,
 					timeline: timeline.length ? timeline : undefined,
 					rootCause: rootCause.length ? rootCause : undefined,
 					impact: impact.length ? impact : undefined,
