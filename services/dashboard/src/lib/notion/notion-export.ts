@@ -71,7 +71,7 @@ export const exportToNotion = createServerFn({ method: "POST" })
 		};
 		const blocks = postMortemToNotionBlocks(fullAnalysis);
 
-		const page = await createNotionPage(integrationData.accessToken, data.parentPageId, `Post-mortem: ${analysis.title}`, blocks);
+		const page = await createNotionPage(integrationData.accessToken, data.parentPageId, analysis.title, blocks);
 
 		return page;
 	});

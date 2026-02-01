@@ -444,7 +444,8 @@ function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelin
 		),
 	);
 
-	const sortedItems = createMemo(() => [...items].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+	const itemsById = createMemo(() => new Map(items.map((item) => [item.localId, item])));
+	const sortedIds = createMemo(() => [...items].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).map((item) => item.localId));
 
 	const save = () => {
 		clearTimeout(saveTimer);
@@ -490,34 +491,37 @@ function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelin
 					Add entry
 				</Button>
 			</div>
-			<Show when={sortedItems().length > 0} fallback={<p class="text-sm text-muted-foreground">No timeline entries</p>}>
+			<Show when={sortedIds().length > 0} fallback={<p class="text-sm text-muted-foreground">No timeline entries</p>}>
 				<div class="space-y-3">
-					<For each={sortedItems()}>
-						{(item) => (
-							<div class="flex items-start gap-3 group">
-								<input
-									type="datetime-local"
-									value={toDatetimeLocal(item.created_at)}
-									onChange={(e) => updateItem(item.localId, "created_at", fromDatetimeLocal(e.currentTarget.value))}
-									class="w-44 shrink-0 px-2 py-1.5 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-blue-500"
-								/>
-								<input
-									type="text"
-									value={item.text}
-									onInput={(e) => updateItem(item.localId, "text", e.currentTarget.value)}
-									placeholder="What happened..."
-									class="flex-1 px-2 py-1.5 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-blue-500"
-								/>
-								<Button
-									variant="ghost"
-									size="icon"
-									class="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-									onClick={() => deleteItem(item.localId)}
-								>
-									<Trash2 class="w-4 h-4" />
-								</Button>
-							</div>
-						)}
+					<For each={sortedIds()}>
+						{(localId) => {
+							const item = () => itemsById().get(localId)!;
+							return (
+								<div class="flex items-start gap-3 group">
+									<input
+										type="datetime-local"
+										value={toDatetimeLocal(item().created_at)}
+										onChange={(e) => updateItem(localId, "created_at", fromDatetimeLocal(e.currentTarget.value))}
+										class="w-44 shrink-0 px-2 py-1.5 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-blue-500"
+									/>
+									<input
+										type="text"
+										value={item().text}
+										onInput={(e) => updateItem(localId, "text", e.currentTarget.value)}
+										placeholder="What happened..."
+										class="flex-1 px-2 py-1.5 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-blue-500"
+									/>
+									<Button
+										variant="ghost"
+										size="icon"
+										class="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+										onClick={() => deleteItem(localId)}
+									>
+										<Trash2 class="w-4 h-4" />
+									</Button>
+								</div>
+							);
+						}}
 					</For>
 				</div>
 			</Show>
