@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft, ChartColumn, Clock, FileText, Plus, Trash2 } from "lucide-solid";
 import type { Accessor } from "solid-js";
-import { createMemo, For, Index, Match, Show, Suspense, Switch } from "solid-js";
+import { createMemo, createSignal, For, Index, Match, Show, Suspense, Switch } from "solid-js";
 import { UserDisplay } from "~/components/MaybeUser";
 import { Timeline } from "~/components/Timeline";
 import { AutoSaveTextarea } from "~/components/ui/auto-save-textarea";
@@ -308,19 +308,34 @@ function fromDatetimeLocal(value: string): string {
 
 function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelineItem[] }) {
 	const mutation = useUpdateAnalysisTimeline(() => props.incidentId);
+	const [localItems, setLocalItems] = createSignal<IncidentTimelineItem[]>([]);
 
-	const sorted = createMemo(() => [...props.timeline].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+	const allItems = createMemo(() => [...props.timeline, ...localItems()]);
+	const sorted = createMemo(() => [...allItems()].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
 
 	const updateItem = (item: IncidentTimelineItem, field: "text" | "created_at", value: string) => {
-		mutation.mutate(props.timeline.map((t) => (t === item ? { ...t, [field]: value } : t)));
+		const updated = { ...item, [field]: value };
+		if (localItems().includes(item)) {
+			setLocalItems((items) => items.map((t) => (t === item ? updated : t)));
+			if (field === "text" && value.trim()) {
+				mutation.mutate([...props.timeline, updated]);
+				setLocalItems((items) => items.filter((t) => t !== item));
+			}
+		} else {
+			mutation.mutate(props.timeline.map((t) => (t === item ? updated : t)));
+		}
 	};
 
 	const deleteItem = (item: IncidentTimelineItem) => {
-		mutation.mutate(props.timeline.filter((t) => t !== item));
+		if (localItems().includes(item)) {
+			setLocalItems((items) => items.filter((t) => t !== item));
+		} else {
+			mutation.mutate(props.timeline.filter((t) => t !== item));
+		}
 	};
 
 	const addItem = () => {
-		mutation.mutate([...props.timeline, { created_at: new Date().toISOString(), text: "" }]);
+		setLocalItems((items) => [...items, { created_at: new Date().toISOString(), text: "" }]);
 	};
 
 	return (
