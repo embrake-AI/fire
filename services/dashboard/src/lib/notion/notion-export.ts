@@ -1,5 +1,5 @@
 import type { NotionIntegrationData } from "@fire/db/schema";
-import { integration } from "@fire/db/schema";
+import { incidentAnalysis, integration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, eq } from "drizzle-orm";
 import { authMiddleware } from "../auth/auth-middleware";
@@ -72,6 +72,11 @@ export const exportToNotion = createServerFn({ method: "POST" })
 		const blocks = postMortemToNotionBlocks(fullAnalysis);
 
 		const page = await createNotionPage(integrationData.accessToken, data.parentPageId, analysis.title, blocks);
+
+		await db
+			.update(incidentAnalysis)
+			.set({ notionPageId: page.id })
+			.where(and(eq(incidentAnalysis.id, data.incidentId), eq(incidentAnalysis.clientId, context.clientId)));
 
 		return page;
 	});

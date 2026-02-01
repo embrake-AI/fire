@@ -266,7 +266,16 @@ function PostmortemCard(props: { analysis: Accessor<IncidentAnalysis> }) {
 						Post-mortem
 					</h3>
 					<Show when={isNotionConnected()}>
-						<ExportToNotionDialog incidentId={analysis().id} title={analysis().title} />
+						<Show
+							when={analysis().notionPageId}
+							fallback={<ExportToNotionDialog incidentId={analysis().id} title={analysis().title} />}
+						>
+							<Button as="a" href={`https://notion.so/${analysis().notionPageId!.replace(/-/g, "")}`} target="_blank" rel="noopener noreferrer" variant="outline" size="sm" class="gap-2">
+								<NotionIcon class="size-4" />
+								Open in Notion
+								<ExternalLink class="size-3.5" />
+							</Button>
+						</Show>
 					</Show>
 				</div>
 			</CardHeader>
@@ -286,7 +295,7 @@ function ExportToNotionDialog(props: { incidentId: string; title: string }) {
 	const [open, setOpen] = createSignal(false);
 	const [selectedPageId, setSelectedPageId] = createSignal<string | null>(null);
 	const [searchQuery, setSearchQuery] = createSignal("");
-	const [exportedUrl, setExportedUrl] = createSignal<string | null>(null);
+	const queryClient = useQueryClient();
 
 	const getNotionPagesFn = useServerFn(getNotionPages);
 	const notionPagesQuery = useQuery(() => ({
@@ -299,8 +308,9 @@ function ExportToNotionDialog(props: { incidentId: string; title: string }) {
 	const exportToNotionFn = useServerFn(exportToNotion);
 	const exportMutation = useMutation(() => ({
 		mutationFn: (data: { incidentId: string; parentPageId: string }) => exportToNotionFn({ data }),
-		onSuccess: (result) => {
-			setExportedUrl(result.url);
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: ["analysis", props.incidentId] });
+			setOpen(false);
 		},
 	}));
 
@@ -319,7 +329,6 @@ function ExportToNotionDialog(props: { incidentId: string; title: string }) {
 		if (!isOpen) {
 			setSelectedPageId(null);
 			setSearchQuery("");
-			setExportedUrl(null);
 		}
 	};
 
@@ -333,57 +342,44 @@ function ExportToNotionDialog(props: { incidentId: string; title: string }) {
 				<DialogHeader>
 					<DialogTitle>Export to Notion</DialogTitle>
 				</DialogHeader>
-				<Show
-					when={!exportedUrl()}
-					fallback={
-						<div class="space-y-4">
-							<p class="text-sm text-muted-foreground">Post-mortem exported successfully.</p>
-							<a href={exportedUrl()!} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium">
-								<ExternalLink class="w-4 h-4" />
-								Open in Notion
-							</a>
-						</div>
-					}
-				>
-					<div class="space-y-4">
-						<p class="text-sm text-muted-foreground">Select a parent page where the post-mortem will be created.</p>
-						<input
-							type="text"
-							placeholder="Search pages..."
-							value={searchQuery()}
-							onInput={(e) => setSearchQuery(e.currentTarget.value)}
-							class="w-full px-3 py-2 border rounded-md text-sm"
-						/>
-						<div class="max-h-60 overflow-y-auto space-y-1 border rounded-md p-1">
-							<Show when={notionPagesQuery.isLoading}>
-								<div class="flex items-center justify-center py-4">
-									<LoaderCircle class="w-5 h-5 animate-spin text-muted-foreground" />
-								</div>
-							</Show>
-							<Show when={notionPagesQuery.data?.length === 0}>
-								<p class="text-sm text-muted-foreground text-center py-4">No pages found. Make sure to share pages with the integration.</p>
-							</Show>
-							<For each={notionPagesQuery.data ?? []}>
-								{(page) => (
-									<button
-										type="button"
-										class={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm ${selectedPageId() === page.id ? "bg-blue-100 text-blue-900" : "hover:bg-muted"}`}
-										onClick={() => setSelectedPageId(page.id)}
-									>
-										<span class="mr-2">{page.icon || "\u{1F4C4}"}</span>
-										{page.title}
-									</button>
-								)}
-							</For>
-						</div>
-						<Button onClick={handleExport} disabled={!selectedPageId() || exportMutation.isPending} class="w-full">
-							<Show when={exportMutation.isPending}>
-								<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-							</Show>
-							Export
-						</Button>
+				<div class="space-y-4">
+					<p class="text-sm text-muted-foreground">Select a parent page where the post-mortem will be created.</p>
+					<input
+						type="text"
+						placeholder="Search pages..."
+						value={searchQuery()}
+						onInput={(e) => setSearchQuery(e.currentTarget.value)}
+						class="w-full px-3 py-2 border rounded-md text-sm"
+					/>
+					<div class="max-h-60 overflow-y-auto space-y-1 border rounded-md p-1">
+						<Show when={notionPagesQuery.isLoading}>
+							<div class="flex items-center justify-center py-4">
+								<LoaderCircle class="w-5 h-5 animate-spin text-muted-foreground" />
+							</div>
+						</Show>
+						<Show when={notionPagesQuery.data?.length === 0}>
+							<p class="text-sm text-muted-foreground text-center py-4">No pages found. Make sure to share pages with the integration.</p>
+						</Show>
+						<For each={notionPagesQuery.data ?? []}>
+							{(page) => (
+								<button
+									type="button"
+									class={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm ${selectedPageId() === page.id ? "bg-blue-100 text-blue-900" : "hover:bg-muted"}`}
+									onClick={() => setSelectedPageId(page.id)}
+								>
+									<span class="mr-2">{page.icon || "\u{1F4C4}"}</span>
+									{page.title}
+								</button>
+							)}
+						</For>
 					</div>
-				</Show>
+					<Button onClick={handleExport} disabled={!selectedPageId() || exportMutation.isPending} class="w-full">
+						<Show when={exportMutation.isPending}>
+							<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+						</Show>
+						Export
+					</Button>
+				</div>
 			</DialogContent>
 		</Dialog>
 	);

@@ -47,6 +47,7 @@ export const incidentAnalysis = pgTable("incident_analysis", {
 	entryPointId: uuid("entry_point_id").references(() => entryPoint.id, { onDelete: "set null" }),
 	rotationId: uuid("rotation_id").references(() => rotation.id, { onDelete: "set null" }),
 	teamId: uuid("team_id").references(() => team.id, { onDelete: "set null" }),
+	notionPageId: text("notion_page_id"),
 });
 
 export const incidentAction = pgTable(
