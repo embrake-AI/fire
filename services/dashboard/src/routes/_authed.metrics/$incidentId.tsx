@@ -1,9 +1,14 @@
-import { useQuery, useQueryClient } from "@tanstack/solid-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { ArrowLeft, ChartColumn, Clock, FileText, Plus, Trash2 } from "lucide-solid";
+import { ArrowLeft, ChartColumn, Clock, ExternalLink, FileText, LoaderCircle, Plus, Trash2 } from "lucide-solid";
 import type { Accessor } from "solid-js";
-import { createMemo, createSignal, For, Index, Match, Show, Suspense, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Index, Match, onCleanup, Show, Suspense, Switch } from "solid-js";
+import { createStore } from "solid-js/store";
+import { NotionIcon } from "~/components/icons/NotionIcon";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "~/components/ui/dialog";
+import { useIntegrations } from "~/lib/integrations/integrations.hooks";
+import { exportToNotion, getNotionPages } from "~/lib/notion/notion-export";
 import { UserDisplay } from "~/components/MaybeUser";
 import { Timeline } from "~/components/Timeline";
 import { AutoSaveTextarea } from "~/components/ui/auto-save-textarea";
@@ -249,6 +254,8 @@ function formatDurationMs(ms: number | null): string {
 
 function PostmortemCard(props: { analysis: Accessor<IncidentAnalysis> }) {
 	const analysis = () => props.analysis();
+	const integrationsQuery = useIntegrations({ type: "workspace" });
+	const isNotionConnected = () => integrationsQuery.data?.some((i) => i.platform === "notion") ?? false;
 
 	return (
 		<Card>
@@ -258,6 +265,9 @@ function PostmortemCard(props: { analysis: Accessor<IncidentAnalysis> }) {
 						<FileText class="w-5 h-5 text-blue-500" />
 						Post-mortem
 					</h3>
+					<Show when={isNotionConnected()}>
+						<ExportToNotionDialog incidentId={analysis().id} title={analysis().title} />
+					</Show>
 				</div>
 			</CardHeader>
 			<CardContent>
@@ -269,6 +279,120 @@ function PostmortemCard(props: { analysis: Accessor<IncidentAnalysis> }) {
 				</div>
 			</CardContent>
 		</Card>
+	);
+}
+
+function ExportToNotionDialog(props: { incidentId: string; title: string }) {
+	const [open, setOpen] = createSignal(false);
+	const [selectedPageId, setSelectedPageId] = createSignal<string | null>(null);
+	const [searchQuery, setSearchQuery] = createSignal("");
+	const [exportedUrl, setExportedUrl] = createSignal<string | null>(null);
+
+	const getNotionPagesFn = useServerFn(getNotionPages);
+	const notionPagesQuery = useQuery(() => ({
+		queryKey: ["notion-pages", searchQuery()],
+		queryFn: () => getNotionPagesFn({ data: { query: searchQuery() } }),
+		staleTime: 30_000,
+		enabled: open(),
+	}));
+
+	const exportToNotionFn = useServerFn(exportToNotion);
+	const exportMutation = useMutation(() => ({
+		mutationFn: (data: { incidentId: string; parentPageId: string }) => exportToNotionFn({ data }),
+		onSuccess: (result) => {
+			setExportedUrl(result.url);
+		},
+	}));
+
+	const handleExport = () => {
+		const pageId = selectedPageId();
+		if (!pageId) return;
+
+		exportMutation.mutate({
+			incidentId: props.incidentId,
+			parentPageId: pageId,
+		});
+	};
+
+	const handleOpenChange = (isOpen: boolean) => {
+		setOpen(isOpen);
+		if (!isOpen) {
+			setSelectedPageId(null);
+			setSearchQuery("");
+			setExportedUrl(null);
+		}
+	};
+
+	return (
+		<Dialog open={open()} onOpenChange={handleOpenChange}>
+			<DialogTrigger as={Button} variant="outline" size="sm" class="gap-2">
+				<NotionIcon class="size-4" />
+				Export to Notion
+			</DialogTrigger>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>Export to Notion</DialogTitle>
+				</DialogHeader>
+				<Show
+					when={!exportedUrl()}
+					fallback={
+						<div class="space-y-4">
+							<p class="text-sm text-muted-foreground">Post-mortem exported successfully.</p>
+							<a
+								href={exportedUrl()!}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium"
+							>
+								<ExternalLink class="w-4 h-4" />
+								Open in Notion
+							</a>
+						</div>
+					}
+				>
+					<div class="space-y-4">
+						<p class="text-sm text-muted-foreground">Select a parent page where the post-mortem will be created.</p>
+						<input
+							type="text"
+							placeholder="Search pages..."
+							value={searchQuery()}
+							onInput={(e) => setSearchQuery(e.currentTarget.value)}
+							class="w-full px-3 py-2 border rounded-md text-sm"
+						/>
+						<div class="max-h-60 overflow-y-auto space-y-1 border rounded-md p-1">
+							<Show when={notionPagesQuery.isLoading}>
+								<div class="flex items-center justify-center py-4">
+									<LoaderCircle class="w-5 h-5 animate-spin text-muted-foreground" />
+								</div>
+							</Show>
+							<Show when={notionPagesQuery.data?.length === 0}>
+								<p class="text-sm text-muted-foreground text-center py-4">No pages found. Make sure to share pages with the integration.</p>
+							</Show>
+							<For each={notionPagesQuery.data ?? []}>
+								{(page) => (
+									<button
+										type="button"
+										class={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm ${
+											selectedPageId() === page.id ? "bg-blue-100 text-blue-900" : "hover:bg-muted"
+										}`}
+										onClick={() => setSelectedPageId(page.id)}
+									>
+										<span class="mr-2">{page.icon || "\u{1F4C4}"}</span>
+										{page.title}
+									</button>
+								)}
+							</For>
+						</div>
+						<Button onClick={handleExport} disabled={!selectedPageId() || exportMutation.isPending} class="w-full">
+							<Show when={exportMutation.isPending}>
+								<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+							</Show>
+							Export
+						</Button>
+					</div>
+				</Show>
+			</DialogContent>
+		</Dialog>
 	);
 }
 
@@ -308,35 +432,108 @@ function fromDatetimeLocal(value: string): string {
 
 function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelineItem[] }) {
 	const mutation = useUpdateAnalysisTimeline(() => props.incidentId);
-	const [localItems, setLocalItems] = createSignal<IncidentTimelineItem[]>([]);
 
-	const allItems = createMemo(() => [...props.timeline, ...localItems()]);
-	const sorted = createMemo(() => [...allItems()].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+	type TimelineDraft = IncidentTimelineItem & { id: string; isDraft?: boolean };
+	const [items, setItems] = createStore<TimelineDraft[]>([]);
+	const [dirty, setDirty] = createSignal(false);
+	let saveTimer: ReturnType<typeof setTimeout> | undefined;
+	let nextId = 0;
 
-	const updateItem = (item: IncidentTimelineItem, field: "text" | "created_at", value: string) => {
-		const updated = { ...item, [field]: value };
-		if (localItems().includes(item)) {
-			setLocalItems((items) => items.map((t) => (t === item ? updated : t)));
-			if (field === "text" && value.trim()) {
-				mutation.mutate([...props.timeline, updated]);
-				setLocalItems((items) => items.filter((t) => t !== item));
+	const makeId = () => `timeline-${Date.now()}-${nextId++}`;
+
+	const getTime = (value: string) => {
+		const parsed = Date.parse(value);
+		return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
+	};
+
+	const sortItems = (list: TimelineDraft[]) =>
+		[...list].sort((a, b) => {
+			const timeA = getTime(a.created_at);
+			const timeB = getTime(b.created_at);
+			if (timeA !== timeB) return timeA - timeB;
+			return a.id.localeCompare(b.id);
+		});
+
+	const serializeItems = (list: TimelineDraft[]) => list.map(({ created_at, text }) => ({ created_at, text }));
+
+	const timelineEqual = (a: IncidentTimelineItem[], b: IncidentTimelineItem[]) => {
+		if (a.length !== b.length) return false;
+		return a.every((item, index) => item.created_at === b[index]?.created_at && item.text === b[index]?.text);
+	};
+
+	const syncedItems = createMemo(() => sortItems(items));
+
+	const preparePayload = () => {
+		const normalized = sortItems(items).filter((item) => !item.isDraft || item.text.trim().length > 0);
+		return serializeItems(normalized);
+	};
+
+	const saveTimeline = async () => {
+		clearTimeout(saveTimer);
+		const payload = preparePayload();
+		if (timelineEqual(payload, props.timeline)) {
+			if (dirty()) setDirty(false);
+			return;
+		}
+		const draftIds = items.filter((item) => item.isDraft && item.text.trim().length > 0).map((item) => item.id);
+		if (draftIds.length > 0) {
+			for (const id of draftIds) {
+				setItems((candidate) => candidate.id === id, "isDraft", false);
 			}
-		} else {
-			mutation.mutate(props.timeline.map((t) => (t === item ? updated : t)));
+		}
+		mutation.mutate(payload);
+	};
+
+	const scheduleSave = () => {
+		clearTimeout(saveTimer);
+		saveTimer = setTimeout(() => {
+			void saveTimeline();
+		}, 500);
+	};
+
+	const updateItem = (item: TimelineDraft, field: "text" | "created_at", value: string) => {
+		setDirty(true);
+		setItems((candidate) => candidate.id === item.id, field, value);
+		const nextText = field === "text" ? value : item.text;
+		const shouldSave = !item.isDraft || nextText.trim().length > 0;
+		if (shouldSave) {
+			scheduleSave();
 		}
 	};
 
-	const deleteItem = (item: IncidentTimelineItem) => {
-		if (localItems().includes(item)) {
-			setLocalItems((items) => items.filter((t) => t !== item));
-		} else {
-			mutation.mutate(props.timeline.filter((t) => t !== item));
-		}
+	const deleteItem = (item: TimelineDraft) => {
+		setDirty(true);
+		setItems((current) => current.filter((entry) => entry.id !== item.id));
+		void saveTimeline();
 	};
 
 	const addItem = () => {
-		setLocalItems((items) => [...items, { created_at: new Date().toISOString(), text: "" }]);
+		setDirty(true);
+		setItems((current) => [...current, { id: makeId(), created_at: new Date().toISOString(), text: "", isDraft: true }]);
 	};
+
+	const handleBlur = (item: TimelineDraft) => {
+		if (item.isDraft && item.text.trim().length === 0) {
+			setItems((current) => current.filter((entry) => entry.id !== item.id));
+			return;
+		}
+		void saveTimeline();
+	};
+
+	createEffect(() => {
+		const serverTimeline = props.timeline;
+		const localSerialized = preparePayload();
+		if (timelineEqual(serverTimeline, localSerialized)) {
+			if (dirty()) setDirty(false);
+			return;
+		}
+		if (dirty()) return;
+		setItems(serverTimeline.map((item) => ({ ...item, id: makeId(), isDraft: false })));
+	});
+
+	onCleanup(() => {
+		clearTimeout(saveTimer);
+	});
 
 	return (
 		<div class="space-y-3">
@@ -347,21 +544,23 @@ function EditableTimeline(props: { incidentId: string; timeline: IncidentTimelin
 					Add entry
 				</Button>
 			</div>
-			<Show when={props.timeline.length > 0} fallback={<p class="text-sm text-muted-foreground">No timeline entries</p>}>
+			<Show when={syncedItems().length > 0} fallback={<p class="text-sm text-muted-foreground">No timeline entries</p>}>
 				<div class="space-y-3">
-					<For each={sorted()}>
+					<For each={syncedItems()}>
 						{(item) => (
 							<div class="flex items-start gap-3 group">
 								<input
 									type="datetime-local"
 									value={toDatetimeLocal(item.created_at)}
 									onChange={(e) => updateItem(item, "created_at", fromDatetimeLocal(e.currentTarget.value))}
+									onBlur={() => handleBlur(item)}
 									class="w-44 shrink-0 px-2 py-1.5 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-blue-500"
 								/>
 								<input
 									type="text"
 									value={item.text}
 									onInput={(e) => updateItem(item, "text", e.currentTarget.value)}
+									onBlur={() => handleBlur(item)}
 									placeholder="What happened..."
 									class="flex-1 px-2 py-1.5 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-blue-500"
 								/>
