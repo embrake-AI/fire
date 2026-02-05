@@ -151,22 +151,6 @@ export async function handleStatusUpdate<E extends BasicContext>(
 	});
 }
 
-export function parseAgentSuggestionPayload(value: string): AgentSuggestionPayload | null {
-	try {
-		const parsed = JSON.parse(value) as AgentSuggestionPayload;
-		if (!parsed || typeof parsed !== "object") {
-			return null;
-		}
-		if (!parsed.incidentId || !parsed.action) {
-			return null;
-		}
-		return parsed;
-	} catch (error) {
-		console.warn("Failed to parse agent suggestion payload", error);
-		return null;
-	}
-}
-
 export async function openAgentSuggestionModal({ botToken, triggerId, suggestion }: { botToken: string; triggerId: string; suggestion: AgentSuggestionPayload }) {
 	const actionLabel =
 		suggestion.action === "update_status"

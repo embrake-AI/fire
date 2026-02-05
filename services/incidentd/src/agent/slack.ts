@@ -1,10 +1,13 @@
 import type { ActionsBlock, KnownBlock } from "@slack/types";
+import { postSlackMessage } from "../lib/slack";
 import type { AgentSuggestion } from "./types";
 
 export type AgentSuggestionPayload = AgentSuggestion & {
 	incidentId: string;
 	suggestionId: string;
 	turnId?: string;
+	messageTs?: string;
+	messageChannel?: string;
 };
 
 const SLACK_BUTTON_VALUE_MAX = 2000;
@@ -145,22 +148,21 @@ export function buildAgentSuggestionBlocks({
 	return { blocks, text: textFallback || "Agent suggestions" };
 }
 
-export async function postAgentSuggestions({ botToken, channel, blocks, text }: { botToken: string; channel: string; blocks: KnownBlock[]; text: string }): Promise<void> {
-	const response = await fetch("https://slack.com/api/chat.postMessage", {
-		method: "POST",
-		headers: {
-			Authorization: `Bearer ${botToken}`,
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({
-			channel,
-			text,
-			blocks,
-		}),
-	});
-
-	const payload = await response.json<{ ok?: boolean; error?: string }>().catch(() => ({ ok: false, error: "invalid_response" }));
-	if (!response.ok || payload.ok === false) {
-		throw new Error(`Slack postMessage failed: ${payload.error ?? response.status}`);
+export function parseAgentSuggestionPayload(value: string): AgentSuggestionPayload | null {
+	try {
+		const parsed = JSON.parse(value) as AgentSuggestionPayload;
+		if (!parsed || typeof parsed !== "object") {
+			return null;
+		}
+		if (!parsed.incidentId || !parsed.action) {
+			return null;
+		}
+		return parsed;
+	} catch {
+		return null;
 	}
+}
+
+export async function postAgentSuggestions({ botToken, channel, blocks, text }: { botToken: string; channel: string; blocks: KnownBlock[]; text: string }): Promise<void> {
+	await postSlackMessage({ botToken, channel, text, blocks });
 }

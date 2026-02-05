@@ -1,8 +1,8 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import type { IS } from "@fire/common";
-import { addReaction, removeReaction } from "../adapters/slack/shared";
 import { buildSuggestionTools, getValidStatusTransitions } from "../agent/suggestions";
 import type { AgentContextResponse, AgentPromptPayload, AgentSuggestionContext } from "../agent/types";
+import { addReaction, removeReaction } from "../lib/slack";
 
 const SYSTEM_PROMPT = `You are an incident response agent helping respond to a user prompt.
 You may either:

@@ -1,8 +1,8 @@
 import { IS_SEVERITY } from "@fire/common";
 import type { ActionsBlock, KnownBlock } from "@slack/types";
 import type { Incident, SenderParams, StepDo } from "../../../dispatcher/workflow";
+import { addReaction, incidentChannelIdentifier, postSlackMessage, removeReaction, slackThreadIdentifier } from "../../../lib/slack";
 import { addIncidentIdentifiers } from "../../dashboard/sender";
-import { addReaction, incidentChannelIdentifier, removeReaction, slackThreadIdentifier } from "../shared";
 
 type SlackApiResponse = {
 	ok?: boolean;
@@ -26,6 +26,25 @@ type ChannelResult = { channelId: string; channelName?: string };
 
 const CHANNEL_NAME_MAX_LENGTH = 80;
 const CHANNEL_DATE_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+async function maybePostSuggestionAppliedMessage(stepDo: StepDo, botToken: string, eventMetadata: Record<string, string> | undefined, actionLabel: string) {
+	if (!eventMetadata) {
+		return;
+	}
+	const channel = eventMetadata.suggestionMessageChannel;
+	const ts = eventMetadata.suggestionMessageTs;
+	if (!channel || !ts) {
+		return;
+	}
+	await stepDo("slack.post-suggestion-applied", { retries: { limit: 3, delay: "1 second" } }, async () => {
+		await postSlackMessage({
+			botToken,
+			channel,
+			threadTs: ts,
+			text: `Suggestion: (${actionLabel}) applied :white_check_mark`,
+		});
+	});
+}
 
 function formatIncidentChannelDate(date: Date): string {
 	const day = date.getUTCDate();
@@ -156,23 +175,7 @@ async function postToChannel(stepDo: StepDo, botToken: string, channelId: string
 				delay: "1 second",
 			},
 		},
-		async () => {
-			const response = await fetch("https://slack.com/api/chat.postMessage", {
-				method: "POST",
-				headers: {
-					Authorization: `Bearer ${botToken}`,
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					channel: channelId,
-					text,
-				}),
-			});
-			const payload = await response.json<SlackApiResponse>();
-			if (!response.ok || payload.ok === false) {
-				throw new Error(`Slack postMessage failed: ${payload.error ?? response.status}`);
-			}
-		},
+		() => postSlackMessage({ botToken, channel: channelId, text }),
 	);
 }
 
@@ -298,27 +301,20 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 					},
 				},
 				async () => {
-					const response = await fetch(`https://slack.com/api/chat.postMessage`, {
-						method: "POST",
-						headers: {
-							Authorization: `Bearer ${botToken}`,
-							"Content-Type": "application/json",
+					const payload = await postSlackMessage({
+						botToken,
+						channel,
+						threadTs: thread ?? undefined,
+						replyBroadcast: shouldBroadcast,
+						text: incidentChannelMention ? `Incident created 🔴 in ${incidentChannelMention}` : "Incident created 🔴",
+						blocks: announcementBlocks,
+						metadata: {
+							event_type: "incident",
+							event_payload: { id },
 						},
-						body: JSON.stringify({
-							text: incidentChannelMention ? `Incident created 🔴 in ${incidentChannelMention}` : "Incident created 🔴",
-							channel,
-							thread_ts: thread,
-							...(shouldBroadcast && { reply_broadcast: true }),
-							blocks: announcementBlocks,
-							metadata: {
-								event_type: "incident",
-								event_payload: { id },
-							},
-						}),
 					});
-					const payload = await response.json<SlackApiResponse>();
-					if (!response.ok || payload.ok === false || !payload.ts) {
-						throw new Error(`Slack postMessage failed: ${payload.error ?? response.status}`);
+					if (!payload.ts) {
+						throw new Error("Slack postMessage failed: missing ts");
 					}
 					return { ts: payload.ts };
 				},
@@ -361,25 +357,18 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 				},
 			},
 			async () => {
-				const response = await fetch(`https://slack.com/api/chat.postMessage`, {
-					method: "POST",
-					headers: {
-						Authorization: `Bearer ${botToken}`,
-						"Content-Type": "application/json",
+				const payload = await postSlackMessage({
+					botToken,
+					channel: channelResult.channelId,
+					text: `Incident: ${title}`,
+					blocks: incidentChannelBlocks,
+					metadata: {
+						event_type: "incident",
+						event_payload: { id },
 					},
-					body: JSON.stringify({
-						text: `Incident: ${title}`,
-						channel: channelResult.channelId,
-						blocks: incidentChannelBlocks,
-						metadata: {
-							event_type: "incident",
-							event_payload: { id },
-						},
-					}),
 				});
-				const payload = await response.json<SlackApiResponse>();
-				if (!response.ok || payload.ok === false || !payload.ts) {
-					throw new Error(`Slack postMessage to incident channel failed: ${payload.error ?? response.status}`);
+				if (!payload.ts) {
+					throw new Error("Slack postMessage to incident channel failed: missing ts");
 				}
 				return { ts: payload.ts };
 			},
@@ -499,6 +488,7 @@ export async function incidentSeverityUpdated(params: SenderParams["incidentSeve
 	if (eventMetadata?.promptTs && eventMetadata?.promptChannel) {
 		await stepDo("slack.add-prompt-reaction", () => addReaction(botToken, eventMetadata.promptChannel, eventMetadata.promptTs, "white_check_mark"));
 	}
+	await maybePostSuggestionAppliedMessage(stepDo, botToken, eventMetadata, "update severity");
 }
 
 export async function incidentAssigneeUpdated(params: SenderParams["incidentAssigneeUpdated"]) {
@@ -606,6 +596,7 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 	if (eventMetadata?.promptTs && eventMetadata?.promptChannel) {
 		await stepDo("slack.add-prompt-reaction", () => addReaction(botToken, eventMetadata.promptChannel, eventMetadata.promptTs, "white_check_mark"));
 	}
+	await maybePostSuggestionAppliedMessage(stepDo, botToken, eventMetadata, "update status");
 
 	if (incidentChannelId && status === "resolved") {
 		await postToChannel(stepDo, botToken, incidentChannelId, "This channel will now be archived.", "slack.post-archive-notice");
@@ -634,6 +625,7 @@ export async function affectionUpdated(params: SenderParams["affectionUpdated"])
 	const statusText = event.status ? `Status page update: ${statusEmoji} *${event.status}*` : "Status page update";
 	const messageText = event.message ? `\n${event.message}` : "";
 	await postToChannel(stepDo, botToken, incidentChannelId, `${statusText}${messageText}`, "slack.post-affection-update");
+	await maybePostSuggestionAppliedMessage(stepDo, botToken, eventMetadata, "status page update");
 }
 
 async function updateIncidentMessage({
@@ -925,23 +917,6 @@ export async function messageAdded(params: SenderParams["messageAdded"]) {
 				delay: "1 second",
 			},
 		},
-		async () => {
-			const response = await fetch("https://slack.com/api/chat.postMessage", {
-				method: "POST",
-				headers: {
-					Authorization: `Bearer ${token}`,
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					channel: targetChannel,
-					thread_ts: targetThreadTs,
-					text: message,
-				}),
-			});
-			const payload = await response.json<SlackApiResponse>();
-			if (!response.ok || payload.ok === false) {
-				throw new Error(`Slack postMessage failed: ${payload.error ?? response.status}`);
-			}
-		},
+		() => postSlackMessage({ botToken: token, channel: targetChannel, threadTs: targetThreadTs, text: message }),
 	);
 }

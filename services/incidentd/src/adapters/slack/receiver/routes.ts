@@ -1,9 +1,10 @@
 import type { IS } from "@fire/common";
 import type { Context } from "hono";
 import { Hono } from "hono";
+import { parseAgentSuggestionPayload } from "../../../agent/slack";
 import { type AuthContext, addMessage, addPrompt, startIncident, updateAffection, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
+import { addReaction, incidentChannelIdentifier, slackThreadIdentifier } from "../../../lib/slack";
 import { ASSERT_NEVER } from "../../../lib/utils";
-import { addReaction, incidentChannelIdentifier, slackThreadIdentifier } from "../shared";
 import { verifySlackRequestMiddleware } from "./middleware";
 import {
 	getIncidentIdFromIdentifier,
@@ -11,7 +12,6 @@ import {
 	getSlackIntegration,
 	handleStatusUpdate,
 	openAgentSuggestionModal,
-	parseAgentSuggestionPayload,
 	type SlackEventPayload,
 	type SlackInteractionPayload,
 } from "./utils";
@@ -276,13 +276,18 @@ slackRoutes.post("/interaction", async (c) => {
 					if (!messageValue) {
 						return c.text("OK");
 					}
+					const suggestionMetadata: Record<string, string> = { agentSuggestionId: suggestion.suggestionId };
+					if (suggestion.messageChannel && suggestion.messageTs) {
+						suggestionMetadata.suggestionMessageChannel = suggestion.messageChannel;
+						suggestionMetadata.suggestionMessageTs = suggestion.messageTs;
+					}
 					await updateStatus({
 						c,
 						id: suggestion.incidentId,
 						status: suggestion.status,
 						message: messageValue,
 						adapter: "slack",
-						eventMetadata: { agentSuggestionId: suggestion.suggestionId },
+						eventMetadata: suggestionMetadata,
 					});
 					return c.json({});
 				}
@@ -297,6 +302,11 @@ slackRoutes.post("/interaction", async (c) => {
 							? (selectedStatus as "investigating" | "mitigating" | "resolved")
 							: suggestion.affectionStatus;
 
+					const suggestionMetadata: Record<string, string> = { agentSuggestionId: suggestion.suggestionId };
+					if (suggestion.messageChannel && suggestion.messageTs) {
+						suggestionMetadata.suggestionMessageChannel = suggestion.messageChannel;
+						suggestionMetadata.suggestionMessageTs = suggestion.messageTs;
+					}
 					await updateAffection({
 						c,
 						id: suggestion.incidentId,
@@ -308,7 +318,7 @@ slackRoutes.post("/interaction", async (c) => {
 							...(suggestion.title ? { title: suggestion.title } : {}),
 							...(suggestion.services ? { services: suggestion.services } : {}),
 						},
-						eventMetadata: { agentSuggestionId: suggestion.suggestionId },
+						eventMetadata: suggestionMetadata,
 					});
 
 					return c.json({});
@@ -326,6 +336,13 @@ slackRoutes.post("/interaction", async (c) => {
 						if (!suggestion) {
 							continue;
 						}
+						const suggestionChannel = payload.channel?.id;
+						const suggestionTs = payload.message?.ts ?? payload.container?.message_ts;
+						const suggestionMetadata: Record<string, string> = { agentSuggestionId: suggestion.suggestionId };
+						if (suggestionChannel && suggestionTs) {
+							suggestionMetadata.suggestionMessageChannel = suggestionChannel;
+							suggestionMetadata.suggestionMessageTs = suggestionTs;
+						}
 
 						if (suggestion.action === "update_status") {
 							await updateStatus({
@@ -334,7 +351,7 @@ slackRoutes.post("/interaction", async (c) => {
 								status: suggestion.status,
 								message: suggestion.message,
 								adapter: "slack",
-								eventMetadata: { agentSuggestionId: suggestion.suggestionId },
+								eventMetadata: suggestionMetadata,
 							});
 						} else if (suggestion.action === "update_severity") {
 							await updateSeverity({
@@ -342,10 +359,10 @@ slackRoutes.post("/interaction", async (c) => {
 								id: suggestion.incidentId,
 								severity: suggestion.severity,
 								adapter: "slack",
-								eventMetadata: { agentSuggestionId: suggestion.suggestionId },
+								eventMetadata: suggestionMetadata,
 							});
 						} else if (suggestion.action === "add_status_page_update") {
-							await updateAffection({
+							const result = await updateAffection({
 								c,
 								id: suggestion.incidentId,
 								adapter: "slack",
@@ -356,8 +373,11 @@ slackRoutes.post("/interaction", async (c) => {
 									...(suggestion.title ? { title: suggestion.title } : {}),
 									...(suggestion.services ? { services: suggestion.services } : {}),
 								},
-								eventMetadata: { agentSuggestionId: suggestion.suggestionId },
+								eventMetadata: suggestionMetadata,
 							});
+							if (result?.error) {
+								continue;
+							}
 						}
 						continue;
 					}
@@ -367,7 +387,8 @@ slackRoutes.post("/interaction", async (c) => {
 						if (!suggestion) {
 							continue;
 						}
-
+						const suggestionChannel = payload.channel?.id;
+						const suggestionTs = payload.message?.ts ?? payload.container?.message_ts;
 						const slackIntegration = await getSlackIntegration({
 							hyperdrive: c.env.db,
 							teamId,
@@ -383,7 +404,11 @@ slackRoutes.post("/interaction", async (c) => {
 						await openAgentSuggestionModal({
 							botToken: slackIntegration.data.botToken,
 							triggerId: payload.trigger_id,
-							suggestion,
+							suggestion: {
+								...suggestion,
+								...(suggestionChannel ? { messageChannel: suggestionChannel } : {}),
+								...(suggestionTs ? { messageTs: suggestionTs } : {}),
+							},
 						});
 					}
 					continue;

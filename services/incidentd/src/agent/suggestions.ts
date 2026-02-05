@@ -5,6 +5,9 @@ const SYSTEM_PROMPT = `You are an incident operations agent. Based on the incide
 
 Rules:
 - Only suggest actions you are confident are correct from the context.
+- Only suggest when there is very clear intent from actual, past events. If intent is ambiguous, do not suggest.
+- Do not speculate or advise about future or hypothetical actions (no "if/when you do X, then do Y").
+- Do not suggest actions for things that have not already happened.
 - Keep suggestion messages short (max ~200 characters).
 - Suggest at most 3 actions total.
 - If no suggestions are appropriate, do not call any tools.
@@ -14,7 +17,7 @@ Allowed actions (use tools):
 2) update_severity: change severity to low/medium/high.
 3) add_status_page_update: post a public update. Must include a message. If no status page incident exists yet, you MUST include status=investigating and include a title and services (choose from allowed services).`;
 
-const DEVELOPER_PROMPT = `You may call tools to emit suggestions. Each tool call is treated as a suggested action (not executed). Do not repeat the same tool. If no suggestions are appropriate, do not call any tools.`;
+const DEVELOPER_PROMPT = `You may call tools to emit suggestions. Each tool call is treated as a suggested action (not executed). Do not repeat the same tool. IF NO SUGGESTIONS ARE APPROPRIATE, DO NOT CALL ANY TOOLS.`;
 
 function truncateMessage(value: string, max = 240) {
 	const trimmed = value.trim();
