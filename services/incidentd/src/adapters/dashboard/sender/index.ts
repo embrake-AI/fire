@@ -89,11 +89,3 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 
 export const messageAdded = undefined;
 export const affectionUpdated = undefined;
-
-export async function summaryResponse(params: SenderParams["summaryResponse"]): Promise<void> {
-	const { step, env, id, description } = params;
-	await step("d1.incident.update-description", async () => {
-		await env.incidents.prepare("UPDATE incident SET description = ? WHERE id = ?").bind(description, id).run();
-		return true;
-	});
-}

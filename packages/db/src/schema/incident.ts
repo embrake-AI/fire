@@ -13,7 +13,7 @@ export const incidentSource = pgEnum("incident_source", ["slack", "dashboard"]);
  */
 export type IncidentEventData = IS_Event & {
 	id: number;
-	adapter: "slack" | "dashboard";
+	adapter: "slack" | "dashboard" | "fire";
 	created_at: string;
 };
 

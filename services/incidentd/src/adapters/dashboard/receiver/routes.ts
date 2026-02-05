@@ -27,9 +27,11 @@ dashboardRoutes.post("/", async (c) => {
 		prompt: string;
 		metadata?: Record<string, string>;
 		entryPoints: EntryPoint[];
-		services: { id: string; prompt: string | null }[];
+		services: { id: string; name: string; prompt: string | null }[];
 	}>();
-	const normalizedServices = Array.isArray(services) ? services.filter((service) => service?.id).map((service) => ({ id: service.id, prompt: service.prompt ?? null })) : [];
+	const normalizedServices = Array.isArray(services)
+		? services.filter((service) => service?.id && service?.name).map((service) => ({ id: service.id, name: service.name, prompt: service.prompt ?? null }))
+		: [];
 
 	const incidentId = await startIncident({
 		c,

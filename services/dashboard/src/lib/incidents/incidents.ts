@@ -21,7 +21,7 @@ export const getIncidents = createServerFn({
 		return incidents;
 	});
 
-export type IncidentEvent = IS_Event & { id: number; created_at: string; adapter: "slack" | "dashboard" };
+export type IncidentEvent = IS_Event & { id: number; created_at: string; adapter: "slack" | "dashboard" | "fire" };
 export type IncidentTimelineItem = { created_at: string; text: string };
 export type IncidentAction = { id: string; description: string };
 
@@ -36,7 +36,7 @@ export const getIncidentById = createServerFn({ method: "GET" })
 		const incident = (await response.json()) as
 			| {
 					state: IS;
-					events: { id: number; event_type: string; event_data: string; created_at: string; adapter: "slack" | "dashboard" }[];
+					events: { id: number; event_type: string; event_data: string; created_at: string; adapter: "slack" | "dashboard" | "fire" }[];
 					context: { channel?: string; thread?: string };
 			  }
 			| { error: "NOT_FOUND" };
@@ -221,6 +221,7 @@ export const startIncident = createServerFn({ method: "POST" })
 				services: {
 					columns: {
 						id: true,
+						name: true,
 						prompt: true,
 					},
 				},
@@ -277,6 +278,7 @@ export const startIncident = createServerFn({ method: "POST" })
 			.filter((ep) => !!ep);
 		const services = client.services.map((serviceRow) => ({
 			id: serviceRow.id,
+			name: serviceRow.name,
 			prompt: serviceRow.prompt ?? null,
 		}));
 		const response = await signedFetch(

@@ -145,9 +145,11 @@ export const eventRegistry: EventConfigMap = {
 		label: "New Message",
 		render: ({ data }) => {
 			const user = useUserBySlackId(() => data.userId);
+			const isSystemUser = () => !data.userId || data.userId === "fire";
+			const displayUser = () => (isSystemUser() ? { name: "Fire" } : user());
 			return (
 				<div class="flex items-center gap-2">
-					<UserDisplay user={user} />
+					<UserDisplay user={displayUser} />
 					<EmojiText text={data.message} class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap" />
 				</div>
 			);

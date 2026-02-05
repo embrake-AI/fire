@@ -1,7 +1,7 @@
 import type { IS } from "@fire/common";
 import type { Context } from "hono";
 import { Hono } from "hono";
-import { type AuthContext, addMessage, addPrompt, startIncident, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
+import { type AuthContext, addMessage, addPrompt, startIncident, updateAffection, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
 import { ASSERT_NEVER } from "../../../lib/utils";
 import { addReaction, incidentChannelIdentifier, slackThreadIdentifier } from "../shared";
 import { verifySlackRequestMiddleware } from "./middleware";
@@ -10,6 +10,8 @@ import {
 	getIncidentIdFromMessageMetadata,
 	getSlackIntegration,
 	handleStatusUpdate,
+	openAgentSuggestionModal,
+	parseAgentSuggestionPayload,
 	type SlackEventPayload,
 	type SlackInteractionPayload,
 } from "./utils";
@@ -242,27 +244,151 @@ slackRoutes.post("/interaction", async (c) => {
 		const enterpriseId = payload.team.enterprise_id ?? null;
 
 		if (payload.type === "view_submission") {
-			if (payload.view.callback_id !== "status_update_modal") {
+			if (payload.view.callback_id === "status_update_modal") {
+				const privateMetadata = JSON.parse(payload.view.private_metadata) as {
+					incidentId: string;
+					newStatus: Exclude<IS["status"], "open">;
+				};
+				const { incidentId, newStatus } = privateMetadata;
+				const statusMessage = payload.view.state.values.status_message_block.status_message_input.value ?? "";
+
+				await updateStatus({
+					c,
+					id: incidentId,
+					status: newStatus,
+					message: statusMessage,
+					adapter: "slack",
+				});
+
+				return c.json({});
+			}
+
+			if (payload.view.callback_id === "agent_suggestion_edit") {
+				const suggestion = parseAgentSuggestionPayload(payload.view.private_metadata);
+				if (!suggestion) {
+					return c.text("OK");
+				}
+
+				const values = payload.view.state.values;
+				const messageValue = values.agent_message_block?.agent_message_input?.value ?? values.status_message_block?.status_message_input?.value ?? "";
+
+				if (suggestion.action === "update_status") {
+					if (!messageValue) {
+						return c.text("OK");
+					}
+					await updateStatus({
+						c,
+						id: suggestion.incidentId,
+						status: suggestion.status,
+						message: messageValue,
+						adapter: "slack",
+						eventMetadata: { agentSuggestionId: suggestion.suggestionId },
+					});
+					return c.json({});
+				}
+
+				if (suggestion.action === "add_status_page_update") {
+					if (!messageValue) {
+						return c.text("OK");
+					}
+					const selectedStatus = values.agent_status_block?.agent_status_select?.selected_option?.value;
+					const affectionStatus =
+						selectedStatus && ["investigating", "mitigating", "resolved"].includes(selectedStatus)
+							? (selectedStatus as "investigating" | "mitigating" | "resolved")
+							: suggestion.affectionStatus;
+
+					await updateAffection({
+						c,
+						id: suggestion.incidentId,
+						adapter: "slack",
+						update: {
+							message: messageValue,
+							createdBy: payload.user.id,
+							...(affectionStatus ? { status: affectionStatus } : {}),
+							...(suggestion.title ? { title: suggestion.title } : {}),
+							...(suggestion.services ? { services: suggestion.services } : {}),
+						},
+						eventMetadata: { agentSuggestionId: suggestion.suggestionId },
+					});
+
+					return c.json({});
+				}
+
 				return c.text("OK");
 			}
-			const privateMetadata = JSON.parse(payload.view.private_metadata) as {
-				incidentId: string;
-				newStatus: Exclude<IS["status"], "open">;
-			};
-			const { incidentId, newStatus } = privateMetadata;
-			const statusMessage = payload.view.state.values.status_message_block.status_message_input.value ?? "";
 
-			await updateStatus({
-				c,
-				id: incidentId,
-				status: newStatus,
-				message: statusMessage,
-				adapter: "slack",
-			});
-
-			return c.json({});
+			return c.text("OK");
 		} else if (payload.type === "block_actions") {
 			for (const action of payload.actions) {
+				if (action.type === "button") {
+					if (action.action_id === "agent_apply") {
+						const suggestion = parseAgentSuggestionPayload(action.value);
+						if (!suggestion) {
+							continue;
+						}
+
+						if (suggestion.action === "update_status") {
+							await updateStatus({
+								c,
+								id: suggestion.incidentId,
+								status: suggestion.status,
+								message: suggestion.message,
+								adapter: "slack",
+								eventMetadata: { agentSuggestionId: suggestion.suggestionId },
+							});
+						} else if (suggestion.action === "update_severity") {
+							await updateSeverity({
+								c,
+								id: suggestion.incidentId,
+								severity: suggestion.severity,
+								adapter: "slack",
+								eventMetadata: { agentSuggestionId: suggestion.suggestionId },
+							});
+						} else if (suggestion.action === "add_status_page_update") {
+							await updateAffection({
+								c,
+								id: suggestion.incidentId,
+								adapter: "slack",
+								update: {
+									message: suggestion.message,
+									createdBy: payload.user.id,
+									...(suggestion.affectionStatus ? { status: suggestion.affectionStatus } : {}),
+									...(suggestion.title ? { title: suggestion.title } : {}),
+									...(suggestion.services ? { services: suggestion.services } : {}),
+								},
+								eventMetadata: { agentSuggestionId: suggestion.suggestionId },
+							});
+						}
+						continue;
+					}
+
+					if (action.action_id === "agent_edit") {
+						const suggestion = parseAgentSuggestionPayload(action.value);
+						if (!suggestion) {
+							continue;
+						}
+
+						const slackIntegration = await getSlackIntegration({
+							hyperdrive: c.env.db,
+							teamId,
+							enterpriseId,
+							isEnterpriseInstall: !!enterpriseId,
+							withEntryPoints: false,
+						});
+						if (!slackIntegration) {
+							console.error(`No Slack integration found for team ${teamId}`);
+							continue;
+						}
+
+						await openAgentSuggestionModal({
+							botToken: slackIntegration.data.botToken,
+							triggerId: payload.trigger_id,
+							suggestion,
+						});
+					}
+					continue;
+				}
+
 				const incidentId = action.block_id.split(":")[1];
 				if (!incidentId) {
 					throw new Error("Incident ID not found");

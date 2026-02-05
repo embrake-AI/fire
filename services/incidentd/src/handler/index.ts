@@ -1,17 +1,5 @@
 import type { EntryPoint, IS, IS_Event, ListIncidentsElement } from "@fire/common";
 import type { Context } from "hono";
-import { decidePromptAction } from "../core/idontknowhowtonamethisitswhereillplacecallstoai";
-
-function getValidStatusTransitions(currentStatus: IS["status"]): Array<Exclude<IS["status"], "open">> {
-	switch (currentStatus) {
-		case "open":
-			return ["mitigating", "resolved"];
-		case "mitigating":
-			return ["resolved"];
-		case "resolved":
-			return [];
-	}
-}
 
 export type BasicContext = { Bindings: Env };
 export type AuthContext = BasicContext & { Variables: { auth: { clientId: string } } };
@@ -34,7 +22,7 @@ export async function startIncident<E extends AuthContext>({
 	m: Omit<Metadata, "clientId">;
 	identifier: string;
 	entryPoints: EntryPoint[];
-	services: { id: string; prompt: string | null }[];
+	services: { id: string; name: string; prompt: string | null }[];
 } & Pick<IS, "prompt" | "createdBy" | "source">) {
 	const clientId = c.var.auth.clientId;
 	const metadata = { ...m, clientId, identifier };
@@ -74,15 +62,17 @@ export async function updateSeverity<E extends BasicContext>({
 	id,
 	severity,
 	adapter,
+	eventMetadata,
 }: {
 	c: Context<E>;
 	id: string;
 	severity: IS["severity"];
-	adapter: "slack" | "dashboard";
+	adapter: "slack" | "dashboard" | "fire";
+	eventMetadata?: Record<string, string>;
 }) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	await incident.setSeverity(severity, adapter);
+	await incident.setSeverity(severity, adapter, eventMetadata);
 }
 
 export async function updateAssignee<E extends BasicContext>({
@@ -94,7 +84,7 @@ export async function updateAssignee<E extends BasicContext>({
 	c: Context<E>;
 	id: string;
 	assignee: IS["assignee"];
-	adapter: "slack" | "dashboard";
+	adapter: "slack" | "dashboard" | "fire";
 }) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
@@ -107,16 +97,18 @@ export async function updateStatus<E extends BasicContext>({
 	status,
 	message,
 	adapter,
+	eventMetadata,
 }: {
 	c: Context<E>;
 	id: string;
 	status: Exclude<IS["status"], "open">;
 	message: string;
-	adapter: "slack" | "dashboard";
+	adapter: "slack" | "dashboard" | "fire";
+	eventMetadata?: Record<string, string>;
 }) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	await incident.updateStatus(status, message, adapter);
+	await incident.updateStatus(status, message, adapter, eventMetadata);
 }
 
 export async function updateAffection<E extends BasicContext>({
@@ -124,15 +116,17 @@ export async function updateAffection<E extends BasicContext>({
 	id,
 	update,
 	adapter,
+	eventMetadata,
 }: {
 	c: Context<E>;
 	id: string;
 	update: Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
-	adapter: "slack" | "dashboard";
+	adapter: "slack" | "dashboard" | "fire";
+	eventMetadata?: Record<string, string>;
 }) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	return incident.updateAffection({ ...update, adapter });
+	return incident.updateAffection({ ...update, adapter, eventMetadata });
 }
 
 export async function addMessage<E extends BasicContext>({
@@ -144,17 +138,19 @@ export async function addMessage<E extends BasicContext>({
 	messageId,
 	adapter,
 	slackUserToken,
+	eventMetadata,
 }: {
 	c: Context<E>;
 	message: string;
 	userId: string;
 	messageId: string;
-	adapter: "slack" | "dashboard";
+	adapter: "slack" | "dashboard" | "fire";
 	slackUserToken?: string;
+	eventMetadata?: Record<string, string>;
 } & ({ identifier: string; id?: never } | { id: string; identifier?: never })) {
 	const incidentId = id ? c.env.INCIDENT.idFromString(id) : c.env.INCIDENT.idFromName(identifier!);
 	const incident = c.env.INCIDENT.get(incidentId);
-	await incident.addMessage(message, userId, messageId, adapter, slackUserToken);
+	await incident.addMessage(message, userId, messageId, adapter, slackUserToken, eventMetadata);
 }
 
 export async function addPrompt<E extends BasicContext>({
@@ -174,65 +170,20 @@ export async function addPrompt<E extends BasicContext>({
 	ts: string;
 	channel: string;
 	threadTs?: string;
-	adapter: "slack" | "dashboard";
+	adapter: "slack" | "dashboard" | "fire";
 } & ({ identifier: string; id?: never } | { id: string; identifier?: never })) {
 	const incidentId = id ? c.env.INCIDENT.idFromString(id) : c.env.INCIDENT.idFromName(identifier!);
-	const incident = c.env.INCIDENT.get(incidentId);
-	const incidentInfo = await incident.get();
-	if ("error" in incidentInfo || !("state" in incidentInfo)) {
-		return;
-	}
-
-	const validStatusTransitions = getValidStatusTransitions(incidentInfo.state.status);
-	const decision = await decidePromptAction(
-		{
+	const workflowId = `prompt-${incidentId.toString()}-${channel}-${ts}`;
+	await c.env.INCIDENT_PROMPT_WORKFLOW.create({
+		id: workflowId,
+		params: {
+			incidentId: incidentId.toString(),
 			prompt,
-			incident: {
-				status: incidentInfo.state.status,
-				severity: incidentInfo.state.severity,
-				title: incidentInfo.state.title,
-			},
-			validStatusTransitions,
-		},
-		c.env.OPENAI_API_KEY,
-	);
-
-	// TODO: Handle decision noop, should change to answer user
-
-	if (decision.action === "update_status") {
-		const status = decision.status;
-		if (!status || !validStatusTransitions.includes(status)) {
-			return;
-		}
-		await incident.updateStatus(status, decision.message ?? prompt, adapter, { promptTs: ts, promptChannel: channel });
-		return;
-	}
-
-	if (decision.action === "update_severity") {
-		const severity = decision.severity;
-		if (!severity) {
-			return;
-		}
-		await incident.setSeverity(severity, adapter, { promptTs: ts, promptChannel: channel });
-		return;
-	}
-
-	if (decision.action === "add_status_page_update") {
-		if (!decision.message) {
-			return;
-		}
-		await incident.updateAffection({
-			message: decision.message,
-			...(decision.affectionStatus ? { status: decision.affectionStatus } : {}),
-			createdBy: userId,
+			userId,
+			ts,
+			channel,
+			threadTs,
 			adapter,
-			eventMetadata: { promptTs: ts, promptChannel: channel },
-		});
-		return;
-	}
-
-	if (decision.action === "summarize") {
-		await incident.respondSummary({ ts, adapter, channel, threadTs });
-		return;
-	}
+		},
+	});
 }

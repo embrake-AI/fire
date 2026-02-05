@@ -266,11 +266,16 @@ function PostmortemCard(props: { analysis: Accessor<IncidentAnalysis> }) {
 						Post-mortem
 					</h3>
 					<Show when={isNotionConnected()}>
-						<Show
-							when={analysis().notionPageId}
-							fallback={<ExportToNotionDialog incidentId={analysis().id} title={analysis().title} />}
-						>
-							<Button as="a" href={`https://notion.so/${analysis().notionPageId!.replace(/-/g, "")}`} target="_blank" rel="noopener noreferrer" variant="outline" size="sm" class="gap-2">
+						<Show when={analysis().notionPageId} fallback={<ExportToNotionDialog incidentId={analysis().id} title={analysis().title} />}>
+							<Button
+								as="a"
+								href={`https://notion.so/${analysis().notionPageId!.replace(/-/g, "")}`}
+								target="_blank"
+								rel="noopener noreferrer"
+								variant="outline"
+								size="sm"
+								class="gap-2"
+							>
 								<NotionIcon class="size-4" />
 								Open in Notion
 								<ExternalLink class="size-3.5" />

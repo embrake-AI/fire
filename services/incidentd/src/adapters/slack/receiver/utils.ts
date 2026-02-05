@@ -3,6 +3,7 @@ import type { SlackIntegrationData } from "@fire/db/schema";
 import type { KnownBlock, SlackEvent } from "@slack/types";
 import { sql } from "drizzle-orm";
 import type { Context } from "hono";
+import type { AgentSuggestionPayload } from "../../../agent/slack";
 import type { BasicContext } from "../../../handler/index";
 import { getDB } from "../../../lib/db";
 
@@ -70,6 +71,12 @@ export type SlackBlockActionPayload = {
 					value: Exclude<IS["status"], "open">;
 				};
 		  }
+		| {
+				type: "button";
+				action_id: "agent_apply" | "agent_edit";
+				block_id: string;
+				value: string;
+		  }
 	>;
 };
 
@@ -89,14 +96,17 @@ export type SlackViewSubmissionPayload = {
 		callback_id: string;
 		private_metadata: string;
 		state: {
-			values: {
-				status_message_block: {
-					status_message_input: {
-						type: "plain_text_input";
-						value: string | null;
-					};
-				};
-			};
+			values: Record<
+				string,
+				Record<
+					string,
+					{
+						type: string;
+						value?: string | null;
+						selected_option?: { value: string };
+					}
+				>
+			>;
 		};
 	};
 };
@@ -141,6 +151,114 @@ export async function handleStatusUpdate<E extends BasicContext>(
 	});
 }
 
+export function parseAgentSuggestionPayload(value: string): AgentSuggestionPayload | null {
+	try {
+		const parsed = JSON.parse(value) as AgentSuggestionPayload;
+		if (!parsed || typeof parsed !== "object") {
+			return null;
+		}
+		if (!parsed.incidentId || !parsed.action) {
+			return null;
+		}
+		return parsed;
+	} catch (error) {
+		console.warn("Failed to parse agent suggestion payload", error);
+		return null;
+	}
+}
+
+export async function openAgentSuggestionModal({ botToken, triggerId, suggestion }: { botToken: string; triggerId: string; suggestion: AgentSuggestionPayload }) {
+	const actionLabel =
+		suggestion.action === "update_status"
+			? `Update status → ${suggestion.status}`
+			: suggestion.action === "update_severity"
+				? `Update severity → ${suggestion.severity}`
+				: "Status page update";
+
+	const blocks: KnownBlock[] = [
+		{
+			type: "section",
+			text: {
+				type: "mrkdwn",
+				text: `*${actionLabel}*`,
+			},
+		},
+		{
+			type: "input",
+			block_id: "agent_message_block",
+			label: {
+				type: "plain_text",
+				text: "Message",
+			},
+			element: {
+				type: "plain_text_input",
+				action_id: "agent_message_input",
+				multiline: true,
+				initial_value: "message" in suggestion ? suggestion.message : "",
+			},
+		},
+	];
+
+	if (suggestion.action === "add_status_page_update") {
+		blocks.push({
+			type: "input",
+			block_id: "agent_status_block",
+			optional: true,
+			label: { type: "plain_text", text: "Status" },
+			element: {
+				type: "static_select",
+				action_id: "agent_status_select",
+				options: [
+					{ text: { type: "plain_text", text: "Investigating" }, value: "investigating" },
+					{ text: { type: "plain_text", text: "Mitigating" }, value: "mitigating" },
+					{ text: { type: "plain_text", text: "Resolved" }, value: "resolved" },
+				],
+				...(suggestion.affectionStatus
+					? {
+							initial_option: {
+								text: {
+									type: "plain_text",
+									text: suggestion.affectionStatus.charAt(0).toUpperCase() + suggestion.affectionStatus.slice(1),
+								},
+								value: suggestion.affectionStatus,
+							},
+						}
+					: {}),
+			},
+		});
+	}
+
+	const modalView = {
+		type: "modal",
+		callback_id: "agent_suggestion_edit",
+		private_metadata: JSON.stringify(suggestion),
+		title: {
+			type: "plain_text",
+			text: "Edit suggestion",
+		},
+		submit: {
+			type: "plain_text",
+			text: "Apply",
+		},
+		close: {
+			type: "plain_text",
+			text: "Cancel",
+		},
+		blocks,
+	};
+
+	await fetch("https://slack.com/api/views.open", {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${botToken}`,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			trigger_id: triggerId,
+			view: modalView,
+		}),
+	});
+}
 async function openStatusUpdateModal({
 	botToken,
 	triggerId,
@@ -232,7 +350,7 @@ export async function getSlackIntegration(opts: {
 	enterpriseId?: string | null;
 	isEnterpriseInstall?: boolean;
 	withEntryPoints?: boolean;
-}): Promise<{ clientId: string; data: SlackIntegrationData; entryPoints: EntryPoint[]; services: { id: string; prompt: string | null }[] } | null> {
+}): Promise<{ clientId: string; data: SlackIntegrationData; entryPoints: EntryPoint[]; services: { id: string; name: string; prompt: string | null }[] } | null> {
 	const { hyperdrive, teamId, enterpriseId, isEnterpriseInstall = false } = opts;
 	const db = getDB(hyperdrive);
 
@@ -297,6 +415,7 @@ export async function getSlackIntegration(opts: {
 			services: {
 				columns: {
 					id: true,
+					name: true,
 					prompt: true,
 				},
 			},
@@ -309,8 +428,8 @@ export async function getSlackIntegration(opts: {
 
 	return {
 		clientId: result.id,
-		data: result.integrations[0]?.data,
-		services: result.services?.map((service) => ({ id: service.id, prompt: service.prompt ?? null })) ?? [],
+		data: result.integrations[0]?.data as SlackIntegrationData,
+		services: result.services?.map((service) => ({ id: service.id, name: service.name, prompt: service.prompt ?? null })) ?? [],
 		entryPoints:
 			result.entryPoints
 				.map((ep) => {

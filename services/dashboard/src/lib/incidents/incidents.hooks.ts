@@ -4,7 +4,12 @@ import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
 import { getIncidents, updateAssignee, updateSeverity, updateStatus } from "./incidents";
 
-export function useIncidents() {
+type UseIncidentsOptions = {
+	enabled?: Accessor<boolean>;
+	placeholderData?: Awaited<ReturnType<typeof getIncidents>>;
+};
+
+export function useIncidents(options?: UseIncidentsOptions) {
 	const getIncidentsFn = useServerFn(getIncidents);
 
 	return useQuery(() => ({
@@ -12,6 +17,8 @@ export function useIncidents() {
 		queryFn: getIncidentsFn,
 		refetchInterval: 10_000,
 		staleTime: 10_000,
+		enabled: options?.enabled?.() ?? true,
+		placeholderData: options?.placeholderData,
 	}));
 }
 

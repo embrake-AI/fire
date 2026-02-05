@@ -7,7 +7,6 @@ export const incidentStarted = undefined;
 export const incidentSeverityUpdated = undefined;
 export const incidentAssigneeUpdated = undefined;
 export const messageAdded = undefined;
-export const summaryResponse = undefined;
 
 export async function affectionUpdated(params: SenderParams["affectionUpdated"]): Promise<void> {
 	const { step, env, id, event, metadata, sourceAdapter } = params;

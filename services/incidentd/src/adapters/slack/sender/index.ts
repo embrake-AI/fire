@@ -2,7 +2,7 @@ import { IS_SEVERITY } from "@fire/common";
 import type { ActionsBlock, KnownBlock } from "@slack/types";
 import type { Incident, SenderParams, StepDo } from "../../../dispatcher/workflow";
 import { addIncidentIdentifiers } from "../../dashboard/sender";
-import { addReaction, incidentChannelIdentifier, slackThreadIdentifier } from "../shared";
+import { addReaction, incidentChannelIdentifier, removeReaction, slackThreadIdentifier } from "../shared";
 
 type SlackApiResponse = {
 	ok?: boolean;
@@ -332,22 +332,7 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]) {
 					},
 				},
 				async () => {
-					const response = await fetch(`https://slack.com/api/reactions.remove`, {
-						method: "POST",
-						headers: {
-							Authorization: `Bearer ${botToken}`,
-							"Content-Type": "application/json",
-						},
-						body: JSON.stringify({
-							name: "fire",
-							channel,
-							timestamp: thread,
-						}),
-					});
-					const payload = await response.json<SlackApiResponse>().catch(() => ({}) as SlackApiResponse);
-					if (!response.ok || payload.ok === false) {
-						throw new Error(`Slack remove reaction failed: ${payload.error ?? response.status}`);
-					}
+					await removeReaction(botToken, channel, thread, "fire");
 				},
 			),
 		]);
@@ -906,7 +891,7 @@ function addIncidentChannelPointerBlock(blocks: KnownBlock[], channelId: string)
 }
 
 export async function messageAdded(params: SenderParams["messageAdded"]) {
-	const { step: stepDo, message, metadata, sourceAdapter, slackUserToken } = params;
+	const { step: stepDo, message, metadata, sourceAdapter, slackUserToken, eventMetadata } = params;
 
 	if (sourceAdapter === "slack") {
 		return;
@@ -914,9 +899,14 @@ export async function messageAdded(params: SenderParams["messageAdded"]) {
 
 	const { botToken, channel, postedMessageTs, incidentChannelId, incidentChannelMessageTs } = metadata;
 
-	// Determine target: prefer inc-xxx channel, fallback to original thread
-	const targetChannel = incidentChannelId ?? channel;
-	const targetThreadTs = incidentChannelId ? incidentChannelMessageTs : postedMessageTs;
+	const promptChannel = eventMetadata?.promptChannel;
+	const promptThreadTs = eventMetadata?.promptThreadTs;
+	const promptTs = eventMetadata?.promptTs;
+	const hasPromptReply = !!promptChannel && !!promptTs;
+
+	// Determine target: if this message is a prompt response, reply in that thread; otherwise prefer inc-xxx channel
+	const targetChannel = hasPromptReply ? promptChannel : (incidentChannelId ?? channel);
+	const targetThreadTs = hasPromptReply ? (promptThreadTs ?? promptTs) : incidentChannelId ? incidentChannelMessageTs : postedMessageTs;
 
 	if (!targetChannel || !targetThreadTs) {
 		return;
@@ -949,49 +939,6 @@ export async function messageAdded(params: SenderParams["messageAdded"]) {
 				}),
 			});
 			const payload = await response.json<SlackApiResponse>();
-			if (!response.ok || payload.ok === false) {
-				throw new Error(`Slack postMessage failed: ${payload.error ?? response.status}`);
-			}
-		},
-	);
-}
-
-export async function summaryResponse(params: SenderParams["summaryResponse"]) {
-	const { step: stepDo, description, channel, threadTs, ts, metadata, sourceAdapter } = params;
-
-	if (sourceAdapter !== "slack") {
-		return;
-	}
-
-	const { botToken } = metadata;
-	if (!botToken) {
-		return;
-	}
-
-	const replyThreadTs = threadTs ?? ts;
-
-	await stepDo(
-		"slack.post-summary-response",
-		{
-			retries: {
-				limit: 3,
-				delay: "1 second",
-			},
-		},
-		async () => {
-			const response = await fetch("https://slack.com/api/chat.postMessage", {
-				method: "POST",
-				headers: {
-					Authorization: `Bearer ${botToken}`,
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					channel,
-					text: `*Summary*\n${description}`,
-					...(replyThreadTs ? { thread_ts: replyThreadTs } : {}),
-				}),
-			});
-			const payload = await response.json<SlackApiResponse>().catch(() => ({}) as SlackApiResponse);
 			if (!response.ok || payload.ok === false) {
 				throw new Error(`Slack postMessage failed: ${payload.error ?? response.status}`);
 			}

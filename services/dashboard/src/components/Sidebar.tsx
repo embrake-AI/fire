@@ -119,7 +119,7 @@ export default function Sidebar() {
 }
 
 function SidebarNav(props: { collapsed: Accessor<boolean> }) {
-	const incidentsQuery = useIncidents();
+	const incidentsQuery = useIncidents({ placeholderData: [] });
 	const hasActiveIncidents = createMemo(() => {
 		const incidents = incidentsQuery.data ?? [];
 		return incidents.some((inc) => inc.status === "open" || inc.status === "mitigating");

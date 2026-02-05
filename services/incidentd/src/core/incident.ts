@@ -1,10 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
 import type { EntryPoint, EventLog, IS, IS_Event } from "@fire/common";
 import type { IncidentEventData } from "@fire/db/schema";
+import type { AgentAffectionInfo, AgentEvent, AgentIncidentSnapshot, AgentService, AgentTurnPayload } from "../agent/types";
 import type { IncidentAnalysisWorkflowPayload } from "../dispatcher/analysis-workflow";
-import { INCIDENT_WORKFLOW_EVENT_TYPE, type IncidentWorkflowPayload, type SummaryResponsePayload } from "../dispatcher/workflow";
+import { INCIDENT_WORKFLOW_EVENT_TYPE, type IncidentWorkflowPayload } from "../dispatcher/workflow";
 import type { Metadata } from "../handler";
-import { calculateIncidentInfo, generateIncidentSummary } from "./idontknowhowtonamethisitswhereillplacecallstoai";
+import { calculateIncidentInfo } from "./idontknowhowtonamethisitswhereillplacecallstoai";
 
 export type DOState = IS & {
 	metadata: Metadata;
@@ -15,26 +16,15 @@ const STATE_KEY = "S";
 const EVENTLOGVERSION_KEY = "ELV";
 const ENTRYPOINT_KEY = "EP";
 const SERVICES_KEY = "SV";
-const SUMMARY_CACHE_KEY = "SC";
+const AGENT_STATE_KEY = "AG";
 const ALARM_INTERVAL_MS = 200;
 const MAX_ATTEMPTS = 3;
-const SUMMARY_CACHE_TTL_MS = 60_000;
+const AGENT_DEBOUNCE_MS = 30_000;
 
-type SummaryRequestContext = {
-	ts: string;
-	adapter: "slack" | "dashboard";
-	channel: string;
-	threadTs?: string;
-};
-
-type SummaryCache = {
-	summary: string;
-	generatedAt: number;
-};
-
-type PendingSummaryRow = {
-	id: number;
-	context: string;
+type AgentState = {
+	lastProcessedEventId: number;
+	toEventId: number | null;
+	nextAt?: number;
 };
 
 const AFFECTION_STATUS_ORDER = ["investigating", "mitigating", "resolved"] as const;
@@ -42,7 +32,7 @@ type AffectionStatus = "investigating" | "mitigating" | "resolved";
 type AffectionImpact = "partial" | "major";
 
 type AffectionUpdateData = Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
-type IncidentService = { id: string; prompt: string | null };
+type IncidentService = { id: string; name: string; prompt: string | null };
 
 function getAffectionStatusIndex(status: AffectionStatus) {
 	return AFFECTION_STATUS_ORDER.indexOf(status);
@@ -51,9 +41,9 @@ function getAffectionStatusIndex(status: AffectionStatus) {
 function normalizeIncidentServices(services: IncidentService[]) {
 	const serviceMap = new Map<string, IncidentService>();
 	for (const service of services) {
-		if (!service?.id) continue;
+		if (!service?.id || !service?.name) continue;
 		if (!serviceMap.has(service.id)) {
-			serviceMap.set(service.id, { id: service.id, prompt: service.prompt ?? null });
+			serviceMap.set(service.id, { id: service.id, name: service.name, prompt: service.prompt ?? null });
 		}
 	}
 	return Array.from(serviceMap.values());
@@ -81,8 +71,6 @@ function normalizeIncidentServices(services: IncidentService[]) {
  * - Easier to code (no need to check if in local state or refetch)
  */
 export class Incident extends DurableObject<Env> {
-	private summaryPromise?: Promise<void>;
-
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		this.ctx.blockConcurrencyWhile(() => this.migrate());
@@ -112,24 +100,92 @@ export class Incident extends DurableObject<Env> {
 		await this.ctx.storage.setAlarm(time);
 	}
 
-	private getCachedSummary() {
-		const cache = this.ctx.storage.kv.get<SummaryCache>(SUMMARY_CACHE_KEY);
-		const now = Date.now();
-		if (!cache || now - cache.generatedAt >= SUMMARY_CACHE_TTL_MS) {
-			return undefined;
-		}
-		return cache;
+	private getAgentState(): AgentState {
+		return this.ctx.storage.kv.get<AgentState>(AGENT_STATE_KEY) ?? { lastProcessedEventId: 0, toEventId: null };
 	}
 
-	private getSummaryEvents() {
-		const events = this.ctx.storage.sql
-			.exec<Pick<EventLog, "event_type" | "event_data" | "created_at">>("SELECT event_type, event_data, created_at FROM event_log ORDER BY id ASC")
+	private setAgentState(state: AgentState) {
+		this.ctx.storage.kv.put(AGENT_STATE_KEY, state);
+	}
+
+	private getAgentEventsUpTo(toId: number): AgentEvent[] {
+		const rows = this.ctx.storage.sql
+			.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "created_at" | "adapter" | "event_metadata">>(
+				"SELECT id, event_type, event_data, created_at, adapter, event_metadata FROM event_log WHERE id <= ? ORDER BY id ASC",
+				toId,
+			)
 			.toArray();
-		return events.map((event) => ({
+
+		return rows.map((event) => ({
+			id: event.id,
 			event_type: event.event_type,
-			event_data: event.event_data,
+			event_data: JSON.parse(event.event_data),
 			created_at: event.created_at,
+			adapter: event.adapter,
+			event_metadata: event.event_metadata ? JSON.parse(event.event_metadata) : null,
 		}));
+	}
+
+	private buildAgentIncidentSnapshot(state: DOState): AgentIncidentSnapshot {
+		return {
+			id: state.id,
+			status: state.status,
+			severity: state.severity,
+			title: state.title,
+			description: state.description,
+			prompt: state.prompt,
+			assignee: state.assignee.slackId,
+			source: state.source,
+			createdAt: state.createdAt instanceof Date ? state.createdAt.toISOString() : new Date(state.createdAt).toISOString(),
+		};
+	}
+
+	private buildAgentTurnPayload(params: { state: DOState; fromEventId: number; toEventId: number; events: AgentEvent[]; affection: AgentAffectionInfo; services: AgentService[] }) {
+		const { state, fromEventId, toEventId, events, affection, services } = params;
+		const turnId = `${toEventId}`;
+		const payload: AgentTurnPayload = {
+			incidentId: state.id,
+			turnId,
+			fromEventId,
+			toEventId,
+			incident: this.buildAgentIncidentSnapshot(state),
+			metadata: state.metadata,
+			services,
+			affection,
+			events,
+		};
+		return payload;
+	}
+
+	private getAffectionInfoFromLog(): AgentAffectionInfo {
+		const rows = this.ctx.storage.sql
+			.exec<Pick<EventLog, "event_data" | "created_at">>("SELECT event_data, created_at FROM event_log WHERE event_type = 'AFFECTION_UPDATE' ORDER BY id ASC")
+			.toArray();
+
+		const hasAffection = rows.length > 0;
+		let lastStatus: AgentAffectionInfo["lastStatus"];
+		let lastUpdateAt: string | undefined;
+		for (const row of rows) {
+			const data = JSON.parse(row.event_data) as { status?: AgentAffectionInfo["lastStatus"] };
+			if (data?.status) {
+				lastStatus = data.status;
+			}
+			lastUpdateAt = row.created_at;
+		}
+
+		return { hasAffection, lastStatus, lastUpdateAt };
+	}
+
+	private async startAgentTurnWorkflow(payload: AgentTurnPayload) {
+		const workflowId = `agent-turn-${payload.incidentId}-${payload.turnId}`;
+		try {
+			await this.env.INCIDENT_AGENT_WORKFLOW.create({ id: workflowId, params: payload });
+		} catch (error) {
+			if (error instanceof Error && /already.*exist/i.test(error.message)) {
+				return;
+			}
+			throw error;
+		}
 	}
 
 	private buildWorkflowPayload(event: EventLog, state: DOState): IncidentWorkflowPayload {
@@ -152,44 +208,6 @@ export class Incident extends DurableObject<Env> {
 			adapter: event.adapter,
 			eventMetadata: event.event_metadata ? JSON.parse(event.event_metadata) : undefined,
 		};
-	}
-
-	private buildSummaryResponsePayload(state: DOState, summaryResponse: SummaryResponsePayload): IncidentWorkflowPayload {
-		return {
-			kind: "summary_response",
-			summary_response: summaryResponse,
-			incident: {
-				status: state.status,
-				assignee: state.assignee.slackId,
-				severity: state.severity,
-				title: state.title,
-				description: state.description,
-			},
-			metadata: state.metadata,
-			adapter: summaryResponse.adapter,
-		};
-	}
-
-	private async refreshSummary(state: DOState): Promise<SummaryCache> {
-		const summary = await generateIncidentSummary(
-			{
-				title: state.title,
-				description: state.description,
-				severity: state.severity,
-				prompt: state.prompt,
-			},
-			this.getSummaryEvents(),
-			this.env.OPENAI_API_KEY,
-		);
-
-		const nextCache: SummaryCache = { summary, generatedAt: Date.now() };
-		this.ctx.storage.transactionSync(() => {
-			const nextState = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
-			nextState.description = summary;
-			this.ctx.storage.kv.put(SUMMARY_CACHE_KEY, nextCache);
-			this.ctx.storage.kv.put(STATE_KEY, nextState);
-		});
-		return nextCache;
 	}
 
 	private async ensureWorkflowStarted(workflowId: string, payload: IncidentWorkflowPayload) {
@@ -264,40 +282,6 @@ export class Incident extends DurableObject<Env> {
 		}
 	}
 
-	private startSummaryWork(state: DOState) {
-		if (this.summaryPromise) {
-			return;
-		}
-		this.summaryPromise = this.runSummaryWork(state).finally(() => {
-			this.summaryPromise = undefined;
-		});
-		this.ctx.waitUntil(this.summaryPromise);
-	}
-
-	private async runSummaryWork(state: DOState) {
-		try {
-			const summaryCache = await this.refreshSummary(state);
-			const latestState = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
-			const pendingSummaries = this.ctx.storage.sql.exec<PendingSummaryRow>(`SELECT id, context FROM pending_summary ORDER BY id ASC`).toArray();
-			for (const pending of pendingSummaries) {
-				const context = JSON.parse(pending.context) as SummaryRequestContext;
-				const summaryPayload: SummaryResponsePayload = {
-					incidentId: latestState.id,
-					description: summaryCache.summary,
-					channel: context.channel,
-					threadTs: context.threadTs ?? undefined,
-					ts: context.ts,
-					adapter: context.adapter,
-				};
-				await this.sendWorkflowEvent(latestState.id, this.buildSummaryResponsePayload(latestState, summaryPayload));
-				this.ctx.storage.sql.exec(`DELETE FROM pending_summary WHERE id = ?`, pending.id);
-			}
-		} catch (error) {
-			console.error("Error generating or dispatching summary", error);
-			await this.scheduleAlarmAtMost(Date.now() + ALARM_INTERVAL_MS);
-		}
-	}
-
 	/**
 	 * Either succeeds and there is no unpublished event
 	 * or fails throwing an error (and retries)
@@ -320,11 +304,6 @@ export class Incident extends DurableObject<Env> {
 			);
 			state = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
 		}
-		const hasPendingSummary = this.ctx.storage.sql.exec<{ id: number }>(`SELECT id FROM pending_summary LIMIT 1`).toArray().length > 0;
-		if (hasPendingSummary) {
-			this.startSummaryWork(state);
-		}
-
 		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log WHERE published_at IS NULL AND attempts < ? ORDER BY id ASC LIMIT 100", MAX_ATTEMPTS).toArray();
 		let eventError: unknown;
 		if (events.length > 0) {
@@ -350,12 +329,55 @@ export class Incident extends DurableObject<Env> {
 			throw eventError;
 		}
 
+		const now = Date.now();
+		let agentState = this.getAgentState();
+		const lastDispatchedEventId = events.at(-1)?.id ?? null;
+		const toEventId = lastDispatchedEventId ?? agentState.toEventId;
+		if (lastDispatchedEventId !== null) {
+			agentState.toEventId = lastDispatchedEventId;
+			// Fixed delay: only schedule on first event in the burst.
+			if (agentState.nextAt === undefined) {
+				agentState.nextAt = now + AGENT_DEBOUNCE_MS;
+			}
+			this.setAgentState(agentState);
+		}
+
+		if (agentState.nextAt && toEventId && now >= agentState.nextAt && toEventId > agentState.lastProcessedEventId) {
+			try {
+				const fromEventId = agentState.lastProcessedEventId;
+				const events = this.getAgentEventsUpTo(toEventId);
+				const services = (this.ctx.storage.kv.get<AgentService[]>(SERVICES_KEY) ?? []).map((service) => ({ id: service.id, name: service.name, prompt: service.prompt ?? null }));
+				const affection = this.getAffectionInfoFromLog();
+				if (events.length) {
+					const payload = this.buildAgentTurnPayload({
+						state,
+						fromEventId,
+						toEventId,
+						events,
+						affection,
+						services,
+					});
+					await this.startAgentTurnWorkflow(payload);
+				}
+				agentState = {
+					lastProcessedEventId: toEventId,
+					toEventId,
+					nextAt: undefined,
+				};
+				this.setAgentState(agentState);
+			} catch (error) {
+				console.error("Failed to start agent turn workflow", error);
+				await this.scheduleAlarmAtMost(Date.now() + ALARM_INTERVAL_MS);
+			}
+		}
+
 		const remainingEvents = this.ctx.storage.sql.exec<{ id: number }>("SELECT id FROM event_log WHERE published_at IS NULL AND attempts < ? LIMIT 1", MAX_ATTEMPTS).toArray();
-		const remainingSummaries = this.ctx.storage.sql.exec<{ id: number }>(`SELECT id FROM pending_summary LIMIT 1`).toArray();
-		const shouldScheduleForSummaries = remainingSummaries.length > 0 && !this.summaryPromise;
-		if (remainingEvents.length || shouldScheduleForSummaries) {
+		const shouldScheduleForAgent = !!agentState.nextAt && !!agentState.toEventId && agentState.toEventId > agentState.lastProcessedEventId;
+		if (remainingEvents.length) {
 			await this.scheduleAlarmAtMost(Date.now() + ALARM_INTERVAL_MS);
-		} else if (state.status === "resolved") {
+		} else if (shouldScheduleForAgent && agentState.nextAt) {
+			await this.scheduleAlarmAtMost(agentState.nextAt);
+		} else if (state.status === "resolved" && !agentState.nextAt) {
 			await this.destroy();
 		}
 	}
@@ -404,11 +426,6 @@ export class Incident extends DurableObject<Env> {
 				adapter TEXT NOT NULL
 			);
 			CREATE INDEX idx_event_log_published_at ON event_log(published_at);
-			CREATE TABLE pending_summary (
-				id INTEGER PRIMARY KEY,
-				context TEXT NOT NULL CHECK (json_valid(context)),
-				created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
-			);
 			`);
 			this.ctx.storage.kv.put(EVENTLOGVERSION_KEY, "1");
 			await this.commit(
@@ -433,7 +450,7 @@ export class Incident extends DurableObject<Env> {
 	 * Atomically: commits the new state to the DO, enqueues an event to the event log and schedules an alarm to ensure eventual consistency.
 	 */
 	private async commit(
-		{ state, event, adapter, eventMetadata }: { state: DOState; event?: IS_Event; adapter?: "slack" | "dashboard"; eventMetadata?: Record<string, string> },
+		{ state, event, adapter, eventMetadata }: { state: DOState; event?: IS_Event; adapter?: "slack" | "dashboard" | "fire"; eventMetadata?: Record<string, string> },
 		{ skipAlarm = false }: { skipAlarm?: boolean } = {},
 	) {
 		await this.ctx.storage.transaction(async () => {
@@ -496,7 +513,7 @@ export class Incident extends DurableObject<Env> {
 		}
 	}
 
-	async setSeverity(severity: DOState["severity"], adapter: "slack" | "dashboard", eventMetadata?: Record<string, string>) {
+	async setSeverity(severity: DOState["severity"], adapter: "slack" | "dashboard" | "fire", eventMetadata?: Record<string, string>) {
 		const state = this.getState();
 		if ("error" in state) {
 			return state;
@@ -507,7 +524,7 @@ export class Incident extends DurableObject<Env> {
 		}
 	}
 
-	async setAssignee(assignee: DOState["assignee"], adapter: "slack" | "dashboard") {
+	async setAssignee(assignee: DOState["assignee"], adapter: "slack" | "dashboard" | "fire") {
 		const state = this.getState();
 		if ("error" in state) {
 			return state;
@@ -518,7 +535,7 @@ export class Incident extends DurableObject<Env> {
 		}
 	}
 
-	async updateStatus(status: DOState["status"], message: string, adapter: "slack" | "dashboard", eventMetadata?: Record<string, string>) {
+	async updateStatus(status: DOState["status"], message: string, adapter: "slack" | "dashboard" | "fire", eventMetadata?: Record<string, string>) {
 		const state = this.getState();
 		if ("error" in state) {
 			return state;
@@ -549,7 +566,7 @@ export class Incident extends DurableObject<Env> {
 		title?: string;
 		services?: { id: string; impact: AffectionImpact }[];
 		createdBy: string;
-		adapter: "slack" | "dashboard";
+		adapter: "slack" | "dashboard" | "fire";
 		eventMetadata?: Record<string, string>;
 	}): Promise<{ error: string } | undefined> {
 		const state = this.getState();
@@ -610,34 +627,44 @@ export class Incident extends DurableObject<Env> {
 		await this.commit({ state, event: { event_type: "AFFECTION_UPDATE", event_data: eventData }, adapter, eventMetadata });
 	}
 
-	async respondSummary(context: SummaryRequestContext) {
-		const state = this.getState();
-		if ("error" in state) {
-			return state;
+	async getAgentContext() {
+		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY);
+		if (!state) {
+			return { error: "NOT_FOUND" };
+		} else if (!state._initialized) {
+			return { error: "INITIALIZING" };
 		}
 
-		const cache = this.getCachedSummary();
-		if (!cache) {
-			await this.ctx.storage.transaction(async () => {
-				this.ctx.storage.sql.exec(`INSERT INTO pending_summary (context) VALUES (?)`, JSON.stringify(context));
-				await this.scheduleAlarmAtMost(Date.now());
-			});
-			return;
-		}
+		const events = this.ctx.storage.sql
+			.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "created_at" | "adapter" | "event_metadata">>(
+				"SELECT id, event_type, event_data, created_at, adapter, event_metadata FROM event_log ORDER BY id ASC",
+			)
+			.toArray()
+			.map((event) => ({
+				id: event.id,
+				event_type: event.event_type,
+				event_data: JSON.parse(event.event_data),
+				created_at: event.created_at,
+				adapter: event.adapter,
+				event_metadata: event.event_metadata ? JSON.parse(event.event_metadata) : null,
+			}));
 
-		const summaryPayload: SummaryResponsePayload = {
-			incidentId: state.id,
-			description: cache.summary,
-			channel: context.channel,
-			threadTs: context.threadTs ?? undefined,
-			ts: context.ts,
-			adapter: context.adapter,
+		const services = (this.ctx.storage.kv.get<AgentService[]>(SERVICES_KEY) ?? []).map((service) => ({
+			id: service.id,
+			name: service.name,
+			prompt: service.prompt ?? null,
+		}));
+
+		return {
+			incident: this.buildAgentIncidentSnapshot(state),
+			metadata: state.metadata,
+			services,
+			affection: this.getAffectionInfoFromLog(),
+			events,
 		};
-
-		await this.sendWorkflowEvent(state.id, this.buildSummaryResponsePayload(state, summaryPayload));
 	}
 
-	async addMessage(message: string, userId: string, messageId: string, adapter: "slack" | "dashboard", slackUserToken?: string) {
+	async addMessage(message: string, userId: string, messageId: string, adapter: "slack" | "dashboard" | "fire", slackUserToken?: string, eventMetadata?: Record<string, string>) {
 		const state = this.getState();
 		if ("error" in state) {
 			return state;
@@ -652,7 +679,7 @@ export class Incident extends DurableObject<Env> {
 			state,
 			event: { event_type: "MESSAGE_ADDED", event_data: { message, userId, messageId } },
 			adapter,
-			eventMetadata: { adapter, ...(slackUserToken ? { slackUserToken } : {}) },
+			eventMetadata: { adapter, ...(slackUserToken ? { slackUserToken } : {}), ...(eventMetadata ?? {}) },
 		});
 	}
 

@@ -1,4 +1,4 @@
-import { Clock, Monitor } from "lucide-solid";
+import { Clock, Flame, Monitor } from "lucide-solid";
 import type { Component } from "solid-js";
 import { createEffect, For, onMount } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
@@ -13,7 +13,8 @@ import { getEventConfig } from "~/lib/timeline-events";
 const ADAPTER_ICON = {
 	slack: SlackIcon,
 	dashboard: Monitor,
-} as const satisfies Record<"slack" | "dashboard", Component>;
+	fire: Flame,
+} as const satisfies Record<"slack" | "dashboard" | "fire", Component>;
 
 function formatTime(timestamp: string) {
 	const date = new Date(timestamp);

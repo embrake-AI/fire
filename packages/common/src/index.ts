@@ -76,7 +76,7 @@ export type EventLog = {
 	event_metadata: string | null;
 	published_at: string | null;
 	attempts: number;
-	adapter: "slack" | "dashboard";
+	adapter: "slack" | "dashboard" | "fire";
 };
 
 export type EntryPoint = {

@@ -14,31 +14,14 @@ export type Incident = {
 	description: string;
 };
 
-export type SummaryResponsePayload = {
-	incidentId: string;
-	description: string;
-	channel: string;
-	threadTs?: string;
-	ts: string;
-	adapter: "slack" | "dashboard";
+export type IncidentWorkflowPayload = {
+	kind: "event";
+	event: IS_Event & { incident_id: string; event_id: number };
+	incident: Incident;
+	metadata: Metadata;
+	adapter: "slack" | "dashboard" | "fire";
+	eventMetadata?: Record<string, string>;
 };
-
-export type IncidentWorkflowPayload =
-	| {
-			kind: "event";
-			event: IS_Event & { incident_id: string; event_id: number };
-			incident: Incident;
-			metadata: Metadata;
-			adapter: "slack" | "dashboard";
-			eventMetadata?: Record<string, string>;
-	  }
-	| {
-			kind: "summary_response";
-			summary_response: SummaryResponsePayload;
-			incident: Incident;
-			metadata: Metadata;
-			adapter: "slack" | "dashboard";
-	  };
 
 export const INCIDENT_WORKFLOW_EVENT_TYPE = "incident-event";
 
@@ -51,7 +34,7 @@ export type SenderParams = {
 		id: string;
 		incident: Incident;
 		metadata: Metadata;
-		sourceAdapter: "slack" | "dashboard";
+		sourceAdapter: "slack" | "dashboard" | "fire";
 	};
 	incidentSeverityUpdated: {
 		step: StepDo;
@@ -59,7 +42,7 @@ export type SenderParams = {
 		id: string;
 		incident: Incident;
 		metadata: Metadata;
-		sourceAdapter: "slack" | "dashboard";
+		sourceAdapter: "slack" | "dashboard" | "fire";
 		eventMetadata?: Record<string, string>;
 	};
 	incidentAssigneeUpdated: {
@@ -68,7 +51,7 @@ export type SenderParams = {
 		id: string;
 		incident: Incident;
 		metadata: Metadata;
-		sourceAdapter: "slack" | "dashboard";
+		sourceAdapter: "slack" | "dashboard" | "fire";
 	};
 	incidentStatusUpdated: {
 		step: StepDo;
@@ -77,7 +60,7 @@ export type SenderParams = {
 		incident: Incident;
 		message: string;
 		metadata: Metadata;
-		sourceAdapter: "slack" | "dashboard";
+		sourceAdapter: "slack" | "dashboard" | "fire";
 		eventMetadata?: Record<string, string>;
 	};
 	messageAdded: {
@@ -88,8 +71,9 @@ export type SenderParams = {
 		userId: string;
 		messageId: string;
 		metadata: Metadata;
-		sourceAdapter: "slack" | "dashboard";
+		sourceAdapter: "slack" | "dashboard" | "fire";
 		slackUserToken?: string;
+		eventMetadata?: Record<string, string>;
 	};
 	affectionUpdated: {
 		step: StepDo;
@@ -97,22 +81,10 @@ export type SenderParams = {
 		id: string;
 		incident: Incident;
 		metadata: Metadata;
-		sourceAdapter: "slack" | "dashboard";
+		sourceAdapter: "slack" | "dashboard" | "fire";
 		event: Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
 		eventId: number;
 		eventMetadata?: Record<string, string>;
-	};
-	summaryResponse: {
-		step: StepDo;
-		env: Env;
-		id: string;
-		incident: Incident;
-		description: string;
-		channel: string;
-		threadTs?: string;
-		ts: string;
-		metadata: Metadata;
-		sourceAdapter: "slack" | "dashboard";
 	};
 };
 
@@ -123,7 +95,6 @@ interface Sender {
 	incidentStatusUpdated: ((params: SenderParams["incidentStatusUpdated"]) => Promise<void>) | undefined;
 	messageAdded: ((params: SenderParams["messageAdded"]) => Promise<void>) | undefined;
 	affectionUpdated: ((params: SenderParams["affectionUpdated"]) => Promise<void>) | undefined;
-	summaryResponse: ((params: SenderParams["summaryResponse"]) => Promise<void>) | undefined;
 }
 
 const senders: Sender[] = [dashboardSender, slackSender, statusPageDispatcher];
@@ -181,12 +152,7 @@ async function dispatchAffectionUpdatedEvent(params: SenderParams["affectionUpda
 	await settleDispatch("affection-updated", [...senders.map((sender) => sender.affectionUpdated?.(params))]);
 }
 
-async function dispatchSummaryResponseEvent(params: SenderParams["summaryResponse"]) {
-	await settleDispatch("summary-response", [...senders.map((sender) => sender.summaryResponse?.(params))]);
-}
-
 type WorkflowEventPayload = Extract<IncidentWorkflowPayload, { kind: "event" }>;
-type SummaryResponseEventPayload = Extract<IncidentWorkflowPayload, { kind: "summary_response" }>;
 
 async function dispatchEvent(step: WorkflowStep, env: Env, payload: WorkflowEventPayload) {
 	const eventType = payload.event.event_type;
@@ -213,6 +179,7 @@ async function dispatchEvent(step: WorkflowStep, env: Env, payload: WorkflowEven
 				userId: payload.event.event_data.userId,
 				messageId: payload.event.event_data.messageId,
 				slackUserToken: payload.eventMetadata?.slackUserToken,
+				eventMetadata: payload.eventMetadata,
 			});
 		}
 		case "AFFECTION_UPDATE": {
@@ -229,40 +196,22 @@ async function dispatchEvent(step: WorkflowStep, env: Env, payload: WorkflowEven
 	}
 }
 
-async function dispatchSummaryResponse(step: WorkflowStep, env: Env, payload: SummaryResponseEventPayload) {
-	const stepDo = createStepDo(step, payload.summary_response.ts);
-	await dispatchSummaryResponseEvent({
-		step: stepDo,
-		env,
-		id: payload.summary_response.incidentId,
-		incident: payload.incident,
-		description: payload.summary_response.description,
-		channel: payload.summary_response.channel,
-		threadTs: payload.summary_response.threadTs,
-		ts: payload.summary_response.ts,
-		metadata: payload.metadata,
-		sourceAdapter: payload.summary_response.adapter,
-	});
-}
-
 export class IncidentWorkflow extends WorkflowEntrypoint<Env, IncidentWorkflowPayload> {
 	async run(event: WorkflowEvent<IncidentWorkflowPayload>, step: WorkflowStep) {
 		let payload = event.payload;
-		let lastEvent = payload.kind === "event" ? payload.event : undefined;
-		let waitKey = payload.kind === "event" ? payload.event.event_id : payload.summary_response.ts;
+		let lastEvent = payload.event;
+		let waitKey = payload.event.event_id;
 
 		await this.dispatchWithLogging(step, payload);
 
 		while (!lastEvent || !isIncidentResolved(lastEvent)) {
 			const nextEvent = await step.waitForEvent<IncidentWorkflowPayload>(`wait-for-incident-event_${String(waitKey)}`, {
 				type: INCIDENT_WORKFLOW_EVENT_TYPE,
-				timeout: "2 days",
+				timeout: "7 days",
 			});
 			payload = nextEvent.payload;
-			if (payload.kind === "event") {
-				lastEvent = payload.event;
-			}
-			waitKey = payload.kind === "event" ? payload.event.event_id : payload.summary_response.ts;
+			lastEvent = payload.event;
+			waitKey = payload.event.event_id;
 
 			await this.dispatchWithLogging(step, payload);
 		}
@@ -270,11 +219,7 @@ export class IncidentWorkflow extends WorkflowEntrypoint<Env, IncidentWorkflowPa
 
 	private async dispatchWithLogging(step: WorkflowStep, payload: IncidentWorkflowPayload) {
 		try {
-			if (payload.kind === "event") {
-				await dispatchEvent(step, this.env, payload);
-			} else {
-				await dispatchSummaryResponse(step, this.env, payload);
-			}
+			await dispatchEvent(step, this.env, payload);
 		} catch (error) {
 			console.error("Workflow dispatch failed", payload, error);
 		}

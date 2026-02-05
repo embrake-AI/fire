@@ -28,6 +28,16 @@
 			"class_name": "IncidentWorkflow",
 		},
 		{
+			"name": "incident-agent-turn-workflow",
+			"binding": "INCIDENT_AGENT_WORKFLOW",
+			"class_name": "IncidentAgentTurnWorkflow",
+		},
+		{
+			"name": "incident-prompt-workflow",
+			"binding": "INCIDENT_PROMPT_WORKFLOW",
+			"class_name": "IncidentPromptWorkflow",
+		},
+		{
 			"name": "incident-analysis-workflow",
 			"binding": "INCIDENT_ANALYSIS_WORKFLOW",
 			"class_name": "IncidentAnalysisWorkflow",
