@@ -174,7 +174,7 @@ export async function addPrompt<E extends BasicContext>({
 } & ({ identifier: string; id?: never } | { id: string; identifier?: never })) {
 	const incidentId = id ? c.env.INCIDENT.idFromString(id) : c.env.INCIDENT.idFromName(identifier!);
 	const safeTs = ts.replaceAll(".", "-");
-	const workflowId = `prompt-${incidentId.toString()}-${channel}-${safeTs}`;
+	const workflowId = `prompt-${channel.toLowerCase()}-${safeTs}`;
 	await c.env.INCIDENT_PROMPT_WORKFLOW.create({
 		id: workflowId,
 		params: {
