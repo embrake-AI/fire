@@ -7,6 +7,8 @@ export type AgentSuggestionPayload = AgentSuggestion & {
 	turnId?: string;
 };
 
+const SLACK_BUTTON_VALUE_MAX = 2000;
+
 function formatSuggestionText(suggestion: AgentSuggestion, serviceMap: Record<string, string>): string {
 	switch (suggestion.action) {
 		case "update_status":
@@ -28,8 +30,47 @@ function formatSuggestionText(suggestion: AgentSuggestion, serviceMap: Record<st
 	}
 }
 
-function encodePayload(payload: AgentSuggestionPayload): string {
-	return JSON.stringify(payload);
+function trimText(value: string, max: number) {
+	const trimmed = value.trim();
+	if (trimmed.length <= max) return trimmed;
+	return `${trimmed.slice(0, max - 1)}…`;
+}
+
+function normalizePayloadForSlack(payload: AgentSuggestionPayload): AgentSuggestionPayload {
+	if (payload.action === "update_status") {
+		return {
+			...payload,
+			message: trimText(payload.message, 200),
+		};
+	}
+	if (payload.action === "add_status_page_update") {
+		return {
+			...payload,
+			message: trimText(payload.message, 200),
+			...(payload.title ? { title: trimText(payload.title, 120) } : {}),
+			...(payload.services?.length ? { services: payload.services.slice(0, 10) } : {}),
+		};
+	}
+	return payload;
+}
+
+function encodePayload(payload: AgentSuggestionPayload): string | null {
+	let normalized = normalizePayloadForSlack(payload);
+	let encoded = JSON.stringify(normalized);
+	if (encoded.length <= SLACK_BUTTON_VALUE_MAX) {
+		return encoded;
+	}
+
+	if ("message" in normalized) {
+		const message = trimText(normalized.message, 120);
+		normalized = { ...normalized, message };
+		encoded = JSON.stringify(normalized);
+		if (encoded.length <= SLACK_BUTTON_VALUE_MAX) {
+			return encoded;
+		}
+	}
+
+	return null;
 }
 
 // TODO: @Miquel => check if this generic suggestions are good enough or we should make it custom per action type
@@ -62,6 +103,7 @@ export function buildAgentSuggestionBlocks({
 	suggestions.forEach((suggestion, index) => {
 		const suggestionId = `${incidentId}:${turnId ?? "prompt"}:${index + 1}`;
 		const payload: AgentSuggestionPayload = { ...suggestion, incidentId, suggestionId, ...(turnId ? { turnId } : {}) };
+		const encodedPayload = encodePayload(payload);
 		blocks.push({
 			type: "section",
 			text: {
@@ -70,30 +112,31 @@ export function buildAgentSuggestionBlocks({
 			},
 		});
 
-		const actions: ActionsBlock = {
-			type: "actions",
-			block_id: `agent:${incidentId}`,
-			elements: [
-				{
+		if (encodedPayload) {
+			const actions: ActionsBlock = {
+				type: "actions",
+				elements: [
+					{
+						type: "button",
+						action_id: "agent_apply",
+						text: { type: "plain_text", text: "Apply" },
+						value: encodedPayload,
+						style: "primary",
+					},
+				],
+			};
+
+			if ("message" in suggestion) {
+				actions.elements.push({
 					type: "button",
-					action_id: "agent_apply",
-					text: { type: "plain_text", text: "Apply" },
-					value: encodePayload(payload),
-					style: "primary",
-				},
-			],
-		};
+					action_id: "agent_edit",
+					text: { type: "plain_text", text: "Edit" },
+					value: encodedPayload,
+				});
+			}
 
-		if ("message" in suggestion) {
-			actions.elements.push({
-				type: "button",
-				action_id: "agent_edit",
-				text: { type: "plain_text", text: "Edit" },
-				value: encodePayload(payload),
-			});
+			blocks.push(actions);
 		}
-
-		blocks.push(actions);
 		if (index < suggestions.length - 1) {
 			blocks.push({ type: "divider" });
 		}
