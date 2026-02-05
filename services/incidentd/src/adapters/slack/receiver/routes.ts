@@ -277,9 +277,10 @@ slackRoutes.post("/interaction", async (c) => {
 						return c.text("OK");
 					}
 					const suggestionMetadata: Record<string, string> = { agentSuggestionId: suggestion.suggestionId };
-					if (suggestion.messageChannel && suggestion.messageTs) {
+					if (suggestion.messageChannel && suggestion.messageTs && suggestion.messageBlocks) {
 						suggestionMetadata.suggestionMessageChannel = suggestion.messageChannel;
 						suggestionMetadata.suggestionMessageTs = suggestion.messageTs;
+						suggestionMetadata.suggestionMessageBlocks = JSON.stringify(suggestion.messageBlocks);
 					}
 					await updateStatus({
 						c,
@@ -303,9 +304,10 @@ slackRoutes.post("/interaction", async (c) => {
 							: suggestion.affectionStatus;
 
 					const suggestionMetadata: Record<string, string> = { agentSuggestionId: suggestion.suggestionId };
-					if (suggestion.messageChannel && suggestion.messageTs) {
+					if (suggestion.messageChannel && suggestion.messageTs && suggestion.messageBlocks) {
 						suggestionMetadata.suggestionMessageChannel = suggestion.messageChannel;
 						suggestionMetadata.suggestionMessageTs = suggestion.messageTs;
+						suggestionMetadata.suggestionMessageBlocks = JSON.stringify(suggestion.messageBlocks);
 					}
 					await updateAffection({
 						c,
@@ -338,10 +340,12 @@ slackRoutes.post("/interaction", async (c) => {
 						}
 						const suggestionChannel = payload.channel?.id;
 						const suggestionTs = payload.message?.ts ?? payload.container?.message_ts;
+						const suggestionBlocks = payload.message?.blocks;
 						const suggestionMetadata: Record<string, string> = { agentSuggestionId: suggestion.suggestionId };
-						if (suggestionChannel && suggestionTs) {
+						if (suggestionChannel && suggestionTs && suggestionBlocks) {
 							suggestionMetadata.suggestionMessageChannel = suggestionChannel;
 							suggestionMetadata.suggestionMessageTs = suggestionTs;
+							suggestionMetadata.suggestionMessageBlocks = JSON.stringify(suggestionBlocks);
 						}
 
 						if (suggestion.action === "update_status") {
@@ -389,6 +393,7 @@ slackRoutes.post("/interaction", async (c) => {
 						}
 						const suggestionChannel = payload.channel?.id;
 						const suggestionTs = payload.message?.ts ?? payload.container?.message_ts;
+						const suggestionBlocks = payload.message?.blocks;
 						const slackIntegration = await getSlackIntegration({
 							hyperdrive: c.env.db,
 							teamId,
@@ -408,6 +413,7 @@ slackRoutes.post("/interaction", async (c) => {
 								...suggestion,
 								...(suggestionChannel ? { messageChannel: suggestionChannel } : {}),
 								...(suggestionTs ? { messageTs: suggestionTs } : {}),
+								...(suggestionBlocks ? { messageBlocks: suggestionBlocks } : {}),
 							},
 						});
 					}

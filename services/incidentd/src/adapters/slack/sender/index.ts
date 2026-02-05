@@ -1,7 +1,8 @@
 import { IS_SEVERITY } from "@fire/common";
 import type { ActionsBlock, KnownBlock } from "@slack/types";
+import { buildSuggestionBlocksAfterApply } from "../../../agent/slack";
 import type { Incident, SenderParams, StepDo } from "../../../dispatcher/workflow";
-import { addReaction, incidentChannelIdentifier, postSlackMessage, removeReaction, slackThreadIdentifier } from "../../../lib/slack";
+import { addReaction, incidentChannelIdentifier, postSlackMessage, removeReaction, slackThreadIdentifier, updateSlackMessage } from "../../../lib/slack";
 import { addIncidentIdentifiers } from "../../dashboard/sender";
 
 type SlackApiResponse = {
@@ -27,23 +28,30 @@ type ChannelResult = { channelId: string; channelName?: string };
 const CHANNEL_NAME_MAX_LENGTH = 80;
 const CHANNEL_DATE_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
-async function maybePostSuggestionAppliedMessage(stepDo: StepDo, botToken: string, eventMetadata: Record<string, string> | undefined, actionLabel: string) {
+async function maybeUpdateSuggestionMessage(stepDo: StepDo, botToken: string, eventMetadata?: Record<string, string>) {
 	if (!eventMetadata) {
 		return;
 	}
 	const channel = eventMetadata.suggestionMessageChannel;
 	const ts = eventMetadata.suggestionMessageTs;
-	if (!channel || !ts) {
+	const blocksRaw = eventMetadata.suggestionMessageBlocks;
+	const suggestionId = eventMetadata.agentSuggestionId;
+	if (!channel || !ts || !blocksRaw || !suggestionId) {
 		return;
 	}
-	await stepDo("slack.post-suggestion-applied", { retries: { limit: 3, delay: "1 second" } }, async () => {
-		await postSlackMessage({
-			botToken,
-			channel,
-			threadTs: ts,
-			text: `Suggestion: (${actionLabel}) applied :white_check_mark`,
-		});
-	});
+	let blocks: KnownBlock[];
+	try {
+		blocks = JSON.parse(blocksRaw) as KnownBlock[];
+	} catch {
+		return;
+	}
+	const updatedBlocks = buildSuggestionBlocksAfterApply(blocks, suggestionId);
+	if (!updatedBlocks) {
+		return;
+	}
+	await stepDo("slack.update-suggestion-message", { retries: { limit: 3, delay: "1 second" } }, () =>
+		updateSlackMessage({ botToken, channel, ts, text: "Agent suggestions", blocks: updatedBlocks }),
+	);
 }
 
 function formatIncidentChannelDate(date: Date): string {
@@ -488,7 +496,7 @@ export async function incidentSeverityUpdated(params: SenderParams["incidentSeve
 	if (eventMetadata?.promptTs && eventMetadata?.promptChannel) {
 		await stepDo("slack.add-prompt-reaction", () => addReaction(botToken, eventMetadata.promptChannel, eventMetadata.promptTs, "white_check_mark"));
 	}
-	await maybePostSuggestionAppliedMessage(stepDo, botToken, eventMetadata, "update severity");
+	await maybeUpdateSuggestionMessage(stepDo, botToken, eventMetadata);
 }
 
 export async function incidentAssigneeUpdated(params: SenderParams["incidentAssigneeUpdated"]) {
@@ -596,7 +604,7 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 	if (eventMetadata?.promptTs && eventMetadata?.promptChannel) {
 		await stepDo("slack.add-prompt-reaction", () => addReaction(botToken, eventMetadata.promptChannel, eventMetadata.promptTs, "white_check_mark"));
 	}
-	await maybePostSuggestionAppliedMessage(stepDo, botToken, eventMetadata, "update status");
+	await maybeUpdateSuggestionMessage(stepDo, botToken, eventMetadata);
 
 	if (incidentChannelId && status === "resolved") {
 		await postToChannel(stepDo, botToken, incidentChannelId, "This channel will now be archived.", "slack.post-archive-notice");
@@ -625,7 +633,7 @@ export async function affectionUpdated(params: SenderParams["affectionUpdated"])
 	const statusText = event.status ? `Status page update: ${statusEmoji} *${event.status}*` : "Status page update";
 	const messageText = event.message ? `\n${event.message}` : "";
 	await postToChannel(stepDo, botToken, incidentChannelId, `${statusText}${messageText}`, "slack.post-affection-update");
-	await maybePostSuggestionAppliedMessage(stepDo, botToken, eventMetadata, "status page update");
+	await maybeUpdateSuggestionMessage(stepDo, botToken, eventMetadata);
 }
 
 async function updateIncidentMessage({

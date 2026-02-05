@@ -40,6 +40,18 @@ export async function removeReaction(botToken: string, channel: string, timestam
 	}
 }
 
+export async function updateSlackMessage({ botToken, channel, ts, blocks, text }: { botToken: string; channel: string; ts: string; blocks: unknown; text: string }): Promise<void> {
+	const response = await fetch("https://slack.com/api/chat.update", {
+		method: "POST",
+		headers: { Authorization: `Bearer ${botToken}`, "Content-Type": "application/json" },
+		body: JSON.stringify({ channel, ts, text, blocks }),
+	});
+	if (!response.ok) {
+		const body = await response.text().catch(() => "");
+		console.error("Slack update message failed", { status: response.status, body });
+	}
+}
+
 export async function postSlackMessage({
 	botToken,
 	channel,

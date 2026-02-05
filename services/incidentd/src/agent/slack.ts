@@ -8,6 +8,7 @@ export type AgentSuggestionPayload = AgentSuggestion & {
 	turnId?: string;
 	messageTs?: string;
 	messageChannel?: string;
+	messageBlocks?: KnownBlock[];
 };
 
 const SLACK_BUTTON_VALUE_MAX = 2000;
@@ -161,6 +162,50 @@ export function parseAgentSuggestionPayload(value: string): AgentSuggestionPaylo
 	} catch {
 		return null;
 	}
+}
+
+export function buildSuggestionBlocksAfterApply(blocks: KnownBlock[] | undefined, suggestionId: string): KnownBlock[] | null {
+	if (!blocks?.length) {
+		return null;
+	}
+
+	const next: KnownBlock[] = [];
+	let lastSectionIndex = -1;
+	let removedAction = false;
+
+	for (const block of blocks) {
+		if (block.type === "section") {
+			lastSectionIndex = next.length;
+			next.push(block);
+			continue;
+		}
+		if (block.type === "actions") {
+			const elements = block.elements ?? [];
+			const matchesSuggestion = elements.some((element) => {
+				if (element.type !== "button" || typeof element.value !== "string") {
+					return false;
+				}
+				const payload = parseAgentSuggestionPayload(element.value);
+				return payload?.suggestionId === suggestionId;
+			});
+			if (matchesSuggestion) {
+				removedAction = true;
+				if (lastSectionIndex >= 0) {
+					const section = next[lastSectionIndex];
+					if (section?.type === "section" && section.text?.type === "mrkdwn") {
+						const text = section.text.text ?? "";
+						if (!text.trimStart().startsWith("✅")) {
+							section.text.text = `✅ ${text}`;
+						}
+					}
+				}
+				continue;
+			}
+		}
+		next.push(block);
+	}
+
+	return removedAction ? next : null;
 }
 
 export async function postAgentSuggestions({ botToken, channel, blocks, text }: { botToken: string; channel: string; blocks: KnownBlock[]; text: string }): Promise<void> {

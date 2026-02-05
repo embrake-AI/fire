@@ -173,7 +173,8 @@ export async function addPrompt<E extends BasicContext>({
 	adapter: "slack" | "dashboard" | "fire";
 } & ({ identifier: string; id?: never } | { id: string; identifier?: never })) {
 	const incidentId = id ? c.env.INCIDENT.idFromString(id) : c.env.INCIDENT.idFromName(identifier!);
-	const workflowId = `prompt-${incidentId.toString()}-${channel}-${ts}`;
+	const safeTs = ts.replaceAll(".", "-");
+	const workflowId = `prompt-${incidentId.toString()}-${channel}-${safeTs}`;
 	await c.env.INCIDENT_PROMPT_WORKFLOW.create({
 		id: workflowId,
 		params: {
