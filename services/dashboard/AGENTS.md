@@ -14,10 +14,26 @@ bun run build      # Build for production
 bun run preview    # Preview production build
 bun run test       # Run tests with vitest
 bun run type-check # TypeScript type checking
-bun run lint       # Run biome linter
+bun run lint       # Placeholder script (lint runs from monorepo root)
 ```
 
 **Route Generation**: TanStack Router auto-generates route types from file structure. After adding new route files, run `bun run dev` to regenerate route types.
+
+---
+
+## File Naming Convention
+
+Domain modules in `src/lib/` follow a consistent structure:
+
+```
+lib/{domain}/
+  {domain}.ts          # Server functions (createServerFn + authMiddleware)
+  {domain}.hooks.ts    # TanStack Query hooks (useQuery/useMutation wrappers)
+  {domain}.server.ts   # Server-only utilities (optional)
+  {domain}.utils.ts    # Shared pure utilities (optional)
+```
+
+Examples: `rotations/`, `teams/`, `services/`, `incidents/`, `status-pages/`, `entry-points/`.
 
 ---
 
@@ -237,7 +253,7 @@ function MyDialogContent(props: { onClose: () => void }) {
 
 ## Config Pages UI Consistency
 
-All configuration pages under `src/routes/_authed.config.*.tsx` share a consistent card-based UI pattern.
+All configuration pages under `src/routes/_authed.catalog.*.tsx` and `src/routes/_authed.settings.*.tsx` share a consistent card-based UI pattern.
 
 ### Page Structure
 

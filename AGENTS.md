@@ -4,58 +4,55 @@ This repository contains an incident management platform with multiple services.
 
 ## Package Management
 
-This monorepo uses **bun** as the package manager and **turbo** for task orchestration. Use `bun` commands instead of npm/pnpm/yarn:
+This monorepo uses **bun** as the package manager and **turbo** for task orchestration.
+
+Run commands from the repo root:
 
 ```bash
-bun install              # Install dependencies
-bun add <package>        # Add a dependency
+bun install
 
 # Development
-bun run dev              # Start all dev servers - RUN IT TO UPDATE `routeTree.gen.ts`, do not edit manually
+bun run dev
+bun run dev:dashboard
+bun run dev:incidentd
+bun run dev:status-page
 
-# Building
-bun run build            # Build all services. - RUN TO UPDATE TYPES, for example when modifying packages/*
+# Build and checks
+bun run build
+bun run check
+bun run lint:fix
 
-# Code Quality
-bun run check            # Run both type-check and lint - RUN IT ALWAYS BEFORE COMMITTING
-bun run lint:fix         # Auto-fix linting issues
-
-bun run clean            # Clean all build artifacts and node_modules
-
-# db (/packages.db)
-bun run db:generate      # Generate Prisma schema from Drizzle schema - - RUN TO GENERATE MIGRATIONS, do not generate manually
+# Database workflow (@fire/db)
+bun run db:generate
+bun run db:migrate
 ```
+
+Notes:
+- `bun run dev` regenerates `services/dashboard/src/routeTree.gen.ts`. Do not edit that file manually.
+- Service-level `lint` scripts are placeholders; linting runs from root (`bun run check` / `bun run lint:fix`).
+- `bun run db:generate` uses Drizzle Kit to generate migrations from `packages/db/src/schema` changes. Do not hand-write migration folders.
 
 ## Project Structure
 
-```
+```text
 fire/
 ├── services/
-│   ├── dashboard/          # SolidJS frontend (SPA)
-│   ├── status-page/        # NextJS (server returns HTML)
-│   └── incidentd/          # Cloudflare Workers backend
-├── packages/
-│   ├── common/             # Shared types (IS, IS_Event, EntryPoint)
-│   └── db/                 # Drizzle ORM schema + migrations
+│   ├── dashboard/      # SolidJS SPA (TanStack Start)
+│   ├── incidentd/      # Cloudflare Workers backend (DO + Workflows)
+│   └── status-page/    # Next.js public status pages (HTML responses)
+└── packages/
+    ├── common/         # Shared types/utilities
+    └── db/             # Drizzle schema, relations, migrations
 ```
-
-| Path                   | Description                                      |
-| ---------------------- | ------------------------------------------------ |
-| `services/dashboard/`  | SolidJS dashboard (Vite, TanStack Router/Query)  |
-| `services/status-page/`| public status pages (server returns HTML)         |
-| `services/incidentd/`  | Incident management backend (Cloudflare Workers) |
-| `packages/common/`     | Shared TypeScript types between services         |
-| `packages/db/`         | Drizzle ORM schema, relations, and migrations    |
 
 ## Code Style
 
 - TypeScript strict mode
 - Biome for linting and formatting
-- Use existing patterns in codebase as reference
+- Prefer existing local patterns over inventing new structure
 
 ## Service-Specific Guidelines
 
-See `AGENTS.md` files in each service directory for detailed patterns and conventions:
-
-- `services/dashboard/AGENTS.md` - Suspense patterns, query hooks, config UI components
-- `services/incidentd/AGENTS.md` - DO invariants, adapter structure, event processing
+- `services/dashboard/AGENTS.md`
+- `services/incidentd/AGENTS.md`
+- `services/status-page/AGENTS.md`

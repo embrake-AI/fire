@@ -1,225 +1,86 @@
 # Goal
 
-The goal of `incidentd` is to provide **fast acknowledgement** and **strong eventual consistency**.
+The goal of `incidentd` is fast acknowledgement with durable state, then reliable asynchronous side effects.
 
-- Requests are acknowledged when the incident state is durably persisted.
-- Side effects (D1 index updates, Slack updates, etc.) are executed asynchronously and retried with a bounded workflow retry policy.
+- Requests are acknowledged when incident state is durably committed in the Incident Durable Object (DO).
+- Side effects run asynchronously through workflows and sender steps.
 
 ## Platform
 
-`incidentd` is deployed to [Cloudflare Workers](https://developers.cloudflare.com/workers/). It uses:
+`incidentd` runs on Cloudflare Workers and uses:
 
-- [Durable Objects](https://developers.cloudflare.com/durable-objects/) as the transactional data plane (per-incident source of truth)
-- [D1](https://developers.cloudflare.com/d1/) as the query-optimized control plane index
-- [Workflows](https://developers.cloudflare.com/workflows/) as the per-incident event loop for side effects
+- Durable Objects for per-incident transactional state
+- D1 for query-oriented incident listing/indexing
+- Workflows for asynchronous dispatch and AI/background jobs
 
-> We intentionally do **not** use Cloudflare Queues in the current design. Instead, each Incident DO maintains its own outbox log and uses alarms as a durable retry mechanism. (originally the implementation did, but alarms are superior due to transactional guarantees of DO storage)
+We intentionally do **not** use Cloudflare Queues in the current design. The DO outbox + alarms model gives transactional coupling between state commit and event enqueue.
 
-## Architecture
+## Runtime Components
 
-The service architecture combines these patterns:
+### Data Plane: Incident Durable Object
 
-### Control and data plane
+Each incident maps to one DO instance (`INCIDENT`). The DO is the canonical source of truth for:
 
-Incident state is split across two planes:
+- event timeline (`event_log`)
+- derived incident state (status, severity, assignee, title, description, metadata)
 
-- **Data plane (Durable Objects)**
-    Each incident is represented by a single Durable Object. The DO is the strongly consistent, transactional source of truth for:
+### Control Plane: D1 Index
 
-  - the incident event timeline
-  - derived incident state (assignee, severity, title, description, status, etc.)
+D1 stores a derived incident index used for list/query views. It is eventually consistent with the DO state.
 
-- **Control plane (D1)**
-    D1 maintains a query-optimized index of incidents for listing/searching/dashboard views.
-    This index is derived from the data plane and is **eventually consistent by design**.
+### Workflows
 
-### Outbox pattern (implemented inside the DO)
+`incidentd` currently runs four workflow classes:
 
-To ensure reliable downstream processing without an external queue, the DO implements an **internal outbox**:
+- `IncidentWorkflow` (`dispatcher/workflow.ts`): per-incident side-effect event loop
+- `IncidentPromptWorkflow` (`dispatcher/prompt-workflow.ts`): prompt/agent request handling
+- `IncidentAgentTurnWorkflow` (`dispatcher/agent-turn-workflow.ts`): debounced agent turn execution
+- `IncidentAnalysisWorkflow` (`dispatcher/analysis-workflow.ts`): post-resolution or background analysis
 
-- The DO persists incident state and (if relevant) appends an event to an `event_log` table.
-- Each outbox row has `published_at` which indicates whether the event has been accepted by the workflow (create/send succeeded).
-- The DO schedules an alarm to ensure the outbox will be drained
+## Event Pipeline
 
-This provides **at-least-once** delivery semantics to downstream processing, with strong transactional consistency between state changes and outbox enqueue.
+1. Receiver validates/authenticates and normalizes external input.
+2. Handler resolves the target Incident DO (`idFromName` or `idFromString`) and calls core methods.
+3. DO transaction commits state + appends `event_log` row + schedules alarm.
+4. DO alarm drains unpublished events and forwards to `IncidentWorkflow`.
+5. `IncidentWorkflow` dispatches to senders/dispatchers (dashboard, Slack, status-page).
 
-### Alarm-driven workflow forwarder
+## Reliability Model
 
-Instead of a separate queue consumer, the DO itself is the driver of eventual consistency:
+### Acknowledgement boundary
 
-- The alarm handler drains the outbox in order and creates/sends events to a per-incident workflow.
-- The workflow instance id is `incidentId`.
-- The workflow is created with the `INCIDENT_CREATED` event payload, and all subsequent events are sent via `sendEvent`.
-- The workflow processes events in order and stops waiting after the incident is resolved.
-- The workflow performs side effects:
-  - update the D1 control-plane index
-  - invoke adapter senders (Slack, etc.)
+Acknowledgement happens after DO persistence, not after side effects.
 
-This keeps the Durable Object “core” transactional and deterministic, while isolating side effects in a workflow event loop.
+### Outbox invariants
 
-## Reliability invariants
+- A change is accepted iff DO state + outbox row are committed atomically.
+- Alarm scheduling is part of the commit path (using `ALARM_INTERVAL_MS` scheduling logic).
+- An outbox row is marked forwarded when `published_at` is set.
 
-### What we acknowledge
+### Forwarding retries
 
-Receivers (Slack, dashboard) are acknowledged when the DO has durably persisted the new state snapshot (no need to wait for the workflow dispatcher)
+- DO alarm forwarding retries unpublished events up to `MAX_ATTEMPTS`.
+- Forwarding to workflow is at-least-once.
 
-This guarantees that once the caller is acknowledged, the change is not lost. Side effects are retried with a bounded workflow policy, and failures are tolerated.
+### Dispatcher/sender retries
 
-### Outbox invariants (per incident)
+Each dispatcher call runs inside `IncidentWorkflow` and sender operations execute through workflow `step.do` calls (with retries configured per step where needed).
 
-- A state update is accepted **iff** it is committed: `state` snapshot + outbox `event_log` row.
-- A state update is committed **iff** an alarm is scheduled within `OUTBOX_FLUSH_DELAY_MS` (unless there are no outbox events to dispatch).
-- An event is considered accepted by the workflow **iff** `published_at` is set on its outbox row.
+If a sender still fails, dispatch uses `Promise.allSettled` and logs failure; other senders and later events continue. This isolates side-effect failures from core state durability.
 
-### Delivery / retries
+### Idempotency expectation
 
-- Workflow acceptance is **at-least-once**: create/send may be retried.
-- Dispatchers and senders should be written to be idempotent (e.g. keyed by `(incident_id, event_id)`).
-- Dispatcher retries are handled inside the workflow and may ultimately fail without blocking later events.
+Senders/dispatchers should be idempotent (for example keyed by `incident_id` + `event_id`) because forwarding is at-least-once.
 
-## Data flow
+## Folder-to-Flow Mapping
 
-The folder structure mirrors the data flow through the system:
+- Receivers: `src/adapters/*/receiver/`
+- Handler: `src/handler/index.ts`
+- Core DO: `src/core/incident.ts`
+- Workflow dispatch: `src/dispatcher/workflow.ts`
+- Side-effect modules: `src/adapters/*/sender/` and `src/dispatcher/status-page.ts`
+- Additional workflows: `src/dispatcher/*-workflow.ts`
 
-### Receivers `adapters/*/receiver/`
+## Identifier Discipline
 
-External systems (Slack, dashboard) interact with the service via adapter-specific receivers. They:
-
-- Authenticate and authorize requests
-- Normalize external payloads into internal commands
-- Delegate execution to the application handler
-
-Acknowledgement to the external system is tied to DO state persistence, not downstream side effects.
-
-### Handler `handler/index.ts`
-
-The handler is the common entry point for all commands. It:
-
-- Resolves or creates the appropriate Incident Durable Object
-- Invokes the relevant core operation on the DO (start, setSeverity, setAssignee, updateStatus, get, etc.)
-
-The handler does not need to synchronously apply side effects. Side effects are guaranteed via the DO outbox + alarm.
-
-### Core `core/incident.ts`
-
-The Incident Durable Object is the transactional core of the system. It:
-
-- Validates and applies incident events
-- Derives incident state
-- Persists state atomically
-- Appends outbox events into `event_log` for downstream processing
-- Schedules an alarm to guarantee eventual dispatch
-
-### Workflow (per-incident event loop, dispatcher/workflow.ts)
-
-The workflow is the common exit point for side effects. It is invoked by:
-
-- the DO alarm drain loop (create/send events)
-
-Responsibilities:
-
-- Update D1 control-plane index
-- Forward events to adapter senders (Slack, future integrations)
-- Adapter senders can use workflow steps for per-call retries
-- Keep side effects isolated from the transactional core
-
-### Senders `adapters/*/sender/`
-
-Senders translate internal events into external side effects:
-
-- Posting or updating Slack messages
-- Pushing updates to the dashboard (the dashboard currently polls)
-- Future integrations
-
-Senders are isolated per adapter and are invoked only by the workflow dispatcher.
-
----
-
-## Sequence diagram (example)
-
-```
-                                                               Example: "@fire server down!"
-                                                               ─────────────────────────────
-
-┌─────────────────────────────────────────────────────────┐
-│                     EXTERNAL SYSTEMS                    │    1. User mentions bot in Slack thread
-│                                                         │
-│   ┌──────────┐           ...          ┌──────────┐      │
-│   │  Slack   │                        │ Dashboard│      │
-│   │ (webhook)│                        │ (web app)│      │
-│   └────┬─────┘                        └────┬─────┘      │
-└────────┼───────────────────────────────────┼────────────┘
-         │                                   │
-         ▼                                   ▼
-┌─────────────────────────────────────────────────────────┐    2. Receiver normalizes + auth
-│ RECEIVERS              adapters/*/receiver/routes.ts    │       └─▶ Normalize payload into command
-│                                                         │       └─▶ Delegate to handler
-│  ┌───────────────────┐        ┌───────────────────┐     │
-│  │   slackRoutes     │        │  dashboardRoutes  │     │
-│  │ POST /events      │        │ GET /             │     │
-│  │ POST /interaction │        │ GET /:id          │     │
-│  └─────────┬─────────┘        │ POST /            │     │
-│            │                  │ POST /:id/assignee│     │
-│            │                  │ POST /:id/severity│     │
-│            │                  └─────────┬─────────┘     │
-└────────────┼────────────────────────────┼───────────────┘
-             │                            │
-             │  Normalize, validate, auth │
-             ▼                            ▼
-┌─────────────────────────────────────────────────────────┐    3. Handler calls DO method
-│ HANDLER                           handler/index.ts      │       └─▶ Get/create Incident DO by identifier
-│                                                         │       └─▶ Call DO method (start/setSeverity/...)
-│  ┌───────────────────────────────────────────────────┐  │
-│  │ startIncident() │ listIncidents() │ getIncident() │  │
-│  │ updateSeverity()│ updateAssignee()│ updateStatus()│  │
-│  └───────────────────────────────────────────────────┘  │
-│                                                         │
-│  Acknowledge caller on DO persistence                   │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐     4. Incident DO (data plane + outbox)
-│ CORE                             core/incident.ts       │
-│                                                         │     Transaction (atomic):
-│  ┌───────────────────────────────────────────────────┐  │       ├─▶ Persist state snapshot (KV)
-│  │              Incident (Durable Object)            │  │       ├─▶ Append outbox event (SQLite event_log)
-│  │                                                   │  │       │     - published_at = NULL
-│  │  • Transactional source of truth                  │  │       └─▶ Schedule alarm (<= OUTBOX_FLUSH_DELAY_MS)
-│  │  • start() │ setSeverity() │ setAssignee() │ get()│  │
-│  └───────────────────────────────────────────────────┘  │
-│                                                         │
-│                                                         │
-│                                                         │
-│                                                         │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-                           │  Reliable fallback:
-                           │  DO alarm drains outbox until empty
-                           ▼
-┌─────────────────────────────────────────────────────────┐    5. DO alarm drain loop (workflow forwarder)
-│ ALARM                             core/incident.ts      │       ├─▶ SELECT unpublished events (ORDER BY id)
-│ alarm()                                                 │       ├─▶ For each: create/send workflow event
-│                                                         │       ├─▶ Mark published_at on success
-│                                                         │       └─▶ Reschedule if any remain
-└──────────────────────────┬──────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐    6. Workflow (per-incident event loop)
-│ WORKFLOW                    dispatcher/workflow.ts      │       ├─▶ Update D1 index (control plane)
-│                                                         │       └─▶ Invoke adapter senders (Slack, ...)
-└──────────────────────────┬──────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐    7. Senders apply side effects
-│ SENDERS                     adapters/*/sender/          │       ├─▶ Slack message update/post
-│                                                         │       └─▶ Future integrations
-└──────────────────────────┬──────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐
-│                     EXTERNAL SYSTEMS                    │
-│   ┌──────────┐                        ┌──────────┐      │
-│   │  Slack   │                        │ Dashboard│      │
-│   └──────────┘                        └──────────┘      │
-└─────────────────────────────────────────────────────────┘
-```
+Prefer incident DO id when available. Use identifier lookup only when id is unknown. See `IDENTIFIERS.md`.

@@ -1,55 +1,31 @@
 # incidentd
 
-`incidentd` is the core runtime responsible for managing live incident state in embrake.
+`incidentd` is the backend runtime for live incident state in Fire.
 
-It acts as the source of truth during an incident: tracking status, timeline, participants, signals, and decisions as they happen. All other embrake components read from and write to incidentd.
+It is the authoritative runtime during an incident: state transitions are committed in a Durable Object, and side effects are dispatched asynchronously.
 
 ## What it does
 
-- Maintains the canonical state of active incidents
-- Records the incident timeline as an ordered stream of events
-- Coordinates updates from humans, automations, and AI
-- Exposes a consistent API for querying live incident state
-- Persists state transitions for recovery and post-incident analysis
+- Maintains canonical per-incident state
+- Records timeline events in order
+- Exposes APIs for Slack and dashboard adapters
+- Dispatches asynchronous side effects through workflows
+- Persists transitions for recovery and audit
 
 ## What it is not
 
 - Not a UI
-- Not a notification system
-- Not an AI component
-- Not an analytics engine
-- Not a database
-
-`incidentd` is intentionally boring, stable, and deterministic.
-
-## Why incidentd
-
-Incidents are dynamic, long-running processes.
-`incidentd` exists to treat them as such — with clear state transitions, auditable history, and a single authoritative runtime.
-
-In the embrake architecture
-```
-          ┌────────────┐
-          │  Clients   │
-          │ (Bot / UI) │
-          └─────┬──────┘
-                │
-        ┌───────▼────────┐
-        │   incidentd    │  ← live incident runtime
-        └───────┬────────┘
-                │
-   ┌────────────┼────────────┐
-   │            │            │
-Signals     Automations      AI
-Ingest      & Integrations   Reasoning
-```
+- Not a standalone analytics system
+- Not an LLM model runtime
 
 ## Design principles
 
-- Single source of truth
-- Append-first timelines
-- Explicit state transitions
+- Single source of truth (Durable Object)
+- Append-first event timeline
+- Explicit, durable state transitions
+- Side effects isolated from commit path
 
-## Why `incidentd`
+## Architecture references
 
-incidentd has started as a [Durable Object](https://developers.cloudflare.com/durable-objects/), which run on the [workerd](https://github.com/cloudflare/workerd) platform. Both are a play to how unix names their [daemon](https://en.wikipedia.org/wiki/Daemon_(computing)) services ending with a `d`.
+- `ARCHITECTURE.md` for data flow and reliability invariants
+- `IDENTIFIERS.md` for id-vs-identifier rules

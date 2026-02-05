@@ -2,82 +2,85 @@
 
 Incident management backend on Cloudflare Workers.
 
-Before making changes to this service, read the architecture documentation in `ARCHITECTURE.md`.
+Before changing runtime behavior, read `ARCHITECTURE.md`.
 
-## Package Management
+## Commands
 
-This monorepo uses **bun**. Run commands from the monorepo root or this directory:
+Run from repo root or this service directory:
 
 ```bash
-bun run dev        # Start wrangler dev server
-bun run deploy     # Deploy to Cloudflare Workers
-bun run cf-typegen # Generate Cloudflare types
-bun run type-check # TypeScript type checking
-bun run lint       # Run biome linter
+bun run dev
+bun run deploy
+bun run cf-typegen
+bun run type-check
 ```
 
-## Key Principles
+Notes:
+- Service `lint` is a placeholder; lint/check run from repo root (`bun run check`).
 
-1. **Data flow follows folder structure**: `receiver → handler → core → dispatcher (workflow) → sender`
-2. **Durable Objects are the source of truth** for incident state (transactional, strongly consistent)
-3. **D1 is an eventually consistent index** for queries and listing
-4. **Acknowledge on DO persistence**, not on side effects
+## Core Principles
 
-## Outbox Pattern
+1. Data flow follows structure: `receiver -> handler -> core -> dispatcher/workflow -> sender`.
+2. Durable Object state is source of truth.
+3. D1 is a derived/index view.
+4. Acknowledge on DO persistence, not side effects.
 
-The DO implements an internal outbox for reliable downstream processing:
+## File Map
 
-- State changes atomically append events to an `event_log` table inside the DO
-- The DO alarm drains the outbox and creates/sends events to a per-incident workflow
-- Workflow updates D1 index and invokes adapter senders
-- Events are marked `published_at` when the workflow create/send succeeds, retried on failure (max 3 attempts)
+| Layer | Path | Purpose |
+| --- | --- | --- |
+| Receivers | `src/adapters/*/receiver/` | Auth + normalize external requests |
+| Handler | `src/handler/index.ts` | Resolve DO and invoke core operations |
+| Core | `src/core/incident.ts` | Transactional incident state + outbox |
+| Main Workflow | `src/dispatcher/workflow.ts` | Dispatch event side effects |
+| Status Page Dispatch | `src/dispatcher/status-page.ts` | Status-page DB side effects |
+| Prompt Workflow | `src/dispatcher/prompt-workflow.ts` | Prompt-triggered workflow logic |
+| Agent Turn Workflow | `src/dispatcher/agent-turn-workflow.ts` | Debounced agent turn execution |
+| Analysis Workflow | `src/dispatcher/analysis-workflow.ts` | Background/post-resolution analysis |
+| Senders | `src/adapters/*/sender/` | Adapter-specific side effects |
+| Agent | `src/agent/` | Suggestion generation, Slack block building, agent types |
+| AI calls | `src/core/idontknowhowtonamethisitswhereillplacecallstoai.ts` | OpenAI calls (triage, postmortem) |
+| Lib | `src/lib/` | DB connection, Slack API wrappers, assertion helpers |
 
-This provides at-least-once delivery with strong transactional consistency.
+## Handler Example
 
-## File Locations
-
-| Layer      | Path                   | Purpose                                   |
-| ---------- | ---------------------- | ----------------------------------------- |
-| Receivers  | `adapters/*/receiver/` | Validate, auth, normalize external input  |
-| Handler    | `handler/index.ts`     | Orchestrate DO operations                 |
-| Core       | `core/incident.ts`     | Incident Durable Object (source of truth) |
-| Dispatcher | `dispatcher/workflow.ts` | Workflow dispatcher for side effects      |
-| Senders    | `adapters/*/sender/`   | Send updates to external systems          |
-
-## Hono Route Handlers
-
-Routes use middleware for auth verification. See `src/adapters/dashboard/receiver/routes.ts`:
-
-```ts
-const dashboardRoutes = new Hono<DashboardContext>()
-  .use(verifyDashboardRequestMiddleware);
-
-dashboardRoutes.post("/:id/severity", async (c) => {
-  const { severity } = await c.req.json<{ severity: IS["severity"] }>();
-  const incident = await updateSeverity({ c, id: c.req.param("id"), severity });
-  return c.json({ incident });
-});
-```
-
-## Handler Orchestration
-
-Handlers coordinate DO, D1, and senders. See `src/handler/index.ts`:
+`startIncident` resolves DO id from identifier and persists through the DO:
 
 ```ts
-export async function startIncident({ c, incident, entryPoint }): Promise<string> {
-  const id = c.env.INCIDENT.idFromName(incident.id);
-  const stub = c.env.INCIDENT.get(id);
-  await stub.start(incident, entryPoint);  // DO is source of truth
-  // D1 insert happens after DO confirms
-  return incident.id;
+export async function startIncident({ c, m, prompt, createdBy, source, identifier, entryPoints, services }) {
+  const clientId = c.var.auth.clientId;
+  const metadata = { ...m, clientId, identifier };
+
+  const incidentId = c.env.INCIDENT.idFromName(identifier);
+  const incident = c.env.INCIDENT.get(incidentId);
+
+  await incident.start(
+    {
+      id: incidentId.toString(),
+      prompt,
+      createdBy,
+      source,
+      metadata,
+    },
+    entryPoints,
+    services,
+  );
+
+  return incidentId.toString();
 }
 ```
 
-## Adding New Adapters
+## Identifier Rules
 
-When adding support for a new external system (e.g., PagerDuty, email):
+Follow `IDENTIFIERS.md`:
+- Prefer id-first flows (`idFromString`) when id is already known.
+- Use identifiers only for lookup when id is unknown.
+- Keep identifier updates additive and atomic.
 
-1. Create `adapters/{name}/receiver/` for incoming webhooks/requests
-2. Create `adapters/{name}/sender/` for outgoing notifications
-3. Register routes in `src/index.ts`
-4. Sender should be invoked by the dispatcher workflow
+## Adding a New Adapter
+
+1. Add `src/adapters/{name}/receiver/`.
+2. Add `src/adapters/{name}/sender/`.
+3. Register receiver routes in `src/index.ts`.
+4. Wire sender dispatch in workflow dispatcher.
+5. If it introduces new invariants, update `ARCHITECTURE.md`.
