@@ -576,6 +576,12 @@ export class Incident extends DurableObject<Env> {
 
 		const trimmedMessage = message.trim();
 		if (!trimmedMessage) {
+			console.warn("updateAffection rejected: MESSAGE_REQUIRED", {
+				incidentId: state.id,
+				adapter,
+				createdBy,
+				messageLength: message.length,
+			});
 			return { error: "MESSAGE_REQUIRED" };
 		}
 
@@ -589,15 +595,47 @@ export class Incident extends DurableObject<Env> {
 		const serviceIds = new Set(allowedServices.map((service) => service.id));
 		const filteredServices = Array.isArray(services) ? services.filter((service) => serviceIds.has(service.id)) : [];
 		const hasServices = filteredServices.length > 0;
+		if (Array.isArray(services) && services.length && filteredServices.length !== services.length) {
+			console.info("updateAffection filtered services", {
+				incidentId: state.id,
+				adapter,
+				inputCount: services.length,
+				acceptedCount: filteredServices.length,
+			});
+		}
 
 		if (!hasAffection) {
 			if (!hasTitle) {
+				console.warn("updateAffection rejected: TITLE_REQUIRED", {
+					incidentId: state.id,
+					adapter,
+					createdBy,
+					status: normalizedStatus,
+					hasServices,
+				});
 				return { error: "TITLE_REQUIRED" };
 			}
 			if (!hasServices) {
+				console.warn("updateAffection rejected: SERVICES_REQUIRED", {
+					incidentId: state.id,
+					adapter,
+					createdBy,
+					status: normalizedStatus,
+					hasTitle,
+					allowedServicesCount: allowedServices.length,
+					inputServicesCount: Array.isArray(services) ? services.length : 0,
+				});
 				return { error: "SERVICES_REQUIRED" };
 			}
 			if (normalizedStatus !== "investigating") {
+				console.warn("updateAffection rejected: INITIAL_STATUS_REQUIRED", {
+					incidentId: state.id,
+					adapter,
+					createdBy,
+					status: normalizedStatus,
+					hasTitle,
+					hasServices,
+				});
 				return { error: "INITIAL_STATUS_REQUIRED" };
 			}
 		}
@@ -612,6 +650,13 @@ export class Incident extends DurableObject<Env> {
 			const currentIndex = getAffectionStatusIndex(currentStatus);
 			const nextIndex = getAffectionStatusIndex(normalizedStatus);
 			if (nextIndex <= currentIndex && hasAffection) {
+				console.warn("updateAffection rejected: STATUS_CAN_ONLY_MOVE_FORWARD", {
+					incidentId: state.id,
+					adapter,
+					createdBy,
+					currentStatus,
+					normalizedStatus,
+				});
 				return { error: "STATUS_CAN_ONLY_MOVE_FORWARD" };
 			}
 		}
@@ -625,6 +670,15 @@ export class Incident extends DurableObject<Env> {
 		};
 
 		await this.commit({ state, event: { event_type: "AFFECTION_UPDATE", event_data: eventData }, adapter, eventMetadata });
+		console.info("updateAffection accepted", {
+			incidentId: state.id,
+			adapter,
+			createdBy,
+			status: normalizedStatus,
+			hasTitle,
+			servicesCount: filteredServices.length,
+			messageLength: trimmedMessage.length,
+		});
 	}
 
 	async getAgentContext() {

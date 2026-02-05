@@ -309,6 +309,25 @@ slackRoutes.post("/interaction", async (c) => {
 							...(suggestion.services ? { services: suggestion.services } : {}),
 						},
 						eventMetadata: { agentSuggestionId: suggestion.suggestionId },
+					}).then((result) => {
+						if (result?.error) {
+							console.warn("agent suggestion updateAffection rejected", {
+								incidentId: suggestion.incidentId,
+								suggestionId: suggestion.suggestionId,
+								error: result.error,
+								affectionStatus,
+								hasTitle: !!suggestion.title,
+								servicesCount: suggestion.services?.length ?? 0,
+							});
+						} else {
+							console.info("agent suggestion updateAffection accepted", {
+								incidentId: suggestion.incidentId,
+								suggestionId: suggestion.suggestionId,
+								affectionStatus,
+								hasTitle: !!suggestion.title,
+								servicesCount: suggestion.services?.length ?? 0,
+							});
+						}
 					});
 
 					return c.json({});
@@ -345,6 +364,13 @@ slackRoutes.post("/interaction", async (c) => {
 								eventMetadata: { agentSuggestionId: suggestion.suggestionId },
 							});
 						} else if (suggestion.action === "add_status_page_update") {
+							console.info("agent suggestion updateAffection requested", {
+								incidentId: suggestion.incidentId,
+								suggestionId: suggestion.suggestionId,
+								affectionStatus: suggestion.affectionStatus,
+								hasTitle: !!suggestion.title,
+								servicesCount: suggestion.services?.length ?? 0,
+							});
 							await updateAffection({
 								c,
 								id: suggestion.incidentId,
@@ -357,6 +383,25 @@ slackRoutes.post("/interaction", async (c) => {
 									...(suggestion.services ? { services: suggestion.services } : {}),
 								},
 								eventMetadata: { agentSuggestionId: suggestion.suggestionId },
+							}).then((result) => {
+								if (result?.error) {
+									console.warn("agent suggestion updateAffection rejected", {
+										incidentId: suggestion.incidentId,
+										suggestionId: suggestion.suggestionId,
+										error: result.error,
+										affectionStatus: suggestion.affectionStatus,
+										hasTitle: !!suggestion.title,
+										servicesCount: suggestion.services?.length ?? 0,
+									});
+								} else {
+									console.info("agent suggestion updateAffection accepted", {
+										incidentId: suggestion.incidentId,
+										suggestionId: suggestion.suggestionId,
+										affectionStatus: suggestion.affectionStatus,
+										hasTitle: !!suggestion.title,
+										servicesCount: suggestion.services?.length ?? 0,
+									});
+								}
 							});
 						}
 						continue;
