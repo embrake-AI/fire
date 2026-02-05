@@ -127,7 +127,7 @@ function CreateServiceForm(props: CreateServiceFormProps) {
 					<Button type="button" variant="ghost" onClick={props.onCancel}>
 						Cancel
 					</Button>
-					<Button type="submit" disabled={props.isSubmitting()}>
+					<Button type="submit" disabled={!name().trim() || props.isSubmitting()}>
 						<Show when={props.isSubmitting()} fallback={<Plus class="w-4 h-4" />}>
 							<LoaderCircle class="w-4 h-4 animate-spin" />
 						</Show>

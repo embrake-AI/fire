@@ -13,6 +13,23 @@ export interface CustomEmojiData {
 let emojiMap: Map<string, string> | null = null;
 let customEmojiMap: Map<string, string> | null = null;
 let loadingPromise: Promise<void> | null = null;
+const EMOJI_SHORTCODE_REGEX = /:[\w\-+]+:/g;
+
+function escapeHtml(text: string): string {
+	return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+
+function sanitizeCustomEmojiUrl(url: string): string | null {
+	try {
+		const parsedUrl = new URL(url);
+		if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+			return null;
+		}
+		return parsedUrl.toString();
+	} catch {
+		return null;
+	}
+}
 
 export async function loadEmojis(): Promise<void> {
 	if (loadingPromise) {
@@ -91,17 +108,38 @@ export function searchEmojis(query: string, limit = 20): Array<{ shortcode: stri
 }
 
 export function replaceEmojis(text: string): string {
-	return text.replace(/:[\w\-+]+:/g, (match) => {
-		const emoji = getEmoji(match);
-		if (emoji) {
-			const cleanShortcode = match.replace(/^:+|:+$/g, "");
-			if (customEmojiMap?.has(cleanShortcode)) {
-				return `<img src="${emoji}" alt="${match}" class="inline-emoji" />`;
-			}
-			return emoji;
+	let result = "";
+	let lastIndex = 0;
+
+	for (const match of text.matchAll(EMOJI_SHORTCODE_REGEX)) {
+		const shortcode = match[0];
+		const start = match.index ?? 0;
+		result += escapeHtml(text.slice(lastIndex, start));
+
+		const emoji = getEmoji(shortcode);
+		if (!emoji) {
+			result += escapeHtml(shortcode);
+			lastIndex = start + shortcode.length;
+			continue;
 		}
-		return match;
-	});
+
+		const cleanShortcode = shortcode.replace(/^:+|:+$/g, "");
+		if (customEmojiMap?.has(cleanShortcode)) {
+			const sanitizedUrl = sanitizeCustomEmojiUrl(emoji);
+			if (!sanitizedUrl) {
+				result += escapeHtml(shortcode);
+			} else {
+				result += `<img src="${escapeHtml(sanitizedUrl)}" alt="${escapeHtml(shortcode)}" class="inline-emoji" />`;
+			}
+		} else {
+			result += escapeHtml(emoji);
+		}
+
+		lastIndex = start + shortcode.length;
+	}
+
+	result += escapeHtml(text.slice(lastIndex));
+	return result;
 }
 
 export function useEmojis() {

@@ -4,6 +4,21 @@ import { addMessage, type BasicContext, getIncident, listIncidents, startInciden
 import { verifyDashboardRequestMiddleware } from "./middleware";
 
 type DashboardContext = BasicContext & { Variables: { auth: { clientId: string; userId: string } } };
+type IncidentDomainError = "NOT_FOUND" | "NOT_INITIALIZED" | "RESOLVED";
+
+function isIncidentDomainError(error: string): error is IncidentDomainError {
+	return error === "NOT_FOUND" || error === "NOT_INITIALIZED" || error === "RESOLVED";
+}
+
+function incidentDomainErrorStatus(error: IncidentDomainError): 404 | 409 {
+	switch (error) {
+		case "NOT_FOUND":
+			return 404;
+		case "NOT_INITIALIZED":
+		case "RESOLVED":
+			return 409;
+	}
+}
 
 const dashboardRoutes = new Hono<DashboardContext>().use(verifyDashboardRequestMiddleware);
 
@@ -52,8 +67,14 @@ dashboardRoutes.post("/:id/assignee", async (c) => {
 		return c.json({ error: "ID is required" }, 400);
 	}
 	const body = await c.req.json<{ slackId: string }>();
-	const incident = await updateAssignee({ c, id, assignee: { slackId: body.slackId }, adapter: "dashboard" });
-	return c.json({ incident });
+	const result = await updateAssignee({ c, id, assignee: { slackId: body.slackId }, adapter: "dashboard" });
+	if (result && "error" in result) {
+		if (isIncidentDomainError(result.error)) {
+			return c.json({ error: result.error }, incidentDomainErrorStatus(result.error));
+		}
+		return c.json({ error: result.error }, 400);
+	}
+	return c.json({ success: true });
 });
 
 dashboardRoutes.post("/:id/severity", async (c) => {
@@ -67,8 +88,14 @@ dashboardRoutes.post("/:id/severity", async (c) => {
 		return c.json({ error: "Invalid severity" }, 400);
 	}
 
-	const incident = await updateSeverity({ c, id, severity, adapter: "dashboard" });
-	return c.json({ incident });
+	const result = await updateSeverity({ c, id, severity, adapter: "dashboard" });
+	if (result && "error" in result) {
+		if (isIncidentDomainError(result.error)) {
+			return c.json({ error: result.error }, incidentDomainErrorStatus(result.error));
+		}
+		return c.json({ error: result.error }, 400);
+	}
+	return c.json({ success: true });
 });
 
 dashboardRoutes.post("/:id/status", async (c) => {
@@ -82,8 +109,14 @@ dashboardRoutes.post("/:id/status", async (c) => {
 		return c.json({ error: "Invalid status" }, 400);
 	}
 
-	const incident = await updateStatus({ c, id, status, message, adapter: "dashboard" });
-	return c.json({ incident });
+	const result = await updateStatus({ c, id, status, message, adapter: "dashboard" });
+	if (result && "error" in result) {
+		if (isIncidentDomainError(result.error)) {
+			return c.json({ error: result.error }, incidentDomainErrorStatus(result.error));
+		}
+		return c.json({ error: result.error }, 400);
+	}
+	return c.json({ success: true });
 });
 
 dashboardRoutes.post("/:id/message", async (c) => {

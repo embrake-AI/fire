@@ -259,13 +259,6 @@ function ApiKeysContent() {
 			setNewKeyName("");
 			queryClient.invalidateQueries({ queryKey: ["api-keys"] });
 		},
-		onError: () => {
-			showToast({
-				title: "Failed to create API key",
-				description: "Please try again.",
-				variant: "error",
-			});
-		},
 	}));
 
 	const revokeApiKeyFn = useServerFn(revokeApiKey);
@@ -289,11 +282,6 @@ function ApiKeysContent() {
 			if (context?.previousData) {
 				queryClient.setQueryData(["api-keys"], context.previousData);
 			}
-			showToast({
-				title: "Failed to revoke API key",
-				description: "Please try again.",
-				variant: "error",
-			});
 		},
 	}));
 

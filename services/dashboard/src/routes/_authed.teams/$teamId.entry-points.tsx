@@ -99,7 +99,7 @@ function TeamEntryPoints(props: { teamId: string }) {
 						const { id } = await handleCreate(rotationId);
 						handleCreateSuccess(id);
 					}}
-					isSubmitting={createMutation.isPending}
+					isSubmitting={() => createMutation.isPending}
 				/>
 			</Show>
 
@@ -126,7 +126,7 @@ function CreateTeamEntryPointForm(props: {
 	rotations: { id: string; name: string; shiftLength: string }[];
 	onCancel: () => void;
 	onSubmit: (rotationId: string) => void;
-	isSubmitting: boolean;
+	isSubmitting: () => boolean;
 }) {
 	const [selectedRotationId, setSelectedRotationId] = createSignal("");
 
@@ -203,8 +203,8 @@ function CreateTeamEntryPointForm(props: {
 					<Button type="button" variant="ghost" onClick={props.onCancel}>
 						Cancel
 					</Button>
-					<Button type="submit" disabled={!selectedRotationId() || props.isSubmitting}>
-						<Show when={props.isSubmitting} fallback={<Plus class="w-4 h-4" />}>
+					<Button type="submit" disabled={!selectedRotationId() || props.isSubmitting()}>
+						<Show when={props.isSubmitting()} fallback={<Plus class="w-4 h-4" />}>
 							<LoaderCircle class="w-4 h-4 animate-spin" />
 						</Show>
 						Create

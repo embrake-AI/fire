@@ -10,11 +10,9 @@ import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Textarea } from "./ui/textarea";
-import { showToast } from "./ui/toast";
 
 interface SlackMessageInputProps {
 	incidentId: string;
-	lastEventId: number;
 	hasSlackContext: boolean;
 }
 
@@ -25,7 +23,7 @@ export function SlackMessageInput(props: SlackMessageInputProps) {
 	const [emojiStartPos, setEmojiStartPos] = createSignal(0);
 	const [sendAsBot, setSendAsBot] = createSignal(false);
 	const [senderPopoverOpen, setSenderPopoverOpen] = createSignal(false);
-	const [lastEventId, setLastEventId] = createSignal(props.lastEventId);
+	const [draftMessageId, setDraftMessageId] = createSignal<string | null>(null);
 	const queryClient = useQueryClient();
 	const integrationsQuery = useIntegrations({ type: "user" });
 	const slackEmojisQuery = useSlackEmojis();
@@ -33,6 +31,12 @@ export function SlackMessageInput(props: SlackMessageInputProps) {
 
 	const isUserConnected = () => integrationsQuery.data?.some((i) => i.platform === "slack") ?? false;
 	const canSend = createMemo(() => (props.hasSlackContext ? isUserConnected() || sendAsBot() : true));
+	const updateMessage = (nextMessage: string) => {
+		if (nextMessage !== message()) {
+			setDraftMessageId(null);
+		}
+		setMessage(nextMessage);
+	};
 
 	onMount(() => {
 		loadEmojis();
@@ -45,46 +49,30 @@ export function SlackMessageInput(props: SlackMessageInputProps) {
 		}
 	});
 
-	createEffect(() => {
-		setLastEventId((current) => Math.max(current, props.lastEventId));
-	});
-
 	const sendMessageMutation = useMutation(() => ({
-		mutationFn: (payload: { message: string; lastEventId: number }) =>
+		mutationFn: (payload: { message: string; messageId: string }) =>
 			sendSlackMessage({
 				data: {
 					id: props.incidentId,
 					message: payload.message,
-					lastEventId: payload.lastEventId,
+					messageId: payload.messageId,
 					sendAsBot: sendAsBot(),
 					dashboardOnly: !props.hasSlackContext,
 				},
 			}),
-		onMutate: (payload) => {
-			const previousLastEventId = lastEventId();
-			setLastEventId(payload.lastEventId + 1);
-			return { previousLastEventId };
-		},
 		onSuccess: () => {
 			setMessage("");
+			setDraftMessageId(null);
 			void queryClient.invalidateQueries({ queryKey: ["incident", props.incidentId] });
 			void queryClient.invalidateQueries({ queryKey: ["incidents"] });
-		},
-		onError: (error, _vars, context) => {
-			if (context?.previousLastEventId !== undefined) {
-				setLastEventId(context.previousLastEventId);
-			}
-			showToast({
-				title: "Failed to send message",
-				description: error instanceof Error ? error.message : "Unknown error",
-				variant: "destructive",
-			});
 		},
 	}));
 
 	const handleSend = () => {
 		if (!message().trim() || sendMessageMutation.isPending) return;
-		sendMessageMutation.mutate({ message: message(), lastEventId: lastEventId() });
+		const messageId = draftMessageId() ?? `dashboard-${crypto.randomUUID()}`;
+		setDraftMessageId(messageId);
+		sendMessageMutation.mutate({ message: message(), messageId });
 	};
 
 	const detectEmojiTrigger = (text: string, cursorPos: number) => {
@@ -113,7 +101,7 @@ export function SlackMessageInput(props: SlackMessageInputProps) {
 		const emojiText = isCustomEmoji ? `:${shortcode}:` : emoji;
 		const newMessage = `${beforeEmoji}${emojiText} ${afterEmoji}`;
 
-		setMessage(newMessage);
+		updateMessage(newMessage);
 		setShowEmojiPicker(false);
 		setEmojiQuery("");
 
@@ -128,7 +116,7 @@ export function SlackMessageInput(props: SlackMessageInputProps) {
 
 	const handleInput = (e: InputEvent & { currentTarget: HTMLTextAreaElement }) => {
 		const newValue = e.currentTarget.value;
-		setMessage(newValue);
+		updateMessage(newValue);
 		detectEmojiTrigger(newValue, e.currentTarget.selectionStart);
 	};
 

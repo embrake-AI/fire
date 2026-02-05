@@ -109,7 +109,8 @@ function AnalysisDetail() {
 	const analysisQuery = useQuery(() => ({
 		queryKey: ["analysis", params().incidentId],
 		queryFn: () => getAnalysisByIdFn({ data: { id: params().incidentId } }),
-		staleTime: Infinity,
+		staleTime: 30_000,
+		refetchOnWindowFocus: true,
 	}));
 
 	const analysis = () => analysisQuery.data;

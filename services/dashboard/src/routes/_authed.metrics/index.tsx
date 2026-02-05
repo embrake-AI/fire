@@ -12,7 +12,8 @@ import { DateRangePicker } from "~/components/ui/date-range-picker";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { getMetrics } from "~/lib/incidents/incidents";
-import { useUserBySlackId } from "~/lib/users/users.hooks";
+import { useUsers } from "~/lib/users/users.hooks";
+import { useSlackUsers } from "~/lib/useSlackUsers";
 
 export const Route = createFileRoute("/_authed/metrics/")({
 	component: AnalysisDashboard,
@@ -23,6 +24,8 @@ function AnalysisDashboard() {
 	const [grouping, setGrouping] = createSignal("assignee");
 
 	const getMetricsFn = useServerFn(getMetrics);
+	const usersQuery = useUsers();
+	const slackUsersQuery = useSlackUsers();
 
 	const metricsQuery = useQuery(() => ({
 		queryKey: ["metrics", range()[0]?.toString(), range()[1]?.toString()],
@@ -45,6 +48,36 @@ function AnalysisDashboard() {
 	}));
 
 	const incidents = () => metricsQuery.data ?? [];
+	const usersBySlackId = createMemo(() => {
+		const map = new Map<string, { id: string; name: string; avatar: string | undefined }>();
+		for (const user of usersQuery.data ?? []) {
+			if (user.slackId) {
+				map.set(user.slackId, { id: user.id, name: user.name, avatar: user.image ?? undefined });
+			}
+		}
+		return map;
+	});
+
+	const slackUsersById = createMemo(() => {
+		const map = new Map<string, { id: string; name: string; avatar: string | undefined }>();
+		for (const user of slackUsersQuery.data ?? []) {
+			map.set(user.id, { id: user.id, name: user.name, avatar: user.avatar });
+		}
+		return map;
+	});
+
+	const assigneesBySlackId = createMemo(() => {
+		const map = new Map<string, { id: string; name: string; avatar: string | undefined }>();
+		for (const [slackId, user] of usersBySlackId()) {
+			map.set(slackId, user);
+		}
+		for (const [slackId, user] of slackUsersById()) {
+			if (!map.has(slackId)) {
+				map.set(slackId, user);
+			}
+		}
+		return map;
+	});
 
 	const groupedData = createMemo(() => {
 		const data = incidents();
@@ -54,12 +87,12 @@ function AnalysisDashboard() {
 		> = {};
 
 		for (const incident of data) {
-			const user = useUserBySlackId(() => incident.assignee);
+			const assignee = assigneesBySlackId().get(incident.assignee);
 			let groupKey = "unknown";
 			let groupLabel = "Unknown";
-			if (grouping() === "assignee" && !!user()) {
-				groupKey = user()!.id;
-				groupLabel = user()!.name;
+			if (grouping() === "assignee" && assignee) {
+				groupKey = assignee.id;
+				groupLabel = assignee.name;
 			} else if (grouping() === "entryPoint") {
 				groupKey = incident.entryPointId ?? "unknown";
 				groupLabel = incident.entryPointPrompt ?? "Generic/Unknown";
@@ -74,7 +107,7 @@ function AnalysisDashboard() {
 
 			const g = groups[groupKey];
 			g.count++;
-			g.user = user();
+			g.user = assignee;
 			if (incident.metrics.totalDuration !== null) {
 				g.totalDuration += incident.metrics.totalDuration;
 				g.resolvedCount++;

@@ -114,7 +114,7 @@ export const updateStatus = createServerFn({ method: "POST" })
 	});
 
 export const sendSlackMessage = createServerFn({ method: "POST" })
-	.inputValidator((data: { id: string; message: string; lastEventId: number; sendAsBot?: boolean; dashboardOnly?: boolean }) => data)
+	.inputValidator((data: { id: string; message: string; messageId: string; sendAsBot?: boolean; dashboardOnly?: boolean }) => data)
 	.middleware([authMiddleware])
 	.handler(async ({ data, context }) => {
 		let slackUserToken: string | undefined;
@@ -152,8 +152,6 @@ export const sendSlackMessage = createServerFn({ method: "POST" })
 			slackUserId = slackData.botUserId;
 		}
 
-		const messageId = `dashboard-${data.lastEventId + 1}`;
-
 		const response = await signedFetch(
 			`${process.env.INCIDENTS_URL}/${data.id}/message`,
 			{ clientId: context.clientId, userId: context.userId },
@@ -163,7 +161,7 @@ export const sendSlackMessage = createServerFn({ method: "POST" })
 				body: JSON.stringify({
 					message: data.message,
 					slackUserId,
-					messageId,
+					messageId: data.messageId,
 					slackUserToken,
 				}),
 			},

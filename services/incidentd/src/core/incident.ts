@@ -529,7 +529,7 @@ export class Incident extends DurableObject<Env> {
 		if ("error" in state) {
 			return state;
 		}
-		if (state.assignee !== assignee) {
+		if (state.assignee.slackId !== assignee.slackId) {
 			state.assignee = assignee;
 			await this.commit({ state, event: { event_type: "ASSIGNEE_UPDATE", event_data: { assignee } }, adapter });
 		}

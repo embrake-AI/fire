@@ -72,7 +72,7 @@ export async function updateSeverity<E extends BasicContext>({
 }) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	await incident.setSeverity(severity, adapter, eventMetadata);
+	return incident.setSeverity(severity, adapter, eventMetadata);
 }
 
 export async function updateAssignee<E extends BasicContext>({
@@ -88,7 +88,7 @@ export async function updateAssignee<E extends BasicContext>({
 }) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	await incident.setAssignee(assignee, adapter);
+	return incident.setAssignee(assignee, adapter);
 }
 
 export async function updateStatus<E extends BasicContext>({
@@ -108,7 +108,7 @@ export async function updateStatus<E extends BasicContext>({
 }) {
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
-	await incident.updateStatus(status, message, adapter, eventMetadata);
+	return incident.updateStatus(status, message, adapter, eventMetadata);
 }
 
 export async function updateAffection<E extends BasicContext>({

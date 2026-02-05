@@ -156,6 +156,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 	};
 
 	const BAR_COUNT = 60;
+	const PARTIAL_OUTAGE_DOWNTIME_WEIGHT = 0.3;
 
 	const formatTooltipDate = (date: Date): string => {
 		return new Date(date).toLocaleDateString("en-US", {
@@ -173,40 +174,143 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 		impact?: "partial" | "major";
 	};
 
-	const getDayStatus = (serviceId: string, dayDate: Date): DayStatus => {
-		const dayStart = new Date(dayDate);
-		const dayEnd = new Date(dayDate);
-		dayEnd.setDate(dayEnd.getDate() + 1);
+	type TimeInterval = { start: number; end: number };
 
-		let highestImpact: "partial" | "major" | null = null;
-		let incidentTitle: string | undefined;
+	const mergeIntervals = (intervals: TimeInterval[]): TimeInterval[] => {
+		if (intervals.length === 0) {
+			return [];
+		}
+		const sorted = [...intervals].sort((a, b) => a.start - b.start);
+		const merged: TimeInterval[] = [{ ...sorted[0] }];
+		for (const interval of sorted.slice(1)) {
+			const last = merged[merged.length - 1];
+			if (interval.start > last.end) {
+				merged.push({ ...interval });
+			} else {
+				last.end = Math.max(last.end, interval.end);
+			}
+		}
+		return merged;
+	};
+
+	const getMergedDurationMs = (intervals: TimeInterval[]): number => {
+		return intervals.reduce((acc, interval) => acc + (interval.end - interval.start), 0);
+	};
+
+	const getOverlapDurationMs = (a: TimeInterval[], b: TimeInterval[]): number => {
+		let i = 0;
+		let j = 0;
+		let overlap = 0;
+		while (i < a.length && j < b.length) {
+			const start = Math.max(a[i].start, b[j].start);
+			const end = Math.min(a[i].end, b[j].end);
+			if (end > start) {
+				overlap += end - start;
+			}
+			if (a[i].end <= b[j].end) {
+				i++;
+			} else {
+				j++;
+			}
+		}
+		return overlap;
+	};
+
+	const getDowntimeStats = (serviceId: string, rangeStart: Date, rangeEnd: Date) => {
+		const startMs = rangeStart.getTime();
+		const endMs = rangeEnd.getTime();
+		if (endMs <= startMs) {
+			return {
+				weightedDowntimeMs: 0,
+				hasIncident: false,
+				impact: undefined as "partial" | "major" | undefined,
+				incidentTitle: undefined as string | undefined,
+			};
+		}
+
+		const majorIntervals: TimeInterval[] = [];
+		const partialIntervals: TimeInterval[] = [];
+		let majorTitle: { title: string; overlapMs: number } | null = null;
+		let partialTitle: { title: string; overlapMs: number } | null = null;
 
 		for (const affection of affections) {
 			const serviceImpact = affection.services.find((s) => s.id === serviceId);
 			if (!serviceImpact) continue;
 
-			const affectionStart = new Date(affection.createdAt);
-			const affectionEnd = affection.resolvedAt ? new Date(affection.resolvedAt) : now;
+			const affectionStartMs = new Date(affection.createdAt).getTime();
+			const affectionEndMs = (affection.resolvedAt ? new Date(affection.resolvedAt) : now).getTime();
+			const clippedStart = Math.max(affectionStartMs, startMs);
+			const clippedEnd = Math.min(affectionEndMs, endMs);
+			if (clippedEnd <= clippedStart) continue;
 
-			if (affectionStart < dayEnd && affectionEnd >= dayStart) {
-				const impact = serviceImpact.impact;
-				if (impact === "major") {
-					highestImpact = "major";
-					incidentTitle = affection.title;
-				} else if (impact === "partial" && highestImpact !== "major") {
-					highestImpact = "partial";
-					incidentTitle = affection.title;
+			const overlapMs = clippedEnd - clippedStart;
+			const impact = serviceImpact.impact;
+			if (impact === "major") {
+				majorIntervals.push({ start: clippedStart, end: clippedEnd });
+				if (!majorTitle || overlapMs > majorTitle.overlapMs) {
+					majorTitle = { title: affection.title, overlapMs };
+				}
+			} else {
+				partialIntervals.push({ start: clippedStart, end: clippedEnd });
+				if (!partialTitle || overlapMs > partialTitle.overlapMs) {
+					partialTitle = { title: affection.title, overlapMs };
 				}
 			}
 		}
 
-		if (highestImpact) {
-			const normalizedImpact = normalizeImpact(highestImpact);
+		const mergedMajor = mergeIntervals(majorIntervals);
+		const mergedPartial = mergeIntervals(partialIntervals);
+		const majorDurationMs = getMergedDurationMs(mergedMajor);
+		const partialDurationMs = getMergedDurationMs(mergedPartial);
+		const partialOverlapWithMajorMs = getOverlapDurationMs(mergedPartial, mergedMajor);
+		const partialOnlyDurationMs = Math.max(0, partialDurationMs - partialOverlapWithMajorMs);
+		const weightedDowntimeMs = majorDurationMs + partialOnlyDurationMs * PARTIAL_OUTAGE_DOWNTIME_WEIGHT;
+
+		if (majorDurationMs > 0) {
 			return {
-				color: statusColors[normalizedImpact]?.bar || "bg-yellow-500",
+				weightedDowntimeMs,
 				hasIncident: true,
-				incidentTitle,
-				impact: highestImpact,
+				impact: "major" as const,
+				incidentTitle: majorTitle?.title,
+			};
+		}
+		if (partialDurationMs > 0) {
+			return {
+				weightedDowntimeMs,
+				hasIncident: true,
+				impact: "partial" as const,
+				incidentTitle: partialTitle?.title,
+			};
+		}
+		return {
+			weightedDowntimeMs: 0,
+			hasIncident: false,
+			impact: undefined as "partial" | "major" | undefined,
+			incidentTitle: undefined as string | undefined,
+		};
+	};
+
+	const getBarColorClass = (uptimePercent: number): string => {
+		if (uptimePercent >= 100) return statusColors.operational.bar;
+		if (uptimePercent >= 99) return statusColors.degraded.bar;
+		if (uptimePercent >= 95) return statusColors.partial_outage.bar;
+		return statusColors.major_outage.bar;
+	};
+
+	const getDayStatus = (serviceId: string, dayDate: Date): DayStatus => {
+		const dayStart = new Date(dayDate);
+		const dayEnd = new Date(dayDate);
+		dayEnd.setDate(dayEnd.getDate() + 1);
+		const dayRangeEnd = dayEnd > now ? now : dayEnd;
+		const downtimeStats = getDowntimeStats(serviceId, dayStart, dayRangeEnd);
+		if (downtimeStats.hasIncident) {
+			const dayDurationMs = dayRangeEnd.getTime() - dayStart.getTime();
+			const uptimePercent = dayDurationMs > 0 ? ((dayDurationMs - downtimeStats.weightedDowntimeMs) / dayDurationMs) * 100 : 100;
+			return {
+				color: getBarColorClass(Math.max(0, Math.min(100, uptimePercent))),
+				hasIncident: true,
+				incidentTitle: downtimeStats.incidentTitle,
+				impact: downtimeStats.impact,
 			};
 		}
 		return { color: "bg-emerald-500", hasIncident: false };
@@ -264,38 +368,24 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 	};
 
 	const calculateUptime = (serviceId: string, serviceCreatedAt: Date | null): number => {
-		const addedDate = serviceCreatedAt ? new Date(serviceCreatedAt) : now;
-		const serviceAddedDay = new Date(addedDate.getFullYear(), addedDate.getMonth(), addedDate.getDate());
-		let totalDays = 0;
-		let downtimeDays = 0;
+		const windowStart = new Date(startOfToday);
+		windowStart.setDate(windowStart.getDate() - (BAR_COUNT - 1));
+		const addedDate = serviceCreatedAt ? new Date(serviceCreatedAt) : windowStart;
+		const measurementStart = addedDate > windowStart ? addedDate : windowStart;
+		const measurementEnd = now;
 
-		for (let i = BAR_COUNT - 1; i >= 0; i--) {
-			const dayDate = new Date(startOfToday);
-			dayDate.setDate(dayDate.getDate() - i);
-
-			if (dayDate >= serviceAddedDay) {
-				totalDays++;
-				const dayStart = new Date(dayDate);
-				const dayEnd = new Date(dayDate);
-				dayEnd.setDate(dayEnd.getDate() + 1);
-
-				for (const affection of affections) {
-					const affectsService = affection.services.some((s) => s.id === serviceId);
-					if (!affectsService) continue;
-
-					const affectionStart = new Date(affection.createdAt);
-					const affectionEnd = affection.resolvedAt ? new Date(affection.resolvedAt) : now;
-
-					if (affectionStart < dayEnd && affectionEnd >= dayStart) {
-						downtimeDays++;
-						break;
-					}
-				}
-			}
+		if (measurementEnd <= measurementStart) {
+			return 100;
+		}
+		const downtimeStats = getDowntimeStats(serviceId, measurementStart, measurementEnd);
+		const downtimeMs = downtimeStats.weightedDowntimeMs;
+		const totalMs = measurementEnd.getTime() - measurementStart.getTime();
+		if (totalMs <= 0) {
+			return 100;
 		}
 
-		if (totalDays === 0) return 100;
-		return Math.round(((totalDays - downtimeDays) / totalDays) * 1000) / 10;
+		const uptime = ((totalMs - downtimeMs) / totalMs) * 100;
+		return Math.round(Math.max(0, Math.min(100, uptime)) * 10) / 10;
 	};
 
 	const servicesHtml = services

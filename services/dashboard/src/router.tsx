@@ -1,6 +1,7 @@
-import { QueryClient, type QueryClientConfig } from "@tanstack/solid-query";
+import { MutationCache, QueryClient, type QueryClientConfig } from "@tanstack/solid-query";
 import { createRouter } from "@tanstack/solid-router";
 import { isServer } from "solid-js/web";
+import { showToast } from "./components/ui/toast";
 import { routeTree } from "./routeTree.gen";
 
 const queryClientOptions: QueryClientConfig = {
@@ -31,7 +32,18 @@ function getClientQueryClient() {
 	// Persist across HMR by stashing on globalThis
 	const g = globalThis as unknown as { __QUERY_CLIENT__?: QueryClient };
 	if (!g.__QUERY_CLIENT__) {
-		g.__QUERY_CLIENT__ = new QueryClient(queryClientOptions);
+		g.__QUERY_CLIENT__ = new QueryClient({
+			...queryClientOptions,
+			mutationCache: new MutationCache({
+				onError: (error) => {
+					showToast({
+						title: "Something went wrong",
+						description: error instanceof Error ? error.message : "An unexpected error occurred",
+						variant: "error",
+					});
+				},
+			}),
+		});
 	}
 	return g.__QUERY_CLIENT__;
 }

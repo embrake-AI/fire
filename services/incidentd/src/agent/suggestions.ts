@@ -1,4 +1,5 @@
 import type { IS } from "@fire/common";
+import { logOpenAIUsage } from "../lib/openai-usage";
 import type { AgentAffectionInfo, AgentEvent, AgentSuggestion, AgentSuggestionContext } from "./types";
 
 const SYSTEM_PROMPT = `You are an incident operations agent. Based on the incident context and recent events, propose a small set of concrete, high-confidence suggestions for a human dispatcher to apply.
@@ -255,6 +256,14 @@ ${servicesDescription}`;
 			}
 
 			return (await response.json()) as {
+				id?: string;
+				model?: string;
+				usage?: {
+					prompt_tokens?: number;
+					completion_tokens?: number;
+					total_tokens?: number;
+					prompt_tokens_details?: { cached_tokens?: number };
+				};
 				choices: Array<{
 					message: {
 						content: string | null;
@@ -263,6 +272,14 @@ ${servicesDescription}`;
 				}>;
 			};
 		})) as {
+			id?: string;
+			model?: string;
+			usage?: {
+				prompt_tokens?: number;
+				completion_tokens?: number;
+				total_tokens?: number;
+				prompt_tokens_details?: { cached_tokens?: number };
+			};
 			choices: Array<{
 				message: {
 					content: string | null;
@@ -270,6 +287,7 @@ ${servicesDescription}`;
 				};
 			}>;
 		};
+		logOpenAIUsage(`generateIncidentSuggestions:${stepLabel}:${i + 1}`, data);
 
 		const message = data.choices[0]?.message;
 		if (!message) {

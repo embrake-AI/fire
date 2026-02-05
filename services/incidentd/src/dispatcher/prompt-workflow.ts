@@ -2,6 +2,7 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloud
 import type { IS } from "@fire/common";
 import { buildSuggestionTools, getValidStatusTransitions } from "../agent/suggestions";
 import type { AgentContextResponse, AgentPromptPayload, AgentSuggestionContext } from "../agent/types";
+import { logOpenAIUsage } from "../lib/openai-usage";
 import { addReaction, removeReaction } from "../lib/slack";
 
 const SYSTEM_PROMPT = `You are an incident response agent helping respond to a user prompt.
@@ -147,6 +148,14 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 				}
 
 				return (await response.json()) as {
+					id?: string;
+					model?: string;
+					usage?: {
+						prompt_tokens?: number;
+						completion_tokens?: number;
+						total_tokens?: number;
+						prompt_tokens_details?: { cached_tokens?: number };
+					};
 					choices: Array<{
 						message: {
 							content: string | null;
@@ -155,6 +164,14 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 					}>;
 				};
 			})) as {
+				id?: string;
+				model?: string;
+				usage?: {
+					prompt_tokens?: number;
+					completion_tokens?: number;
+					total_tokens?: number;
+					prompt_tokens_details?: { cached_tokens?: number };
+				};
 				choices: Array<{
 					message: {
 						content: string | null;
@@ -162,6 +179,7 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 					};
 				}>;
 			};
+			logOpenAIUsage("incidentPromptWorkflow", data);
 
 			const message = data.choices[0]?.message;
 			if (!message) {
