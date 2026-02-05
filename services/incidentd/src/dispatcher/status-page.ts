@@ -19,6 +19,8 @@ export async function affectionUpdated(params: SenderParams["affectionUpdated"])
 			.where(and(eq(user.slackId, event.createdBy), eq(user.clientId, metadata.clientId)))
 			.limit(1);
 		createdBy = match?.id ?? null;
+	} else if (sourceAdapter === "fire") {
+		createdBy = null;
 	}
 
 	await step(
@@ -51,7 +53,7 @@ export async function affectionUpdated(params: SenderParams["affectionUpdated"])
 						.values({
 							incidentId: id,
 							title: event.title,
-							createdBy: event.createdBy,
+							createdBy,
 						})
 						.returning({ id: incidentAffection.id });
 
