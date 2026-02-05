@@ -67,8 +67,9 @@ function logPromptPrefixDiagnostics(params: {
 	previousSerializedRequestBody?: string;
 	messages: SuggestionMessage[];
 	tools: SuggestionTool[];
+	promptCacheKey: string;
 }) {
-	const { context, serializedRequestBody, previousSerializedRequestBody, messages, tools } = params;
+	const { context, serializedRequestBody, previousSerializedRequestBody, messages, tools, promptCacheKey } = params;
 	const prefixProbeLength = 8_192;
 	const prefixProbe = serializedRequestBody.slice(0, prefixProbeLength);
 	const previousPrefixProbe = previousSerializedRequestBody?.slice(0, prefixProbeLength);
@@ -84,6 +85,7 @@ function logPromptPrefixDiagnostics(params: {
 		matchingPrefixChars,
 		messageCount: messages.length,
 		toolNames: tools.map((tool) => tool.function.name),
+		promptCacheKey,
 	});
 }
 
@@ -290,7 +292,7 @@ ${servicesDescription}`;
 	const eventMessages = buildEventMessages(context.events, context.processedThroughId ?? 0);
 
 	const suggestions: AgentSuggestion[] = [];
-	let tools = buildSuggestionTools(context);
+	const tools = buildSuggestionTools(context);
 	const messages: SuggestionMessage[] = [
 		{ role: "system", content: SYSTEM_PROMPT },
 		{ role: "system", content: DEVELOPER_PROMPT },
@@ -300,6 +302,7 @@ ${servicesDescription}`;
 	];
 	const usedToolNames = new Set<string>();
 	let previousSerializedRequestBody: string | undefined;
+	const promptCacheKey = `incident-suggestions:${context.incident.id}:v1`;
 
 	for (let i = 0; i < 5 && suggestions.length < 3; i += 1) {
 		const requestBody = {
@@ -307,6 +310,7 @@ ${servicesDescription}`;
 			messages,
 			tools,
 			tool_choice: "auto" as const,
+			prompt_cache_key: promptCacheKey,
 		};
 		const serializedRequestBody = JSON.stringify(requestBody);
 		logPromptPrefixDiagnostics({
@@ -315,6 +319,7 @@ ${servicesDescription}`;
 			previousSerializedRequestBody,
 			messages,
 			tools,
+			promptCacheKey,
 		});
 		previousSerializedRequestBody = serializedRequestBody;
 
@@ -377,7 +382,12 @@ ${servicesDescription}`;
 			break;
 		}
 
+		let addedSuggestionThisRound = false;
 		for (const toolCall of toolCalls) {
+			if (usedToolNames.has(toolCall.function.name)) {
+				continue;
+			}
+
 			usedToolNames.add(toolCall.function.name);
 			const args = toolCall.function.arguments ? (JSON.parse(toolCall.function.arguments) as Record<string, unknown>) : {};
 			switch (toolCall.function.name) {
@@ -392,6 +402,7 @@ ${servicesDescription}`;
 							role: "assistant",
 							content: `[SUGGESTION] update_status status=${args.status} message=${args.message}`,
 						});
+						addedSuggestionThisRound = true;
 					}
 					break;
 				}
@@ -405,6 +416,7 @@ ${servicesDescription}`;
 							role: "assistant",
 							content: `[SUGGESTION] update_severity severity=${args.severity}`,
 						});
+						addedSuggestionThisRound = true;
 					}
 					break;
 				}
@@ -421,6 +433,7 @@ ${servicesDescription}`;
 							role: "assistant",
 							content: `[SUGGESTION] add_status_page_update message=${args.message}`,
 						});
+						addedSuggestionThisRound = true;
 					}
 					break;
 				}
@@ -429,11 +442,8 @@ ${servicesDescription}`;
 			}
 		}
 
-		if (usedToolNames.size) {
-			tools = tools.filter((tool) => tool.function.name && !usedToolNames.has(tool.function.name));
-			if (!tools.length) {
-				break;
-			}
+		if (!addedSuggestionThisRound) {
+			break;
 		}
 	}
 

@@ -54,6 +54,10 @@ async function maybeUpdateSuggestionMessage(stepDo: StepDo, botToken: string, ev
 	);
 }
 
+function isSuggestionAppliedEvent(eventMetadata?: Record<string, string>) {
+	return !!eventMetadata?.agentSuggestionId;
+}
+
 function formatIncidentChannelDate(date: Date): string {
 	const day = date.getUTCDate();
 	const month = CHANNEL_DATE_MONTHS[date.getUTCMonth()];
@@ -490,7 +494,9 @@ export async function incidentSeverityUpdated(params: SenderParams["incidentSeve
 				sourceMessagePermalink,
 			});
 		}
-		await postToChannel(stepDo, botToken, incidentChannelId, `Severity changed to *${severity}*`, "slack.post-severity-update");
+		if (!isSuggestionAppliedEvent(eventMetadata)) {
+			await postToChannel(stepDo, botToken, incidentChannelId, `Severity changed to *${severity}*`, "slack.post-severity-update");
+		}
 	}
 
 	if (eventMetadata?.promptTs && eventMetadata?.promptChannel) {
@@ -595,10 +601,11 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 				sourceMessagePermalink,
 			});
 		}
-
-		const statusEmoji = status === "resolved" ? "✅" : status === "mitigating" ? "🟡" : "🔴";
-		const statusText = message ? `Status: ${statusEmoji} *${status}*\n${message}` : `Status: ${statusEmoji} *${status}*`;
-		await postToChannel(stepDo, botToken, incidentChannelId, statusText, "slack.post-status-update");
+		if (!isSuggestionAppliedEvent(eventMetadata)) {
+			const statusEmoji = status === "resolved" ? "✅" : status === "mitigating" ? "🟡" : "🔴";
+			const statusText = message ? `Status: ${statusEmoji} *${status}*\n${message}` : `Status: ${statusEmoji} *${status}*`;
+			await postToChannel(stepDo, botToken, incidentChannelId, statusText, "slack.post-status-update");
+		}
 	}
 
 	if (eventMetadata?.promptTs && eventMetadata?.promptChannel) {
@@ -607,7 +614,9 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 	await maybeUpdateSuggestionMessage(stepDo, botToken, eventMetadata);
 
 	if (incidentChannelId && status === "resolved") {
-		await postToChannel(stepDo, botToken, incidentChannelId, "This channel will now be archived.", "slack.post-archive-notice");
+		if (!isSuggestionAppliedEvent(eventMetadata)) {
+			await postToChannel(stepDo, botToken, incidentChannelId, "This channel will now be archived.", "slack.post-archive-notice");
+		}
 		await archiveChannel(stepDo, botToken, incidentChannelId).catch((err) => {
 			console.warn("Failed to archive incident channel", err);
 		});
@@ -629,10 +638,12 @@ export async function affectionUpdated(params: SenderParams["affectionUpdated"])
 		return;
 	}
 
-	const statusEmoji = event.status === "resolved" ? "✅" : event.status === "mitigating" ? "🟡" : event.status === "investigating" ? "🔍" : "📣";
-	const statusText = event.status ? `Status page update: ${statusEmoji} *${event.status}*` : "Status page update";
-	const messageText = event.message ? `\n${event.message}` : "";
-	await postToChannel(stepDo, botToken, incidentChannelId, `${statusText}${messageText}`, "slack.post-affection-update");
+	if (!isSuggestionAppliedEvent(eventMetadata)) {
+		const statusEmoji = event.status === "resolved" ? "✅" : event.status === "mitigating" ? "🟡" : event.status === "investigating" ? "🔍" : "📣";
+		const statusText = event.status ? `Status page update: ${statusEmoji} *${event.status}*` : "Status page update";
+		const messageText = event.message ? `\n${event.message}` : "";
+		await postToChannel(stepDo, botToken, incidentChannelId, `${statusText}${messageText}`, "slack.post-affection-update");
+	}
 	await maybeUpdateSuggestionMessage(stepDo, botToken, eventMetadata);
 }
 
