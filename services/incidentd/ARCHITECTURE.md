@@ -37,6 +37,15 @@ D1 stores a derived incident index used for list/query views. It is eventually c
 - `IncidentAgentTurnWorkflow` (`dispatcher/agent-turn-workflow.ts`): debounced agent turn execution
 - `IncidentAnalysisWorkflow` (`dispatcher/analysis-workflow.ts`): post-resolution or background analysis
 
+### Agent Suggestions Lifecycle
+
+Agent turn execution has two outputs:
+
+1. Post suggestion messages to Slack (side effect).
+2. Persist those suggestions back into the incident timeline as internal `MESSAGE_ADDED` events (`adapter = "fire"`), with `event_metadata.agentSuggestionId`.
+
+These internal suggestion events are inserted with `published_at` already set, so they are available in the DO timeline for future agent context without being re-dispatched through `IncidentWorkflow`.
+
 ## Event Pipeline
 
 1. Receiver validates/authenticates and normalizes external input.
@@ -56,6 +65,7 @@ Acknowledgement happens after DO persistence, not after side effects.
 - A change is accepted iff DO state + outbox row are committed atomically.
 - Alarm scheduling is part of the commit path (using `ALARM_INTERVAL_MS` scheduling logic).
 - An outbox row is marked forwarded when `published_at` is set.
+- Internal agent suggestion timeline entries are intentionally persisted as already-forwarded rows (they are timeline context, not dispatch work).
 
 ### Forwarding retries
 
@@ -84,3 +94,8 @@ Senders/dispatchers should be idempotent (for example keyed by `incident_id` + `
 ## Identifier Discipline
 
 Prefer incident DO id when available. Use identifier lookup only when id is unknown. See `IDENTIFIERS.md`.
+
+## Metrics / Analysis Semantics
+
+- First human response timing excludes system/internal messages (missing `userId` or `userId = "fire"`).
+- This applies to both dashboard incident metrics and postmortem timing context generation.

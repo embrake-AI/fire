@@ -373,11 +373,15 @@ export function computeIncidentMetrics(analysis: IncidentAnalysisRow) {
 	let timeToMitigate: number | null = null;
 	let totalDuration: number | null = null;
 	const assignees = new Set<string>();
+	const isSystemMessage = (event: (typeof events)[number]) => event.event_type === "MESSAGE_ADDED" && (!event.event_data.userId || event.event_data.userId === "fire");
 
 	for (const event of events) {
 		if (event.event_type === "INCIDENT_CREATED") {
 			assignees.add(event.event_data.assignee);
 		} else if (event.event_type === "MESSAGE_ADDED") {
+			if (isSystemMessage(event)) {
+				continue;
+			}
 			if (timeToFirstResponse === null) {
 				timeToFirstResponse = new Date(event.created_at).getTime() - startedAt;
 			}

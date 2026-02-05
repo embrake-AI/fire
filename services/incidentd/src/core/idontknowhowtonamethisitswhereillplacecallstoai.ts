@@ -171,13 +171,21 @@ function extractStatus(event: { event_type: string; event_data: unknown }) {
 	return typeof data?.status === "string" ? data.status : null;
 }
 
+function isHumanMessageEvent(event: { event_type: string; event_data: unknown }) {
+	if (event.event_type !== "MESSAGE_ADDED") {
+		return false;
+	}
+	const data = event.event_data as { userId?: string };
+	return !!data?.userId && data.userId !== "fire";
+}
+
 export async function generateIncidentPostmortem(
 	incident: { title: string; description: string; severity: IS["severity"]; prompt: string; createdAt: Date },
 	events: Array<{ event_type: IS_Event["event_type"]; event_data: IS_Event["event_data"]; created_at: string }>,
 	openaiApiKey: string,
 ): Promise<IncidentPostmortem> {
 	const startedAt = events[0]?.created_at ?? null;
-	const firstResponseAt = events.find((event) => event.event_type === "MESSAGE_ADDED")?.created_at ?? null;
+	const firstResponseAt = events.find((event) => isHumanMessageEvent(event))?.created_at ?? null;
 	const mitigatedAt = events.find((event) => extractStatus(event) === "mitigating")?.created_at ?? null;
 	const resolvedAt = [...events].reverse().find((event) => extractStatus(event) === "resolved")?.created_at ?? null;
 

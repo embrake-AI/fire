@@ -33,6 +33,7 @@ type AffectionImpact = "partial" | "major";
 
 type AffectionUpdateData = Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
 type IncidentService = { id: string; name: string; prompt: string | null };
+type SuggestionLogInput = { message: string; suggestionId: string; messageId: string };
 
 function getAffectionStatusIndex(status: AffectionStatus) {
 	return AFFECTION_STATUS_ORDER.indexOf(status);
@@ -680,6 +681,42 @@ export class Incident extends DurableObject<Env> {
 			event: { event_type: "MESSAGE_ADDED", event_data: { message, userId, messageId } },
 			adapter,
 			eventMetadata: { adapter, ...(slackUserToken ? { slackUserToken } : {}), ...(eventMetadata ?? {}) },
+		});
+	}
+
+	async addSuggestions(suggestions: SuggestionLogInput[]) {
+		const state = this.getState();
+		if ("error" in state) {
+			return state;
+		}
+		if (!suggestions.length) {
+			return;
+		}
+
+		await this.ctx.storage.transaction(async () => {
+			const seenMessageIds = new Set<string>();
+			for (const suggestion of suggestions) {
+				const message = suggestion.message?.trim();
+				const suggestionId = suggestion.suggestionId?.trim();
+				const messageId = suggestion.messageId?.trim();
+				if (!message || !suggestionId || !messageId || seenMessageIds.has(messageId)) {
+					continue;
+				}
+				seenMessageIds.add(messageId);
+
+				const existing = this.ctx.storage.sql
+					.exec<{ id: number }>("SELECT id FROM event_log WHERE event_type = 'MESSAGE_ADDED' AND json_extract(event_data, '$.messageId') = ? LIMIT 1", messageId)
+					.toArray();
+				if (existing.length) {
+					continue;
+				}
+
+				this.ctx.storage.sql.exec(
+					"INSERT INTO event_log (event_type, event_data, event_metadata, adapter, published_at) VALUES ('MESSAGE_ADDED', ?, ?, 'fire', CURRENT_TIMESTAMP)",
+					JSON.stringify({ message, userId: "fire", messageId }),
+					JSON.stringify({ kind: "suggestion", agentSuggestionId: suggestionId }),
+				);
+			}
 		});
 	}
 

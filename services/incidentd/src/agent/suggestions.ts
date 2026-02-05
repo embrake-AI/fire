@@ -25,6 +25,8 @@ const VOLATILE_EVENT_KEYS = new Set(["created_at", "createdAt", "ts", "timestamp
 
 type SuggestionMessage = { role: "system" | "user" | "assistant" | "tool"; content?: string; tool_calls?: unknown; name?: string };
 type SuggestionTool = { type: "function"; function: { name: string; description: string; parameters: unknown } };
+type ResponsesInputMessage = { type: "message"; role: "system" | "developer" | "user" | "assistant"; content: string };
+type ResponsesFunctionTool = { type: "function"; name: string; description: string; parameters: unknown };
 
 function normalizeEventData(value: unknown): unknown {
 	if (Array.isArray(value)) {
@@ -42,52 +44,57 @@ function normalizeEventData(value: unknown): unknown {
 	return Object.fromEntries(entries.map(([key, item]) => [key, normalizeEventData(item)]));
 }
 
-function fnv1aHash(value: string): string {
-	let hash = 0x811c9dc5;
-	for (let i = 0; i < value.length; i += 1) {
-		hash ^= value.charCodeAt(i);
-		hash = Math.imul(hash, 0x01000193);
-	}
-	return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-function commonPrefixLength(a: string, b: string): number {
-	const minLength = Math.min(a.length, b.length);
-	for (let i = 0; i < minLength; i += 1) {
-		if (a[i] !== b[i]) {
-			return i;
+function toResponsesInputMessages(messages: SuggestionMessage[]): ResponsesInputMessage[] {
+	const input: ResponsesInputMessage[] = [];
+	for (const message of messages) {
+		if (!message.content) {
+			continue;
 		}
+		if (message.role === "tool") {
+			continue;
+		}
+		input.push({
+			type: "message",
+			role: message.role,
+			content: message.content,
+		});
 	}
-	return minLength;
+	return input;
 }
 
-function logPromptPrefixDiagnostics(params: {
-	context: string;
-	serializedRequestBody: string;
-	previousSerializedRequestBody?: string;
-	messages: SuggestionMessage[];
-	tools: SuggestionTool[];
-	promptCacheKey: string;
-}) {
-	const { context, serializedRequestBody, previousSerializedRequestBody, messages, tools, promptCacheKey } = params;
-	const prefixProbeLength = 8_192;
-	const prefixProbe = serializedRequestBody.slice(0, prefixProbeLength);
-	const previousPrefixProbe = previousSerializedRequestBody?.slice(0, prefixProbeLength);
-	const prefixChanged = previousPrefixProbe ? previousPrefixProbe !== prefixProbe : null;
-	const matchingPrefixChars = previousPrefixProbe ? commonPrefixLength(previousPrefixProbe, prefixProbe) : null;
-
-	console.log("[openai.prompt-prefix]", {
-		context,
-		requestHash: fnv1aHash(serializedRequestBody),
-		prefixHash: fnv1aHash(prefixProbe),
-		prefixProbeLength,
-		prefixChanged,
-		matchingPrefixChars,
-		messageCount: messages.length,
-		toolNames: tools.map((tool) => tool.function.name),
-		promptCacheKey,
-	});
+function toResponsesTools(tools: SuggestionTool[]): ResponsesFunctionTool[] {
+	const mapped: ResponsesFunctionTool[] = [];
+	for (const tool of tools) {
+		if (!tool.function.name) {
+			continue;
+		}
+		mapped.push({
+			type: "function",
+			name: tool.function.name,
+			description: tool.function.description,
+			parameters: tool.function.parameters,
+		});
+	}
+	return mapped;
 }
+
+type OpenAIResponseFunctionCallItem = {
+	type?: string;
+	name?: string;
+	arguments?: string;
+};
+
+type OpenAIResponsesCreateResponse = {
+	id?: string;
+	model?: string;
+	usage?: {
+		input_tokens?: number;
+		output_tokens?: number;
+		total_tokens?: number;
+		input_tokens_details?: { cached_tokens?: number };
+	};
+	output?: OpenAIResponseFunctionCallItem[];
+};
 
 function truncateMessage(value: string, max = 240) {
 	const trimmed = value.trim();
@@ -301,30 +308,22 @@ ${servicesDescription}`;
 		{ role: "user", content: "Return suggestions." },
 	];
 	const usedToolNames = new Set<string>();
-	let previousSerializedRequestBody: string | undefined;
 	const promptCacheKey = `incident-suggestions:${context.incident.id}:v1`;
 
 	for (let i = 0; i < 5 && suggestions.length < 3; i += 1) {
+		const input = toResponsesInputMessages(messages);
+		const responseTools = toResponsesTools(tools);
 		const requestBody = {
 			model: "gpt-5.2",
-			messages,
-			tools,
+			input,
+			tools: responseTools,
 			tool_choice: "auto" as const,
 			prompt_cache_key: promptCacheKey,
 		};
 		const serializedRequestBody = JSON.stringify(requestBody);
-		logPromptPrefixDiagnostics({
-			context: `generateIncidentSuggestions:${stepLabel}:${i + 1}`,
-			serializedRequestBody,
-			previousSerializedRequestBody,
-			messages,
-			tools,
-			promptCacheKey,
-		});
-		previousSerializedRequestBody = serializedRequestBody;
 
 		const data = (await stepDo(`agent-suggest.fetch:${stepLabel}:${i + 1}`, async () => {
-			const response = await fetch("https://api.openai.com/v1/chat/completions", {
+			const response = await fetch("https://api.openai.com/v1/responses", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -338,46 +337,20 @@ ${servicesDescription}`;
 				throw new Error(`OpenAI API error: ${response.status} - ${error}`);
 			}
 
-			return (await response.json()) as {
-				id?: string;
-				model?: string;
-				usage?: {
-					prompt_tokens?: number;
-					completion_tokens?: number;
-					total_tokens?: number;
-					prompt_tokens_details?: { cached_tokens?: number };
-				};
-				choices: Array<{
-					message: {
-						content: string | null;
-						tool_calls?: Array<{ function: { name: string; arguments: string } }>;
-					};
-				}>;
-			};
-		})) as {
-			id?: string;
-			model?: string;
-			usage?: {
-				prompt_tokens?: number;
-				completion_tokens?: number;
-				total_tokens?: number;
-				prompt_tokens_details?: { cached_tokens?: number };
-			};
-			choices: Array<{
-				message: {
-					content: string | null;
-					tool_calls?: Array<{ function: { name: string; arguments: string } }>;
-				};
-			}>;
-		};
+			return (await response.json()) as OpenAIResponsesCreateResponse;
+		})) as OpenAIResponsesCreateResponse;
 		logOpenAIUsage(`generateIncidentSuggestions:${stepLabel}:${i + 1}`, data);
 
-		const message = data.choices[0]?.message;
-		if (!message) {
-			break;
-		}
-
-		const toolCalls = message.tool_calls ?? [];
+		const toolCalls = (data.output ?? [])
+			.filter(
+				(item): item is Required<Pick<OpenAIResponseFunctionCallItem, "name">> & OpenAIResponseFunctionCallItem => item.type === "function_call" && typeof item.name === "string",
+			)
+			.map((item) => ({
+				function: {
+					name: item.name,
+					arguments: typeof item.arguments === "string" ? item.arguments : "{}",
+				},
+			}));
 		if (!toolCalls.length) {
 			break;
 		}

@@ -8,6 +8,7 @@ It is the authoritative runtime during an incident: state transitions are commit
 
 - Maintains canonical per-incident state
 - Records timeline events in order
+- Stores internal agent suggestions in the timeline for future turns (without re-dispatching side effects)
 - Exposes APIs for Slack and dashboard adapters
 - Dispatches asynchronous side effects through workflows
 - Persists transitions for recovery and audit
