@@ -308,7 +308,8 @@ ${servicesDescription}`;
 		{ role: "user", content: "Return suggestions." },
 	];
 	const usedToolNames = new Set<string>();
-	const promptCacheKey = `incident-suggestions:${context.incident.id}:v1`;
+	const incidentId = context.incident.id;
+	const promptCacheKey = `is:v1:${incidentId.slice(0, 12)}:${incidentId.slice(-8)}`;
 
 	for (let i = 0; i < 5 && suggestions.length < 3; i += 1) {
 		const input = toResponsesInputMessages(messages);
