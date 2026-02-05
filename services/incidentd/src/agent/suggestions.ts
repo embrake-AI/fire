@@ -1,5 +1,4 @@
 import type { IS } from "@fire/common";
-import { logOpenAIUsage } from "../lib/openai-usage";
 import type { AgentAffectionInfo, AgentEvent, AgentSuggestion, AgentSuggestionContext } from "./types";
 
 const SYSTEM_PROMPT = `You are an incident operations agent. Based on the incident context and recent events, propose a small set of concrete, high-confidence suggestions for a human dispatcher to apply.
@@ -340,8 +339,6 @@ ${servicesDescription}`;
 
 			return (await response.json()) as OpenAIResponsesCreateResponse;
 		})) as OpenAIResponsesCreateResponse;
-		logOpenAIUsage(`generateIncidentSuggestions:${stepLabel}:${i + 1}`, data);
-
 		const toolCalls = (data.output ?? [])
 			.filter(
 				(item): item is Required<Pick<OpenAIResponseFunctionCallItem, "name">> & OpenAIResponseFunctionCallItem => item.type === "function_call" && typeof item.name === "string",

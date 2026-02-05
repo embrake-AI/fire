@@ -2,7 +2,6 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloud
 import type { IS } from "@fire/common";
 import { buildSuggestionTools, getValidStatusTransitions } from "../agent/suggestions";
 import type { AgentContextResponse, AgentPromptPayload, AgentSuggestionContext } from "../agent/types";
-import { logOpenAIUsage } from "../lib/openai-usage";
 import { addReaction, removeReaction } from "../lib/slack";
 
 const SYSTEM_PROMPT = `You are an incident response agent helping respond to a user prompt.
@@ -179,8 +178,6 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 					};
 				}>;
 			};
-			logOpenAIUsage("incidentPromptWorkflow", data);
-
 			const message = data.choices[0]?.message;
 			if (!message) {
 				return;

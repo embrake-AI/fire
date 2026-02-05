@@ -1,5 +1,4 @@
 import type { EntryPoint, IS, IS_Event } from "@fire/common";
-import { logOpenAIUsage } from "../lib/openai-usage";
 import { ASSERT } from "../lib/utils";
 
 type IncidentInfo = {
@@ -115,8 +114,6 @@ Select the most appropriate entry point and provide the incident details.`;
 		};
 		choices: Array<{ message: { content: string } }>;
 	};
-	logOpenAIUsage("calculateIncidentInfo", data);
-
 	const content = data.choices[0]?.message?.content;
 	ASSERT(content, "No response content from OpenAI");
 
@@ -247,8 +244,6 @@ Generate the post-mortem.`;
 		};
 		choices: Array<{ message: { content: string } }>;
 	};
-	logOpenAIUsage("generateIncidentPostmortem", data);
-
 	const content = data.choices[0]?.message?.content;
 	ASSERT(content, "No response content from OpenAI");
 
