@@ -1,5 +1,5 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
-import { buildAgentSuggestionBlocks, postAgentSuggestions } from "../agent/slack";
+import { buildAgentSuggestionMessages, postAgentSuggestionMessage } from "../agent/slack";
 import { generateIncidentSuggestions, getValidStatusTransitions, normalizeSuggestions } from "../agent/suggestions";
 import type { AgentSuggestionContext, AgentTurnPayload } from "../agent/types";
 
@@ -33,13 +33,17 @@ export class IncidentAgentTurnWorkflow extends WorkflowEntrypoint<Env, AgentTurn
 		}
 
 		const serviceMap = Object.fromEntries(services.map((service) => [service.id, service.name]));
-		const { blocks, text } = buildAgentSuggestionBlocks({
+		const messages = buildAgentSuggestionMessages({
 			suggestions: normalized,
 			incidentId: payload.incidentId,
 			turnId,
 			serviceMap,
 		});
 
-		await step.do(`agent-turn.post:${turnId}`, { retries: { limit: 3, delay: "2 seconds" } }, () => postAgentSuggestions({ botToken, channel, blocks, text }));
+		for (const [index, message] of messages.entries()) {
+			await step.do(`agent-turn.post:${turnId}:${index + 1}`, { retries: { limit: 3, delay: "2 seconds" } }, () =>
+				postAgentSuggestionMessage({ botToken, channel, blocks: message.blocks, text: message.text }),
+			);
+		}
 	}
 }

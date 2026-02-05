@@ -78,7 +78,7 @@ function encodePayload(payload: AgentSuggestionPayload): string | null {
 }
 
 // TODO: @Miquel => check if this generic suggestions are good enough or we should make it custom per action type
-export function buildAgentSuggestionBlocks({
+export function buildAgentSuggestionMessages({
 	suggestions,
 	incidentId,
 	turnId,
@@ -88,33 +88,29 @@ export function buildAgentSuggestionBlocks({
 	incidentId: string;
 	turnId?: string;
 	serviceMap?: Record<string, string>;
-}): {
+}): Array<{
 	blocks: KnownBlock[];
 	text: string;
-} {
-	const header = "*:fire: suggestions*";
+}> {
 	const map = serviceMap ?? {};
-	const blocks: KnownBlock[] = [
-		{
-			type: "section",
-			text: { type: "mrkdwn", text: header },
-		},
-		{ type: "divider" },
-	];
-
-	const textFallback = suggestions.map((suggestion) => formatSuggestionText(suggestion, map)).join("\n");
-
-	suggestions.forEach((suggestion, index) => {
+	return suggestions.map((suggestion, index) => {
+		const text = formatSuggestionText(suggestion, map);
 		const suggestionId = `${incidentId}:${turnId ?? "prompt"}:${index + 1}`;
 		const payload: AgentSuggestionPayload = { ...suggestion, incidentId, suggestionId, ...(turnId ? { turnId } : {}) };
 		const encodedPayload = encodePayload(payload);
-		blocks.push({
-			type: "section",
-			text: {
-				type: "mrkdwn",
-				text: formatSuggestionText(suggestion, map),
+		const blocks: KnownBlock[] = [
+			{
+				type: "section",
+				text: { type: "mrkdwn", text: "*:fire: suggestion*" },
 			},
-		});
+			{
+				type: "section",
+				text: {
+					type: "mrkdwn",
+					text,
+				},
+			},
+		];
 
 		if (encodedPayload) {
 			const actions: ActionsBlock = {
@@ -141,12 +137,8 @@ export function buildAgentSuggestionBlocks({
 
 			blocks.push(actions);
 		}
-		if (index < suggestions.length - 1) {
-			blocks.push({ type: "divider" });
-		}
+		return { blocks, text };
 	});
-
-	return { blocks, text: textFallback || "Agent suggestions" };
 }
 
 export function parseAgentSuggestionPayload(value: string): AgentSuggestionPayload | null {
@@ -208,6 +200,6 @@ export function buildSuggestionBlocksAfterApply(blocks: KnownBlock[] | undefined
 	return removedAction ? next : null;
 }
 
-export async function postAgentSuggestions({ botToken, channel, blocks, text }: { botToken: string; channel: string; blocks: KnownBlock[]; text: string }): Promise<void> {
+export async function postAgentSuggestionMessage({ botToken, channel, blocks, text }: { botToken: string; channel: string; blocks: KnownBlock[]; text: string }): Promise<void> {
 	await postSlackMessage({ botToken, channel, text, blocks });
 }

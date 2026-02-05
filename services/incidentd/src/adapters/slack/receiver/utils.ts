@@ -231,7 +231,7 @@ export async function openAgentSuggestionModal({ botToken, triggerId, suggestion
 		blocks,
 	};
 
-	await fetch("https://slack.com/api/views.open", {
+	const response = await fetch("https://slack.com/api/views.open", {
 		method: "POST",
 		headers: {
 			Authorization: `Bearer ${botToken}`,
@@ -242,6 +242,13 @@ export async function openAgentSuggestionModal({ botToken, triggerId, suggestion
 			view: modalView,
 		}),
 	});
+	const payload = await response.json<{ ok?: boolean; error?: string }>().catch(() => ({ ok: false, error: "invalid_response" }));
+	if (!response.ok || payload.ok === false) {
+		console.error("Slack views.open failed for agent suggestion modal", {
+			status: response.status,
+			error: payload.error,
+		});
+	}
 }
 async function openStatusUpdateModal({
 	botToken,

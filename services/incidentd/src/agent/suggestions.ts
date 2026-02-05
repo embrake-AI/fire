@@ -21,6 +21,72 @@ Allowed actions (use tools):
 
 const DEVELOPER_PROMPT = `You may call tools to emit suggestions. Each tool call is treated as a suggested action (not executed). Do not repeat the same tool. IF NO SUGGESTIONS ARE APPROPRIATE, DO NOT CALL ANY TOOLS.`;
 
+const VOLATILE_EVENT_KEYS = new Set(["created_at", "createdAt", "ts", "timestamp", "messageId", "promptTs", "promptThreadTs"]);
+
+type SuggestionMessage = { role: "system" | "user" | "assistant" | "tool"; content?: string; tool_calls?: unknown; name?: string };
+type SuggestionTool = { type: "function"; function: { name: string; description: string; parameters: unknown } };
+
+function normalizeEventData(value: unknown): unknown {
+	if (Array.isArray(value)) {
+		return value.map((item) => normalizeEventData(item));
+	}
+
+	if (!value || typeof value !== "object") {
+		return value;
+	}
+
+	const entries = Object.entries(value as Record<string, unknown>)
+		.filter(([key]) => !VOLATILE_EVENT_KEYS.has(key))
+		.sort(([a], [b]) => a.localeCompare(b));
+
+	return Object.fromEntries(entries.map(([key, item]) => [key, normalizeEventData(item)]));
+}
+
+function fnv1aHash(value: string): string {
+	let hash = 0x811c9dc5;
+	for (let i = 0; i < value.length; i += 1) {
+		hash ^= value.charCodeAt(i);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function commonPrefixLength(a: string, b: string): number {
+	const minLength = Math.min(a.length, b.length);
+	for (let i = 0; i < minLength; i += 1) {
+		if (a[i] !== b[i]) {
+			return i;
+		}
+	}
+	return minLength;
+}
+
+function logPromptPrefixDiagnostics(params: {
+	context: string;
+	serializedRequestBody: string;
+	previousSerializedRequestBody?: string;
+	messages: SuggestionMessage[];
+	tools: SuggestionTool[];
+}) {
+	const { context, serializedRequestBody, previousSerializedRequestBody, messages, tools } = params;
+	const prefixProbeLength = 8_192;
+	const prefixProbe = serializedRequestBody.slice(0, prefixProbeLength);
+	const previousPrefixProbe = previousSerializedRequestBody?.slice(0, prefixProbeLength);
+	const prefixChanged = previousPrefixProbe ? previousPrefixProbe !== prefixProbe : null;
+	const matchingPrefixChars = previousPrefixProbe ? commonPrefixLength(previousPrefixProbe, prefixProbe) : null;
+
+	console.log("[openai.prompt-prefix]", {
+		context,
+		requestHash: fnv1aHash(serializedRequestBody),
+		prefixHash: fnv1aHash(prefixProbe),
+		prefixProbeLength,
+		prefixChanged,
+		matchingPrefixChars,
+		messageCount: messages.length,
+		toolNames: tools.map((tool) => tool.function.name),
+	});
+}
+
 function truncateMessage(value: string, max = 240) {
 	const trimmed = value.trim();
 	if (trimmed.length <= max) return trimmed;
@@ -42,15 +108,15 @@ function buildEventMessages(events: AgentEvent[], processedThroughId: number): A
 		}
 
 		const role = event.event_metadata?.agentSuggestionId ? "assistant" : "user";
-		const data = JSON.stringify(event.event_data);
-		const content = `[${event.created_at}] #${event.id} ${event.event_type}: ${data}`;
+		const data = JSON.stringify(normalizeEventData(event.event_data));
+		const content = `${event.event_type}: ${data}`;
 		messages.push({ role, content });
 	}
 
 	return messages;
 }
 
-export function buildSuggestionTools(context: AgentSuggestionContext): Array<{ type: "function"; function: { name: string; description: string; parameters: unknown } }> {
+export function buildSuggestionTools(context: AgentSuggestionContext): SuggestionTool[] {
 	const statusOptions = context.validStatusTransitions.length ? context.validStatusTransitions : ["mitigating", "resolved"];
 	const serviceOptions = context.services.map((service) => service.id);
 
@@ -225,7 +291,7 @@ ${servicesDescription}`;
 
 	const suggestions: AgentSuggestion[] = [];
 	let tools = buildSuggestionTools(context);
-	const messages: Array<{ role: "system" | "user" | "assistant" | "tool"; content?: string; tool_calls?: unknown; name?: string }> = [
+	const messages: SuggestionMessage[] = [
 		{ role: "system", content: SYSTEM_PROMPT },
 		{ role: "system", content: DEVELOPER_PROMPT },
 		{ role: "user", content: userMessage },
@@ -233,8 +299,25 @@ ${servicesDescription}`;
 		{ role: "user", content: "Return suggestions." },
 	];
 	const usedToolNames = new Set<string>();
+	let previousSerializedRequestBody: string | undefined;
 
 	for (let i = 0; i < 5 && suggestions.length < 3; i += 1) {
+		const requestBody = {
+			model: "gpt-5.2",
+			messages,
+			tools,
+			tool_choice: "auto" as const,
+		};
+		const serializedRequestBody = JSON.stringify(requestBody);
+		logPromptPrefixDiagnostics({
+			context: `generateIncidentSuggestions:${stepLabel}:${i + 1}`,
+			serializedRequestBody,
+			previousSerializedRequestBody,
+			messages,
+			tools,
+		});
+		previousSerializedRequestBody = serializedRequestBody;
+
 		const data = (await stepDo(`agent-suggest.fetch:${stepLabel}:${i + 1}`, async () => {
 			const response = await fetch("https://api.openai.com/v1/chat/completions", {
 				method: "POST",
@@ -242,12 +325,7 @@ ${servicesDescription}`;
 					"Content-Type": "application/json",
 					Authorization: `Bearer ${openaiApiKey}`,
 				},
-				body: JSON.stringify({
-					model: "gpt-5.2",
-					messages,
-					tools,
-					tool_choice: "auto",
-				}),
+				body: serializedRequestBody,
 			});
 
 			if (!response.ok) {

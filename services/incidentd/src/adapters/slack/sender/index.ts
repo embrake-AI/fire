@@ -50,7 +50,7 @@ async function maybeUpdateSuggestionMessage(stepDo: StepDo, botToken: string, ev
 		return;
 	}
 	await stepDo("slack.update-suggestion-message", { retries: { limit: 3, delay: "1 second" } }, () =>
-		updateSlackMessage({ botToken, channel, ts, text: "Agent suggestions", blocks: updatedBlocks }),
+		updateSlackMessage({ botToken, channel, ts, text: "Agent suggestion", blocks: updatedBlocks }),
 	);
 }
 
