@@ -7,12 +7,11 @@ import { addReaction, removeReaction } from "../lib/slack";
 const SYSTEM_PROMPT = `You are an incident response agent helping respond to a user prompt.
 You may either:
 - Use tools to apply changes to the incident or status page.
-- Reply with a concise text response.
+- Reply to the prompt with a concise text response.
 
 Rules:
-- Only use tools when you are confident.
-- If you use tools, the system will call you again with updated context. Continue until no tools are needed.
-- Keep replies concise and actionable.`;
+- Only use tools when you are directly instructed to do so.
+- Keep replies concise.`;
 
 function buildPromptUserMessage(context: AgentSuggestionContext) {
 	const eventsDescription = context.events
