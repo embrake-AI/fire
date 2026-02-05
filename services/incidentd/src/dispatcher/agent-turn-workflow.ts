@@ -17,14 +17,9 @@ export class IncidentAgentTurnWorkflow extends WorkflowEntrypoint<Env, AgentTurn
 			validStatusTransitions: getValidStatusTransitions(incident.status),
 		};
 
-		const stepDo = (step.do as unknown as (name: string, config: unknown, callback: () => Promise<unknown>) => Promise<unknown>).bind(step);
+		const stepDo = (name: string, callback: () => Promise<unknown>) => step.do(name, { retries: { limit: 3, delay: "5 seconds" } }, callback as Parameters<WorkflowStep["do"]>[2]);
 
-		const suggestions = await generateIncidentSuggestions(
-			context,
-			this.env.OPENAI_API_KEY,
-			(name, callback) => stepDo(name, { retries: { limit: 3, delay: "5 seconds" } }, callback),
-			turnId,
-		);
+		const suggestions = await generateIncidentSuggestions(context, this.env.OPENAI_API_KEY, stepDo, turnId);
 
 		const normalized = normalizeSuggestions(suggestions, context);
 		if (!normalized.length) {
