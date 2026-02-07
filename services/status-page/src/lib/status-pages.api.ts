@@ -1,7 +1,7 @@
 import { getStatusDescription, type StatusSnapshotData } from "./status-pages.server";
 
-const STATUS_API_CACHE_CONTROL = "public, max-age=10, s-maxage=10, stale-while-revalidate=30";
-const STATUS_API_CDN_CACHE_CONTROL = "public, s-maxage=10, stale-while-revalidate=30";
+const STATUS_API_CACHE_CONTROL = "public, max-age=10, s-maxage=10, stale-while-revalidate=30, stale-if-error=3600";
+const STATUS_API_CDN_CACHE_CONTROL = "public, s-maxage=10, stale-while-revalidate=30, stale-if-error=3600";
 const STATUS_API_CORS_HEADERS = { "Access-Control-Allow-Origin": "*" };
 
 export type StatusSnapshotApiPayload = {

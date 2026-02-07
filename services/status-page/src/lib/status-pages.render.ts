@@ -156,7 +156,6 @@ function renderLiveStatusPollingScript(statusApiPath: string): string {
 			const description = container.querySelector("[data-live-status-description]");
 			const updatedAt = container.querySelector("[data-live-status-updated]");
 			const versionNode = container.querySelector("[data-live-status-version]");
-			let etag = versionNode && versionNode.textContent ? ('"' + versionNode.textContent + '"') : null;
 
 			const styleMap = {
 				none: {
@@ -221,13 +220,8 @@ function renderLiveStatusPollingScript(statusApiPath: string): string {
 			const poll = async () => {
 				try {
 					if (document.visibilityState !== "visible") return;
-					const headers = {};
-					if (etag) headers["If-None-Match"] = etag;
-					const response = await fetch(statusApiPath, { headers });
-					if (response.status === 304) return;
+					const response = await fetch(statusApiPath, { credentials: "omit" });
 					if (!response.ok) return;
-					const nextEtag = response.headers.get("ETag");
-					if (nextEtag) etag = nextEtag;
 					const payload = await response.json();
 					applyPayload(payload);
 				} catch {}
