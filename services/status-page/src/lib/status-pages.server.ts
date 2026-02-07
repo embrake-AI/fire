@@ -388,3 +388,104 @@ export async function fetchIncidentDetailBySlug(slug: string, incidentId: string
 
 	return buildIncidentDetailData(data, incidentId);
 }
+
+export type StatusSnapshotData = {
+	page: Pick<StatusPageSummary, "id" | "name" | "slug">;
+	overallStatus: "operational" | "issues";
+	hasActiveIncidents: boolean;
+	activeIncidentCount: number;
+	activeMajorIncidentCount: number;
+	activePartialIncidentCount: number;
+	totalIncidentCount: number;
+	lastUpdatedAt: Date;
+	version: string;
+};
+
+function toTimestamp(date: Date | null | undefined): number | null {
+	if (!date) {
+		return null;
+	}
+	const value = new Date(date).getTime();
+	return Number.isFinite(value) ? value : null;
+}
+
+export type LiveStatusInfo = {
+	indicator: "none" | "minor" | "major";
+	description: string;
+	lastUpdatedAt: Date;
+	version: string;
+};
+
+export function getStatusDescription(indicator: "none" | "minor" | "major"): string {
+	if (indicator === "major") return "Major Service Outage";
+	if (indicator === "minor") return "Some Systems Experiencing Issues";
+	return "All Systems Operational";
+}
+
+export function computeLiveStatusInfo(data: StatusPagePublicData, fallbackTimestamp?: number): LiveStatusInfo {
+	const activeAffections = data.affections.filter((a) => !a.resolvedAt);
+	const hasMajorIssue = activeAffections.some((a) => a.services.some((s) => s.impact === "major"));
+	const indicator: "none" | "minor" | "major" = hasMajorIssue ? "major" : activeAffections.length > 0 ? "minor" : "none";
+	const description = getStatusDescription(indicator);
+
+	const timestamps: number[] = [];
+	const push = (date: Date | null | undefined) => {
+		const value = toTimestamp(date);
+		if (value !== null) timestamps.push(value);
+	};
+
+	push(data.page.createdAt);
+	push(data.page.updatedAt);
+	for (const affection of data.affections) {
+		push(affection.createdAt);
+		push(affection.updatedAt);
+		push(affection.resolvedAt);
+	}
+	for (const update of data.updates) {
+		push(update.createdAt);
+	}
+
+	const lastUpdatedAt = new Date(timestamps.length > 0 ? Math.max(...timestamps) : (fallbackTimestamp ?? Date.now()));
+	const version = `${lastUpdatedAt.getTime()}-${activeAffections.length}-${data.updates.length}-${data.affections.length}`;
+
+	return { indicator, description, lastUpdatedAt, version };
+}
+
+function buildStatusSnapshotData(data: StatusPagePublicData): StatusSnapshotData {
+	const activeAffections = data.affections.filter((affection) => !affection.resolvedAt);
+	const activeMajorIncidentCount = activeAffections.filter((affection) => affection.services.some((service) => service.impact === "major")).length;
+	const activePartialIncidentCount = activeAffections.length - activeMajorIncidentCount;
+	const liveStatus = computeLiveStatusInfo(data);
+
+	return {
+		page: {
+			id: data.page.id,
+			name: data.page.name,
+			slug: data.page.slug,
+		},
+		overallStatus: activeAffections.length > 0 ? "issues" : "operational",
+		hasActiveIncidents: activeAffections.length > 0,
+		activeIncidentCount: activeAffections.length,
+		activeMajorIncidentCount,
+		activePartialIncidentCount,
+		totalIncidentCount: data.affections.length,
+		lastUpdatedAt: liveStatus.lastUpdatedAt,
+		version: liveStatus.version,
+	};
+}
+
+export async function fetchStatusSnapshotByDomain(domain: string): Promise<StatusSnapshotData | null> {
+	const data = await fetchPublicStatusPageByDomain(domain);
+	if (!data) {
+		return null;
+	}
+	return buildStatusSnapshotData(data);
+}
+
+export async function fetchStatusSnapshotBySlug(slug: string): Promise<StatusSnapshotData | null> {
+	const data = await fetchPublicStatusPageBySlug(slug);
+	if (!data) {
+		return null;
+	}
+	return buildStatusSnapshotData(data);
+}

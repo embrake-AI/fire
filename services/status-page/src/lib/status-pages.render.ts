@@ -1,4 +1,4 @@
-import type { IncidentDetailData, IncidentHistoryData, StatusPageAffection, StatusPagePublicData } from "./status-pages.server";
+import { computeLiveStatusInfo, type IncidentDetailData, type IncidentHistoryData, type StatusPageAffection, type StatusPagePublicData } from "./status-pages.server";
 
 const POWERED_BY_URL = process.env.VITE_APP_URL ?? "";
 
@@ -145,6 +145,113 @@ function renderLocaleDateScript(): string {
 	</script>`;
 }
 
+function renderLiveStatusPollingScript(statusApiPath: string): string {
+	return `<script>
+		(function () {
+			const statusApiPath = ${JSON.stringify(statusApiPath)};
+			const container = document.querySelector("[data-live-status]");
+			if (!container) return;
+
+			const dot = container.querySelector("[data-live-status-dot]");
+			const description = container.querySelector("[data-live-status-description]");
+			const updatedAt = container.querySelector("[data-live-status-updated]");
+			const versionNode = container.querySelector("[data-live-status-version]");
+			let etag = versionNode && versionNode.textContent ? ('"' + versionNode.textContent + '"') : null;
+
+			const styleMap = {
+				none: {
+					container: ["bg-emerald-50", "border-emerald-200"],
+					dot: ["bg-emerald-500"],
+					description: ["text-emerald-700"],
+				},
+				minor: {
+					container: ["bg-orange-50", "border-orange-200"],
+					dot: ["bg-orange-500"],
+					description: ["text-orange-700"],
+				},
+				major: {
+					container: ["bg-red-50", "border-red-200"],
+					dot: ["bg-red-500"],
+					description: ["text-red-700"],
+				},
+			};
+
+			const containerClasses = ["bg-emerald-50", "border-emerald-200", "bg-orange-50", "border-orange-200", "bg-red-50", "border-red-200"];
+			const dotClasses = ["bg-emerald-500", "bg-orange-500", "bg-red-500"];
+			const descriptionClasses = ["text-emerald-700", "text-orange-700", "text-red-700"];
+			const dateFormatter = new Intl.DateTimeFormat((navigator.languages && navigator.languages[0]) || navigator.language || "en-US", {
+				month: "short",
+				day: "numeric",
+				year: "numeric",
+				hour: "numeric",
+				minute: "2-digit",
+			});
+
+			const applyPayload = (payload) => {
+				const indicator = payload?.status?.indicator;
+				const indicatorStyle = styleMap[indicator];
+				if (!indicatorStyle) return;
+
+				container.classList.remove(...containerClasses);
+				container.classList.add(...indicatorStyle.container);
+
+				if (dot) {
+					dot.classList.remove(...dotClasses);
+					dot.classList.add(...indicatorStyle.dot);
+				}
+				if (description) {
+					description.classList.remove(...descriptionClasses);
+					description.classList.add(...indicatorStyle.description);
+					if (typeof payload?.status?.description === "string") {
+						description.textContent = payload.status.description;
+					}
+				}
+				if (updatedAt && typeof payload?.updated_at === "string") {
+					const date = new Date(payload.updated_at);
+					if (!Number.isNaN(date.getTime())) {
+						updatedAt.setAttribute("datetime", date.toISOString());
+						updatedAt.textContent = dateFormatter.format(date);
+					}
+				}
+				if (versionNode && typeof payload?.version === "string") {
+					versionNode.textContent = payload.version;
+				}
+			};
+
+			const poll = async () => {
+				try {
+					if (document.visibilityState !== "visible") return;
+					const headers = {};
+					if (etag) headers["If-None-Match"] = etag;
+					const response = await fetch(statusApiPath, { headers });
+					if (response.status === 304) return;
+					if (!response.ok) return;
+					const nextEtag = response.headers.get("ETag");
+					if (nextEtag) etag = nextEtag;
+					const payload = await response.json();
+					applyPayload(payload);
+				} catch {}
+			};
+
+			poll();
+			window.setInterval(poll, 10_000);
+		})();
+	</script>`;
+}
+
+function renderHtmlAutoRefreshScript(intervalMs: number): string {
+	return `<script>
+		(function () {
+			const intervalMs = ${intervalMs};
+			if (!Number.isFinite(intervalMs) || intervalMs <= 0) return;
+			window.setInterval(() => {
+				if (document.visibilityState !== "visible") return;
+				window.location.reload();
+			}, intervalMs);
+		})();
+	</script>`;
+}
+
 export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: number, basePath = ""): string {
 	const { page, services, affections, updates } = data;
 	const logoUrl = page.logoUrl || page.clientImage;
@@ -158,9 +265,16 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 
 	const now = new Date(timestamp);
 	const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+	const statusApiPath = `${basePath}/api/status`;
 
 	const activeAffections = affections.filter((a) => !a.resolvedAt);
 	const hasIssues = activeAffections.length > 0;
+	const {
+		indicator: liveStatusIndicator,
+		description: liveStatusDescription,
+		lastUpdatedAt: liveStatusUpdatedAt,
+		version: liveStatusVersion,
+	} = computeLiveStatusInfo(data, timestamp);
 
 	const normalizeImpact = (impact?: string | null) => {
 		if (!impact) return "degraded";
@@ -554,6 +668,12 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 		footerLinks.push(`<a href="${escapeHtml(page.termsOfServiceUrl)}" class="hover:text-slate-500 transition-colors">Terms of Service</a>`);
 	}
 	const footerLinksHtml = footerLinks.length > 0 ? footerLinks.join('<span class="mx-2">&middot;</span>') : "";
+	const liveStatusStyleMap = {
+		none: { container: "bg-emerald-50 border-emerald-200", dot: "bg-emerald-500", text: "text-emerald-700" },
+		minor: { container: "bg-orange-50 border-orange-200", dot: "bg-orange-500", text: "text-orange-700" },
+		major: { container: "bg-red-50 border-red-200", dot: "bg-red-500", text: "text-red-700" },
+	} as const;
+	const liveStatusStyles = liveStatusStyleMap[liveStatusIndicator];
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -770,6 +890,17 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 			</div>
 		</header>
 
+		<div data-live-status class="rounded-lg border p-4 mb-8 ${liveStatusStyles.container}">
+			<div class="flex items-center justify-between gap-2">
+				<div class="flex items-center gap-2 min-w-0">
+					<div data-live-status-dot class="w-2.5 h-2.5 rounded-full ${liveStatusStyles.dot}"></div>
+					<span data-live-status-description class="font-medium ${liveStatusStyles.text}">${escapeHtml(liveStatusDescription)}</span>
+				</div>
+				<span class="text-xs text-slate-500">Updated <time data-live-status-updated data-locale-format="datetime" datetime="${liveStatusUpdatedAt.toISOString()}">${escapeHtml(formatDateTimeFallback(liveStatusUpdatedAt))}</time></span>
+			</div>
+			<span data-live-status-version class="hidden">${escapeHtml(liveStatusVersion)}</span>
+		</div>
+
 		${renderActiveIncidents()}
 
 		${
@@ -796,6 +927,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 		</div>
 	</footer>
 	${renderLocaleDateScript()}
+	${renderLiveStatusPollingScript(statusApiPath)}
 </body>
 </html>`;
 }
@@ -1090,7 +1222,7 @@ function renderIncidentHistoryHtml(data: IncidentHistoryData, basePath = ""): st
 	return renderBaseHtml({
 		title: `Incident History - ${page.name}`,
 		faviconUrl: page.faviconUrl,
-		content,
+		content: `${content}${renderHtmlAutoRefreshScript(60_000)}`,
 	});
 }
 
@@ -1249,7 +1381,7 @@ function renderIncidentDetailHtml(data: IncidentDetailData, basePath = ""): stri
 				}
 			</style>
 		`,
-		content,
+		content: `${content}${isResolved ? "" : renderHtmlAutoRefreshScript(30_000)}`,
 	});
 }
 
