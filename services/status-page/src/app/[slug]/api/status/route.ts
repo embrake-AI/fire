@@ -3,7 +3,7 @@ import { buildStatusSnapshotResponse } from "@/lib/status-pages.api";
 import { fetchStatusSnapshotBySlug } from "@/lib/status-pages.server";
 import { normalizeDomain } from "@/lib/status-pages.utils";
 
-export const revalidate = 30;
+export const revalidate = 10;
 
 const PRIMARY_DOMAIN = process.env.VITE_STATUS_PAGE_DOMAIN ?? "";
 

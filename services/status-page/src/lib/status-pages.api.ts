@@ -1,6 +1,7 @@
 import { getStatusDescription, type StatusSnapshotData } from "./status-pages.server";
 
-const STATUS_API_CACHE_CONTROL = "public, max-age=30, stale-while-revalidate=60";
+const STATUS_API_CACHE_CONTROL = "public, max-age=10, s-maxage=10, stale-while-revalidate=30";
+const STATUS_API_CDN_CACHE_CONTROL = "public, s-maxage=10, stale-while-revalidate=30";
 const STATUS_API_CORS_HEADERS = { "Access-Control-Allow-Origin": "*" };
 
 export type StatusSnapshotApiPayload = {
@@ -35,6 +36,8 @@ export function buildStatusSnapshotResponse(options: { snapshot: StatusSnapshotD
 			headers: {
 				...STATUS_API_CORS_HEADERS,
 				"Cache-Control": STATUS_API_CACHE_CONTROL,
+				"CDN-Cache-Control": STATUS_API_CDN_CACHE_CONTROL,
+				"Vercel-CDN-Cache-Control": STATUS_API_CDN_CACHE_CONTROL,
 				ETag: etag,
 				"Last-Modified": snapshot.lastUpdatedAt.toUTCString(),
 			},
@@ -48,6 +51,8 @@ export function buildStatusSnapshotResponse(options: { snapshot: StatusSnapshotD
 			...STATUS_API_CORS_HEADERS,
 			"Content-Type": "application/json; charset=utf-8",
 			"Cache-Control": STATUS_API_CACHE_CONTROL,
+			"CDN-Cache-Control": STATUS_API_CDN_CACHE_CONTROL,
+			"Vercel-CDN-Cache-Control": STATUS_API_CDN_CACHE_CONTROL,
 			ETag: etag,
 			"Last-Modified": snapshot.lastUpdatedAt.toUTCString(),
 		},
