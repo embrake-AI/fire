@@ -23,7 +23,8 @@
 			"!!**/.next",
 			"!!**/node_modules",
 			"!!**/*.gen.ts",
-			"!!**/*.zed"
+			"!!**/*.zed",
+			"!!**/*.claude"
 		]
 	},
 	"formatter": {

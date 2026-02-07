@@ -33,7 +33,7 @@ type AffectionImpact = "partial" | "major";
 
 type AffectionUpdateData = Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
 type IncidentService = { id: string; name: string; prompt: string | null };
-type SuggestionLogInput = { message: string; suggestionId: string; messageId: string };
+type SuggestionLogInput = { message: string; suggestionId: string; messageId: string; suggestion?: Record<string, unknown> };
 
 function getAffectionStatusIndex(status: AffectionStatus) {
 	return AFFECTION_STATUS_ORDER.indexOf(status);
@@ -713,7 +713,7 @@ export class Incident extends DurableObject<Env> {
 
 				this.ctx.storage.sql.exec(
 					"INSERT INTO event_log (event_type, event_data, event_metadata, adapter, published_at) VALUES ('MESSAGE_ADDED', ?, ?, 'fire', CURRENT_TIMESTAMP)",
-					JSON.stringify({ message, userId: "fire", messageId }),
+					JSON.stringify({ message, userId: "fire", messageId, ...(suggestion.suggestion ? { suggestion: suggestion.suggestion } : {}) }),
 					JSON.stringify({ kind: "suggestion", agentSuggestionId: suggestionId }),
 				);
 			}

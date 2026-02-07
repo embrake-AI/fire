@@ -39,7 +39,7 @@ export class IncidentAgentTurnWorkflow extends WorkflowEntrypoint<Env, AgentTurn
 			turnId,
 			serviceMap,
 		});
-		const loggedSuggestions: Array<{ message: string; suggestionId: string; messageId: string }> = [];
+		const loggedSuggestions: Array<{ message: string; suggestionId: string; messageId: string; suggestion: (typeof normalized)[number] }> = [];
 
 		for (const [index, message] of messages.entries()) {
 			const suggestionId = `${payload.incidentId}:${turnId}:${index + 1}`;
@@ -50,6 +50,7 @@ export class IncidentAgentTurnWorkflow extends WorkflowEntrypoint<Env, AgentTurn
 				message: message.text,
 				suggestionId,
 				messageId: `fire-suggestion:${suggestionId}`,
+				suggestion: normalized[index]!,
 			});
 		}
 		await step.do(`agent-turn.store:${turnId}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {

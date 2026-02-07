@@ -1,33 +1,35 @@
 import type { IS } from "@fire/common";
 import type { AgentAffectionInfo, AgentEvent, AgentSuggestion, AgentSuggestionContext } from "./types";
 
-const SYSTEM_PROMPT = `You are an incident operations agent. Based on the incident context and recent events, propose a small set of concrete, high-confidence suggestions for a human dispatcher to apply.
+export const SYSTEM_PROMPT = `You are an incident operations agent. You may suggest actions for a human dispatcher by calling tools. Each tool call is treated as a suggested action - it is NOT executed automatically. Tools are optional: only call a tool when the suggestion would be genuinely useful to the dispatcher. If nothing warrants a suggestion, call no tools.
 
 Rules:
-- Only suggest actions you are confident are correct from the context.
-- Do not repeat suggestions. If there is a recent suggestion message, do not suggest the same.
+- Only suggest actions you are confident are correct based on concrete evidence in the event log. If the incident is vague, unclear, or lacking detail, do not guess - wait for more information.
+- Every tool call MUST include an evidence field describing the specific event(s) from the log that justify the suggestion.
+- NEVER repeat a suggestion. Events labeled AGENT_SUGGESTION show your prior suggestions. If an AGENT_SUGGESTION already exists for the same action (e.g. update_status to mitigating, or update_severity to high), do NOT suggest that action again.
 - Only suggest when there is very clear intent from actual, past events. If intent is ambiguous, do not suggest.
 - Do not speculate or advise about future or hypothetical actions (no "if/when you do X, then do Y").
-- Do not suggest actions for things that have not already happened.
+- Do not suggest actions for things that have not already happened or been confirmed.
+- For status page suggestions, you MUST follow the provided status-page context: if hasAffection=false, the first public update MUST use affectionStatus=investigating (never mitigating/resolved) and include title + services.
+- If hasAffection=true and there is meaningful new external-user progress/impact information, you SHOULD suggest add_status_page_update in this turn (even if incident status does not change).
+- "Resolved" means the issue is fully over and the incident will be closed. Only suggest resolved when a human explicitly confirms the incident is OVER - the fix is verified AND the problem is completely gone (e.g. "confirmed working", "error rate back to zero", "verified fix", "all clear"). Do NOT suggest resolved when: a fix/restart/purge was just initiated or is in progress, errors have decreased but are not zero, retries are still failing, some users/regions are still affected, or someone is still monitoring/investigating. When in doubt, do NOT suggest resolved - wait for the next turn.
+- Resolved requires TWO conditions met simultaneously: (1) a remediation action was completed, AND (2) a human confirmed the problem is gone. A restart being initiated, errors dropping to non-zero, or retries still failing means condition (2) is NOT met.
 - Keep suggestion messages short (max ~200 characters).
 - Suggest at most 3 actions total.
-- If no suggestions are appropriate, do not call any tools.
 
 Allowed actions (use tools):
 1) update_status: move to mitigating or resolved. Must include a concise message. Updating to resolved terminates (closes) the incident.
 2) update_severity: change severity to low/medium/high.
 3) add_status_page_update: post a public update. Must include a message. If no status page incident exists yet, you MUST include status=investigating and include a title and services (choose from allowed services).`;
 
-const DEVELOPER_PROMPT = `You may call tools to emit suggestions. Each tool call is treated as a suggested action (not executed). Do not repeat the same tool. IF NO SUGGESTIONS ARE APPROPRIATE, DO NOT CALL ANY TOOLS.`;
-
-const VOLATILE_EVENT_KEYS = new Set(["created_at", "createdAt", "ts", "timestamp", "messageId", "promptTs", "promptThreadTs"]);
+export const VOLATILE_EVENT_KEYS = new Set(["created_at", "createdAt", "ts", "timestamp", "messageId", "promptTs", "promptThreadTs"]);
 
 type SuggestionMessage = { role: "system" | "user" | "assistant" | "tool"; content?: string; tool_calls?: unknown; name?: string };
-type SuggestionTool = { type: "function"; function: { name: string; description: string; parameters: unknown } };
+export type SuggestionTool = { type: "function"; function: { name: string; description: string; parameters: unknown } };
 type ResponsesInputMessage = { type: "message"; role: "system" | "developer" | "user" | "assistant"; content: string };
-type ResponsesFunctionTool = { type: "function"; name: string; description: string; parameters: unknown };
+export type ResponsesFunctionTool = { type: "function"; name: string; description: string; parameters: unknown };
 
-function normalizeEventData(value: unknown): unknown {
+export function normalizeEventData(value: unknown): unknown {
 	if (Array.isArray(value)) {
 		return value.map((item) => normalizeEventData(item));
 	}
@@ -61,7 +63,7 @@ function toResponsesInputMessages(messages: SuggestionMessage[]): ResponsesInput
 	return input;
 }
 
-function toResponsesTools(tools: SuggestionTool[]): ResponsesFunctionTool[] {
+export function toResponsesTools(tools: SuggestionTool[]): ResponsesFunctionTool[] {
 	const mapped: ResponsesFunctionTool[] = [];
 	for (const tool of tools) {
 		if (!tool.function.name) {
@@ -98,10 +100,20 @@ type OpenAIResponsesCreateResponse = {
 function truncateMessage(value: string, max = 240) {
 	const trimmed = value.trim();
 	if (trimmed.length <= max) return trimmed;
-	return `${trimmed.slice(0, max - 1)}…`;
+	return `${trimmed.slice(0, max - 1)}...`;
 }
 
-function buildEventMessages(events: AgentEvent[], processedThroughId: number): Array<{ role: "user" | "assistant"; content: string }> {
+export function formatSuggestionEvent(event: AgentEvent): string {
+	const data = event.event_data as Record<string, unknown>;
+	if (data.suggestion && typeof data.suggestion === "object") {
+		const suggestion = data.suggestion as Record<string, unknown>;
+		return `AGENT_SUGGESTION: ${JSON.stringify(suggestion)}`;
+	}
+	const message = typeof data.message === "string" ? data.message : "";
+	return `AGENT_SUGGESTION: ${message}`;
+}
+
+export function buildEventMessages(events: AgentEvent[], processedThroughId: number): Array<{ role: "user" | "assistant"; content: string }> {
 	if (!events.length) {
 		return [{ role: "user", content: "Recent events:\n(none)" }];
 	}
@@ -115,9 +127,9 @@ function buildEventMessages(events: AgentEvent[], processedThroughId: number): A
 			boundaryInserted = true;
 		}
 
-		const role = event.event_metadata?.agentSuggestionId ? "assistant" : "user";
-		const data = JSON.stringify(normalizeEventData(event.event_data));
-		const content = `${event.event_type}: ${data}`;
+		const isSuggestion = !!event.event_metadata?.agentSuggestionId;
+		const role = isSuggestion ? "assistant" : "user";
+		const content = isSuggestion ? formatSuggestionEvent(event) : `${event.event_type}: ${JSON.stringify(normalizeEventData(event.event_data))}`;
 		messages.push({ role, content });
 	}
 
@@ -125,7 +137,6 @@ function buildEventMessages(events: AgentEvent[], processedThroughId: number): A
 }
 
 export function buildSuggestionTools(context: AgentSuggestionContext): SuggestionTool[] {
-	const statusOptions = context.validStatusTransitions.length ? context.validStatusTransitions : ["mitigating", "resolved"];
 	const serviceOptions = context.services.map((service) => service.id);
 
 	return [
@@ -133,14 +144,18 @@ export function buildSuggestionTools(context: AgentSuggestionContext): Suggestio
 			type: "function",
 			function: {
 				name: "update_status",
-				description: "Suggest updating incident status with a short message.",
+				description: `Suggest updating the incident status. Only call when the event log contains clear, confirmed evidence.
+- "mitigating": a mitigation action has been taken (e.g. fix deployed, workaround applied, rollback done, service restarted). It does NOT require verification that the fix is working - only that a concrete action has been taken to address the issue. Do NOT suggest if no action has been taken yet (investigating alone is not mitigating).
+- "resolved": ONLY when a human explicitly confirms the incident is OVER - the fix is verified AND the problem is completely gone (e.g. "confirmed working", "error rate back to zero", "all clear"). The confirmation must be a statement of verified fact, not a hopeful action.
+  NEVER suggest resolved when ANY of these are true: (a) a fix/restart/purge was just initiated or is in progress, (b) error rate has dropped but is not zero, (c) retries are still failing, (d) some users or regions are still affected, (e) someone says they are monitoring or investigating, (f) no human has explicitly confirmed the problem is gone. When in doubt, do NOT suggest resolved - wait for the next turn.`,
 				parameters: {
 					type: "object",
 					properties: {
-						status: { type: "string", enum: statusOptions },
+						evidence: { type: "string", description: "The specific event(s) from the log that justify this suggestion." },
+						status: { type: "string", enum: ["mitigating", "resolved"] },
 						message: { type: "string" },
 					},
-					required: ["status", "message"],
+					required: ["evidence", "status", "message"],
 					additionalProperties: false,
 				},
 			},
@@ -149,13 +164,17 @@ export function buildSuggestionTools(context: AgentSuggestionContext): Suggestio
 			type: "function",
 			function: {
 				name: "update_severity",
-				description: "Suggest updating incident severity.",
+				description: `Suggest updating the incident severity. Only call when the event log shows clear evidence of changed impact scope.
+- "high": confirmed multi-customer or revenue impact, complete service outage, or data loss.
+- "medium": partial degradation affecting some users, elevated error rates.
+- "low": minimal impact, cosmetic issues, or internal-only.`,
 				parameters: {
 					type: "object",
 					properties: {
+						evidence: { type: "string", description: "The specific event(s) from the log that justify this suggestion." },
 						severity: { type: "string", enum: ["low", "medium", "high"] },
 					},
-					required: ["severity"],
+					required: ["evidence", "severity"],
 					additionalProperties: false,
 				},
 			},
@@ -164,10 +183,16 @@ export function buildSuggestionTools(context: AgentSuggestionContext): Suggestio
 			type: "function",
 			function: {
 				name: "add_status_page_update",
-				description: "Suggest posting a public status page update.",
+				description: `Suggest posting a public status page update. Only call when the incident should be notified to external users.
+- Use the status-page context provided in the prompt:
+  - If hasAffection=false, this is the FIRST public update. You MUST set affectionStatus=investigating and include title + services. Do NOT set mitigating/resolved.
+  - If hasAffection=true and there is meaningful external progress/new impact information, you SHOULD call this tool for a follow-up update even when incident status is unchanged.
+- Subsequent updates: share updates regularly to keep external users informed - post when there is meaningful progress, status changes, scope changes, or new information about impact/timeline. You do not need to wait for a status change to post an update.
+- Do NOT call this tool for internal-only issues (e.g. internal tooling, demo/staging environments, internal dashboards, background jobs that do not affect end users). If the incident has no external user impact, simply do not call this tool.`,
 				parameters: {
 					type: "object",
 					properties: {
+						evidence: { type: "string", description: "The specific event(s) from the log that justify this suggestion." },
 						message: { type: "string" },
 						affectionStatus: { type: "string", enum: ["investigating", "mitigating", "resolved"] },
 						title: { type: "string" },
@@ -184,12 +209,37 @@ export function buildSuggestionTools(context: AgentSuggestionContext): Suggestio
 							},
 						},
 					},
-					required: ["message"],
+					required: ["evidence", "message"],
 					additionalProperties: false,
 				},
 			},
 		},
 	];
+}
+
+export function buildContextUserMessage(context: AgentSuggestionContext): string {
+	const servicesDescription = context.services.length
+		? context.services.map((service) => `- ${service.name} (${service.id}): ${service.prompt ?? "(no prompt)"}`).join("\n")
+		: "(none)";
+	return `Allowed services:\n${servicesDescription}`;
+}
+
+export function buildStatusPageContextMessage(context: AgentSuggestionContext): string {
+	const created = context.affection.hasAffection ? "yes" : "no";
+	const lastStatus = context.affection.lastStatus ?? "none";
+	const lastUpdatedAt = context.affection.lastUpdateAt ?? "none";
+
+	return `Status page state:
+- created: ${created}
+- lastStatus: ${lastStatus}
+- lastUpdatedAt: ${lastUpdatedAt}
+- If created=no and you suggest add_status_page_update, you MUST set affectionStatus=investigating and include title + services.
+- If created=yes and there is meaningful external-user progress/new information in recent events, you SHOULD suggest add_status_page_update now even if incident status is unchanged.`;
+}
+
+export function buildIncidentStateMessage(context: AgentSuggestionContext): string {
+	const validTransitions = context.validStatusTransitions.length ? context.validStatusTransitions.join(", ") : "none";
+	return `Incident state:\n- status: ${context.incident.status} (valid transitions: ${validTransitions})\n- severity: ${context.incident.severity}`;
 }
 
 export function getValidStatusTransitions(currentStatus: IS["status"]): Array<Exclude<IS["status"], "open">> {
@@ -230,6 +280,9 @@ export function normalizeSuggestions(suggestions: AgentSuggestion[], context: Ag
 			case "update_status": {
 				const message = suggestion.message?.trim();
 				if (!suggestion.status || !message) {
+					continue;
+				}
+				if (context.validStatusTransitions.length && !context.validStatusTransitions.includes(suggestion.status)) {
 					continue;
 				}
 				normalized.push({
@@ -288,12 +341,9 @@ export async function generateIncidentSuggestions(
 	stepDo: (name: string, callback: () => Promise<unknown>) => Promise<unknown>,
 	stepLabel: string,
 ): Promise<AgentSuggestion[]> {
-	const servicesDescription = context.services.length
-		? context.services.map((service) => `- ${service.name} (${service.id}): ${service.prompt ?? "(no prompt)"}`).join("\n")
-		: "(none)";
-
-	const userMessage = `Allowed services:
-${servicesDescription}`;
+	const userMessage = buildContextUserMessage(context);
+	const statusPageContextMessage = buildStatusPageContextMessage(context);
+	const incidentStateMessage = buildIncidentStateMessage(context);
 
 	const eventMessages = buildEventMessages(context.events, context.processedThroughId ?? 0);
 
@@ -301,9 +351,10 @@ ${servicesDescription}`;
 	const tools = buildSuggestionTools(context);
 	const messages: SuggestionMessage[] = [
 		{ role: "system", content: SYSTEM_PROMPT },
-		{ role: "system", content: DEVELOPER_PROMPT },
 		{ role: "user", content: userMessage },
 		...eventMessages,
+		{ role: "user", content: statusPageContextMessage },
+		{ role: "user", content: incidentStateMessage },
 		{ role: "user", content: "Return suggestions." },
 	];
 	const usedToolNames = new Set<string>();
@@ -363,7 +414,7 @@ ${servicesDescription}`;
 			const args = toolCall.function.arguments ? (JSON.parse(toolCall.function.arguments) as Record<string, unknown>) : {};
 			switch (toolCall.function.name) {
 				case "update_status": {
-					if (typeof args.status === "string" && typeof args.message === "string") {
+					if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.status === "string" && typeof args.message === "string") {
 						suggestions.push({
 							action: "update_status",
 							status: args.status as Exclude<IS["status"], "open">,
@@ -378,7 +429,7 @@ ${servicesDescription}`;
 					break;
 				}
 				case "update_severity": {
-					if (typeof args.severity === "string") {
+					if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.severity === "string") {
 						suggestions.push({
 							action: "update_severity",
 							severity: args.severity as IS["severity"],
@@ -392,7 +443,7 @@ ${servicesDescription}`;
 					break;
 				}
 				case "add_status_page_update": {
-					if (typeof args.message === "string") {
+					if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.message === "string") {
 						suggestions.push({
 							action: "add_status_page_update",
 							message: args.message,
