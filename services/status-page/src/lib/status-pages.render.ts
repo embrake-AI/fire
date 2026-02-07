@@ -7,6 +7,144 @@ function escapeHtml(text: string | null | undefined): string {
 	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
+function formatDateFallback(date: Date): string {
+	return new Date(date).toLocaleDateString("en-US", {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+	});
+}
+
+function formatDateTimeFallback(date: Date): string {
+	return new Date(date).toLocaleString("en-US", {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+		hour: "numeric",
+		minute: "2-digit",
+	});
+}
+
+function formatTooltipDateFallback(date: Date): string {
+	return new Date(date).toLocaleDateString("en-US", {
+		weekday: "short",
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+	});
+}
+
+function formatRelativeTimeFallback(date: Date, now: Date): string {
+	const diffMs = now.getTime() - new Date(date).getTime();
+	const diffMins = Math.floor(diffMs / 60000);
+	const diffHours = Math.floor(diffMs / 3600000);
+	const diffDays = Math.floor(diffMs / 86400000);
+
+	if (diffMins < 1) return "just now";
+	if (diffMins < 60) return `${diffMins}m ago`;
+	if (diffHours < 24) return `${diffHours}h ago`;
+	if (diffDays === 1) return "yesterday";
+	return `${diffDays}d ago`;
+}
+
+function renderLocalizedTime(date: Date, format: "date" | "datetime" | "date-weekday"): string {
+	const timestamp = new Date(date);
+	const datetime = timestamp.toISOString();
+
+	if (format === "date") {
+		return `<time datetime="${datetime}" data-locale-format="date">${escapeHtml(formatDateFallback(timestamp))}</time>`;
+	}
+	if (format === "datetime") {
+		return `<time datetime="${datetime}" data-locale-format="datetime">${escapeHtml(formatDateTimeFallback(timestamp))}</time>`;
+	}
+	return `<time datetime="${datetime}" data-locale-format="date-weekday">${escapeHtml(formatTooltipDateFallback(timestamp))}</time>`;
+}
+
+function renderLocalizedRelativeTime(date: Date, now: Date): string {
+	const timestamp = new Date(date);
+	const datetime = timestamp.toISOString();
+	return `<time datetime="${datetime}" data-locale-format="relative">${escapeHtml(formatRelativeTimeFallback(timestamp, now))}</time>`;
+}
+
+function renderLocaleDateScript(): string {
+	return `<script>
+		(function () {
+			if (typeof Intl === "undefined" || typeof document === "undefined") return;
+			const locale = (navigator.languages && navigator.languages[0]) || navigator.language || "en-US";
+			const dateFormatter = new Intl.DateTimeFormat(locale, {
+				month: "short",
+				day: "numeric",
+				year: "numeric",
+			});
+			const dateTimeFormatter = new Intl.DateTimeFormat(locale, {
+				month: "short",
+				day: "numeric",
+				year: "numeric",
+				hour: "numeric",
+				minute: "2-digit",
+			});
+			const dateWeekdayFormatter = new Intl.DateTimeFormat(locale, {
+				weekday: "short",
+				month: "short",
+				day: "numeric",
+				year: "numeric",
+			});
+			const relativeFormatter = typeof Intl.RelativeTimeFormat === "function" ? new Intl.RelativeTimeFormat(locale, { numeric: "auto" }) : null;
+			const nowMs = Date.now();
+			const units = [
+				["year", 31_536_000_000],
+				["month", 2_592_000_000],
+				["day", 86_400_000],
+				["hour", 3_600_000],
+				["minute", 60_000],
+			];
+
+			const formatRelative = (date) => {
+				if (!relativeFormatter) return null;
+				const diffMs = date.getTime() - nowMs;
+				const absDiffMs = Math.abs(diffMs);
+				if (absDiffMs < 60_000) {
+					return relativeFormatter.format(0, "second");
+				}
+				for (const unitEntry of units) {
+					const unitName = unitEntry[0];
+					const unitMs = unitEntry[1];
+					if (absDiffMs >= unitMs || unitName === "minute") {
+						const value = Math.round(diffMs / unitMs);
+						return relativeFormatter.format(value, unitName);
+					}
+				}
+				return null;
+			};
+
+			const nodes = document.querySelectorAll("[data-locale-format]");
+			nodes.forEach((node) => {
+				const format = node.getAttribute("data-locale-format");
+				const datetime = node.getAttribute("datetime");
+				if (!format || !datetime) return;
+				const date = new Date(datetime);
+				if (Number.isNaN(date.getTime())) return;
+				if (format === "date") {
+					node.textContent = dateFormatter.format(date);
+					return;
+				}
+				if (format === "datetime") {
+					node.textContent = dateTimeFormatter.format(date);
+					return;
+				}
+				if (format === "date-weekday") {
+					node.textContent = dateWeekdayFormatter.format(date);
+					return;
+				}
+				if (format === "relative") {
+					const relative = formatRelative(date);
+					if (relative) node.textContent = relative;
+				}
+			});
+		})();
+	</script>`;
+}
+
 export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: number, basePath = ""): string {
 	const { page, services, affections, updates } = data;
 	const logoUrl = page.logoUrl || page.clientImage;
@@ -71,18 +209,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 		resolved: "Resolved",
 	};
 
-	const formatRelativeTime = (date: Date): string => {
-		const diffMs = now.getTime() - new Date(date).getTime();
-		const diffMins = Math.floor(diffMs / 60000);
-		const diffHours = Math.floor(diffMs / 3600000);
-		const diffDays = Math.floor(diffMs / 86400000);
-
-		if (diffMins < 1) return "just now";
-		if (diffMins < 60) return `${diffMins}m ago`;
-		if (diffHours < 24) return `${diffHours}h ago`;
-		if (diffDays === 1) return "yesterday";
-		return `${diffDays}d ago`;
-	};
+	const formatRelativeTime = (date: Date): string => renderLocalizedRelativeTime(date, now);
 
 	const getLastUpdate = (affectionId: string) => {
 		const affectionUpdates = updates.filter((u) => u.affectionId === affectionId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -158,14 +285,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 	const BAR_COUNT = 60;
 	const PARTIAL_OUTAGE_DOWNTIME_WEIGHT = 0.3;
 
-	const formatTooltipDate = (date: Date): string => {
-		return new Date(date).toLocaleDateString("en-US", {
-			weekday: "short",
-			month: "short",
-			day: "numeric",
-			year: "numeric",
-		});
-	};
+	const formatTooltipDate = (date: Date): string => renderLocalizedTime(date, "date-weekday");
 
 	type DayStatus = {
 		color: string;
@@ -675,6 +795,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 			${footerLinksHtml ? `<div class="flex items-center justify-center text-xs text-slate-400">${footerLinksHtml}</div>` : ""}
 		</div>
 	</footer>
+	${renderLocaleDateScript()}
 </body>
 </html>`;
 }
@@ -708,26 +829,17 @@ function renderBaseHtml(options: { title: string; faviconUrl?: string | null; he
 </head>
 <body class="bg-linear-to-b from-slate-50 to-white min-h-screen flex flex-col">
 	${options.content}
+	${renderLocaleDateScript()}
 </body>
 </html>`;
 }
 
 function formatDate(date: Date): string {
-	return new Date(date).toLocaleDateString("en-US", {
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-	});
+	return renderLocalizedTime(date, "date");
 }
 
 function formatDateTime(date: Date): string {
-	return new Date(date).toLocaleString("en-US", {
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-		hour: "numeric",
-		minute: "2-digit",
-	});
+	return renderLocalizedTime(date, "datetime");
 }
 
 function renderSubscribePopover(options: { feedPaths: { rss: string; atom: string }; supportUrl?: string | null }): string {
