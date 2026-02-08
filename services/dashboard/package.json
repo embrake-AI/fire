@@ -4,7 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev --port 3000",
-		"build": "rm -rf .vercel/output .output && vite build",
+		"build": "rm -rf .vercel/output .output ../../.vercel/output && vite build && cp -R .vercel/output ../../.vercel/output",
 		"preview": "vite preview",
 		"test": "bun --bun vitest run",
 		"type-check": "tsc --noEmit",
