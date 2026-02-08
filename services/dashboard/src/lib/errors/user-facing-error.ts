@@ -1,3 +1,5 @@
+import { createSerializationAdapter } from "@tanstack/solid-router";
+
 export type ErrorToastMeta = {
 	enabled?: boolean;
 	userMessage?: string;
@@ -21,6 +23,11 @@ type UserFacingErrorLike = {
 	message?: unknown;
 };
 
+type SerializedUserFacingError = {
+	userMessage: string;
+	code?: string;
+};
+
 export class UserFacingError extends Error {
 	public readonly showToUser = true;
 	public readonly userMessage: string;
@@ -38,6 +45,48 @@ export function createUserFacingError(userMessage: string, options?: { code?: st
 	return new UserFacingError(userMessage, options);
 }
 
+export const UserFacingErrorSerializationAdapter = createSerializationAdapter({
+	key: "fire-user-facing-error",
+	test: (value): value is UserFacingError => value instanceof UserFacingError,
+	toSerializable: (value): SerializedUserFacingError => ({
+		userMessage: value.userMessage,
+		code: value.code,
+	}),
+	fromSerializable: (value: SerializedUserFacingError) => new UserFacingError(value.userMessage, { code: value.code }),
+});
+
+function readSerializedString(value: unknown): string | null {
+	if (typeof value === "string") {
+		const trimmed = value.trim();
+		return trimmed.length > 0 ? trimmed : null;
+	}
+
+	if (!value || typeof value !== "object") {
+		return null;
+	}
+
+	const node = value as { s?: unknown };
+	if (typeof node.s !== "string") {
+		return null;
+	}
+
+	const trimmed = node.s.trim();
+	return trimmed.length > 0 ? trimmed : null;
+}
+
+function extractSerializedUserFacingMessage(error: unknown): string | null {
+	if (!error || typeof error !== "object") {
+		return null;
+	}
+
+	const candidate = error as { c?: unknown; s?: { userMessage?: unknown } };
+	if (candidate.c !== "$TSR/t/fire-user-facing-error") {
+		return null;
+	}
+
+	return readSerializedString(candidate.s?.userMessage);
+}
+
 export function extractUserFacingMessage(error: unknown): string | null {
 	if (error instanceof UserFacingError) {
 		return error.userMessage;
@@ -50,6 +99,11 @@ export function extractUserFacingMessage(error: unknown): string | null {
 	const candidate = error as UserFacingErrorLike;
 	if (candidate.showToUser === true && typeof candidate.userMessage === "string" && candidate.userMessage.trim().length > 0) {
 		return candidate.userMessage.trim();
+	}
+
+	const serializedMessage = extractSerializedUserFacingMessage(error);
+	if (serializedMessage) {
+		return serializedMessage;
 	}
 
 	if (candidate.name === "UserFacingError" && typeof candidate.message === "string" && candidate.message.trim().length > 0) {

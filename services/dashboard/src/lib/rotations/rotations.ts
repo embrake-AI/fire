@@ -347,6 +347,8 @@ export const updateRotationSlackChannel = createServerFn({ method: "POST" })
 			throw new Error("Rotation not found");
 		}
 
+		await notifyRotationScheduleWorkflow(data.id, { action: "update_slack_channel" });
+
 		return { id: updated.id, slackChannelId: updated.slackChannelId };
 	});
 
