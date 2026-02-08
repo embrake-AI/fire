@@ -145,76 +145,44 @@ function renderLocaleDateScript(): string {
 	</script>`;
 }
 
-function renderLiveStatusPollingScript(statusApiPath: string): string {
+function renderStatusVersionPollingScript(statusApiPath: string, initialVersion: string): string {
 	return `<script>
 		(function () {
 			const statusApiPath = ${JSON.stringify(statusApiPath)};
-			const container = document.querySelector("[data-live-status]");
-			if (!container) return;
+			let currentVersion = ${JSON.stringify(initialVersion)};
 
-			const dot = container.querySelector("[data-live-status-dot]");
-			const description = container.querySelector("[data-live-status-description]");
-			const updatedAt = container.querySelector("[data-live-status-updated]");
-			const versionNode = container.querySelector("[data-live-status-version]");
-
-			const styleMap = {
-				none: {
-					container: ["bg-emerald-50", "border-emerald-200"],
-					dot: ["bg-emerald-500"],
-					description: ["text-emerald-700"],
-				},
-				minor: {
-					container: ["bg-orange-50", "border-orange-200"],
-					dot: ["bg-orange-500"],
-					description: ["text-orange-700"],
-				},
-				major: {
-					container: ["bg-red-50", "border-red-200"],
-					dot: ["bg-red-500"],
-					description: ["text-red-700"],
-				},
+			const parseVersion = (version) => {
+				if (typeof version !== "string") return null;
+				const [timestampPart, activePart, updatesPart, totalPart] = version.split("-");
+				const timestamp = Number(timestampPart);
+				const active = Number(activePart);
+				const updates = Number(updatesPart);
+				const total = Number(totalPart);
+				if (![timestamp, active, updates, total].every((value) => Number.isFinite(value))) {
+					return null;
+				}
+				return { timestamp, active, updates, total };
 			};
 
-			const containerClasses = ["bg-emerald-50", "border-emerald-200", "bg-orange-50", "border-orange-200", "bg-red-50", "border-red-200"];
-			const dotClasses = ["bg-emerald-500", "bg-orange-500", "bg-red-500"];
-			const descriptionClasses = ["text-emerald-700", "text-orange-700", "text-red-700"];
-			const dateFormatter = new Intl.DateTimeFormat((navigator.languages && navigator.languages[0]) || navigator.language || "en-US", {
-				month: "short",
-				day: "numeric",
-				year: "numeric",
-				hour: "numeric",
-				minute: "2-digit",
-			});
+			const shouldReload = (nextVersion) => {
+				if (nextVersion === currentVersion) return false;
 
-			const applyPayload = (payload) => {
-				const indicator = payload?.status?.indicator;
-				const indicatorStyle = styleMap[indicator];
-				if (!indicatorStyle) return;
+				const currentParsed = parseVersion(currentVersion);
+				const nextParsed = parseVersion(nextVersion);
 
-				container.classList.remove(...containerClasses);
-				container.classList.add(...indicatorStyle.container);
+				if (!currentParsed || !nextParsed) {
+					return true;
+				}
 
-				if (dot) {
-					dot.classList.remove(...dotClasses);
-					dot.classList.add(...indicatorStyle.dot);
+				if (nextParsed.timestamp < currentParsed.timestamp) {
+					return false;
 				}
-				if (description) {
-					description.classList.remove(...descriptionClasses);
-					description.classList.add(...indicatorStyle.description);
-					if (typeof payload?.status?.description === "string") {
-						description.textContent = payload.status.description;
-					}
-				}
-				if (updatedAt && typeof payload?.updated_at === "string") {
-					const date = new Date(payload.updated_at);
-					if (!Number.isNaN(date.getTime())) {
-						updatedAt.setAttribute("datetime", date.toISOString());
-						updatedAt.textContent = dateFormatter.format(date);
-					}
-				}
-				if (versionNode && typeof payload?.version === "string") {
-					versionNode.textContent = payload.version;
-				}
+
+				if (nextParsed.timestamp !== currentParsed.timestamp) return true;
+				if (nextParsed.active !== currentParsed.active) return true;
+				if (nextParsed.updates !== currentParsed.updates) return true;
+				if (nextParsed.total !== currentParsed.total) return true;
+				return false;
 			};
 
 			const poll = async () => {
@@ -224,11 +192,20 @@ function renderLiveStatusPollingScript(statusApiPath: string): string {
 					if (response.status === 304) return;
 					if (!response.ok) return;
 					const payload = await response.json();
-					applyPayload(payload);
+					const nextVersion = typeof payload?.version === "string" ? payload.version : null;
+					if (!nextVersion) return;
+					if (shouldReload(nextVersion)) {
+						window.location.reload();
+						return;
+					}
+					const currentParsed = parseVersion(currentVersion);
+					const nextParsed = parseVersion(nextVersion);
+					if (!currentParsed || !nextParsed || nextParsed.timestamp >= currentParsed.timestamp) {
+						currentVersion = nextVersion;
+					}
 				} catch {}
 			};
 
-			poll();
 			window.setInterval(poll, 60_000);
 		})();
 	</script>`;
@@ -264,12 +241,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 
 	const activeAffections = affections.filter((a) => !a.resolvedAt);
 	const hasIssues = activeAffections.length > 0;
-	const {
-		indicator: liveStatusIndicator,
-		description: liveStatusDescription,
-		lastUpdatedAt: liveStatusUpdatedAt,
-		version: liveStatusVersion,
-	} = computeLiveStatusInfo(data, timestamp);
+	const { version: liveStatusVersion } = computeLiveStatusInfo(data, timestamp);
 
 	const normalizeImpact = (impact?: string | null) => {
 		if (!impact) return "degraded";
@@ -663,13 +635,6 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 		footerLinks.push(`<a href="${escapeHtml(page.termsOfServiceUrl)}" class="hover:text-slate-500 transition-colors">Terms of Service</a>`);
 	}
 	const footerLinksHtml = footerLinks.length > 0 ? footerLinks.join('<span class="mx-2">&middot;</span>') : "";
-	const liveStatusStyleMap = {
-		none: { container: "bg-emerald-50 border-emerald-200", dot: "bg-emerald-500", text: "text-emerald-700" },
-		minor: { container: "bg-orange-50 border-orange-200", dot: "bg-orange-500", text: "text-orange-700" },
-		major: { container: "bg-red-50 border-red-200", dot: "bg-red-500", text: "text-red-700" },
-	} as const;
-	const liveStatusStyles = liveStatusStyleMap[liveStatusIndicator];
-
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -885,17 +850,6 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 			</div>
 		</header>
 
-		<div data-live-status class="rounded-lg border p-4 mb-8 ${liveStatusStyles.container}">
-			<div class="flex items-center justify-between gap-2">
-				<div class="flex items-center gap-2 min-w-0">
-					<div data-live-status-dot class="w-2.5 h-2.5 rounded-full ${liveStatusStyles.dot}"></div>
-					<span data-live-status-description class="font-medium ${liveStatusStyles.text}">${escapeHtml(liveStatusDescription)}</span>
-				</div>
-				<span class="text-xs text-slate-500">Updated <time data-live-status-updated data-locale-format="datetime" datetime="${liveStatusUpdatedAt.toISOString()}">${escapeHtml(formatDateTimeFallback(liveStatusUpdatedAt))}</time></span>
-			</div>
-			<span data-live-status-version class="hidden">${escapeHtml(liveStatusVersion)}</span>
-		</div>
-
 		${renderActiveIncidents()}
 
 		${
@@ -922,7 +876,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 		</div>
 	</footer>
 	${renderLocaleDateScript()}
-	${renderLiveStatusPollingScript(statusApiPath)}
+	${renderStatusVersionPollingScript(statusApiPath, liveStatusVersion)}
 </body>
 </html>`;
 }
