@@ -5,12 +5,30 @@ import { client, entryPoint, integration, rotation, rotationOverride, rotationWi
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq, exists, gt, inArray, lt, lte, type SQL, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { resumeHook, start } from "workflow/api";
+import { getRotationScheduleWakeToken, type RotationScheduleWakeAction, rotationScheduleWorkflow } from "~/workflows/rotation/schedule";
 import { authMiddleware } from "../auth/auth-middleware";
 import { uploadImageFromUrl } from "../blob";
 import { db } from "../db";
 import { fetchSlackUserById } from "../slack";
 
 export type { SlackUser } from "../slack";
+
+async function startRotationScheduleWorkflow(rotationId: string): Promise<void> {
+	await start(rotationScheduleWorkflow, [{ rotationId }]);
+}
+
+async function notifyRotationScheduleWorkflow(rotationId: string, signal: { deleted?: boolean; action?: RotationScheduleWakeAction }): Promise<void> {
+	try {
+		await resumeHook(getRotationScheduleWakeToken(rotationId), signal);
+	} catch (error) {
+		console.error("Failed to notify rotation schedule workflow", {
+			rotationId,
+			signal,
+			error,
+		});
+	}
+}
 
 export const getRotations = createServerFn({
 	method: "GET",
@@ -98,11 +116,12 @@ export const createRotation = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { name: string; shiftLength: ShiftLength; anchorAt?: Date; teamId?: string }) => data)
 	.handler(async ({ data, context }) => {
-		if (!data.anchorAt) {
+		let anchorAt = data.anchorAt;
+		if (!anchorAt) {
 			if (data.shiftLength === "1 day") {
-				data.anchorAt = new Date(new Date().setHours(0, 0, 0, 0));
+				anchorAt = new Date(new Date().setHours(0, 0, 0, 0));
 			} else if (data.shiftLength === "1 week" || data.shiftLength === "2 weeks") {
-				data.anchorAt = new Date(new Date(new Date().setDate(new Date().getDate() - new Date().getDay())).setHours(0, 0, 0, 0));
+				anchorAt = new Date(new Date(new Date().setDate(new Date().getDate() - new Date().getDay())).setHours(0, 0, 0, 0));
 			} else {
 				throw new Error("Invalid shift length");
 			}
@@ -114,10 +133,17 @@ export const createRotation = createServerFn({ method: "POST" })
 				clientId: context.clientId,
 				name: data.name,
 				shiftLength: data.shiftLength,
-				anchorAt: data.anchorAt,
+				anchorAt,
 				teamId: data.teamId,
 			})
 			.returning();
+
+		try {
+			await startRotationScheduleWorkflow(newRotation.id);
+		} catch (_error) {
+			await db.delete(rotation).where(and(eq(rotation.id, newRotation.id), eq(rotation.clientId, context.clientId)));
+			throw new Error("Failed to start rotation schedule workflow");
+		}
 
 		return {
 			id: newRotation.id,
@@ -150,6 +176,8 @@ export const deleteRotation = createServerFn({ method: "POST" })
 		if (result.length === 0) {
 			throw new Error("Rotation not found");
 		}
+
+		await notifyRotationScheduleWorkflow(data.id, { deleted: true });
 
 		return { success: true };
 	});
@@ -253,6 +281,8 @@ export const updateRotationShiftLength = createServerFn({ method: "POST" })
 		if (!result) {
 			throw new Error("Failed to update rotation");
 		}
+
+		await notifyRotationScheduleWorkflow(data.id, { action: "update_shift_length" });
 
 		return { id: result.id, shiftLength: result.shiftLength };
 	});
@@ -454,6 +484,8 @@ export const createRotationOverride = createServerFn({ method: "POST" })
 			})
 			.returning({ id: rotationOverride.id });
 
+		await notifyRotationScheduleWorkflow(data.rotationId, { action: "create_override" });
+
 		return { id: createdOverride?.id };
 	});
 
@@ -471,6 +503,7 @@ export const setRotationOverride = createServerFn({ method: "POST" })
 		}
 
 		await db.execute(getSetOverrideSQL(data.rotationId, data.assigneeId));
+		await notifyRotationScheduleWorkflow(data.rotationId, { action: "set_override" });
 
 		return { success: true };
 	});
@@ -496,6 +529,8 @@ export const clearRotationOverride = createServerFn({ method: "POST" })
 		if (deleted.length === 0) {
 			throw new Error("Override not found");
 		}
+
+		await notifyRotationScheduleWorkflow(data.rotationId, { action: "clear_override" });
 
 		return { success: true };
 	});
@@ -531,6 +566,8 @@ export const updateRotationOverride = createServerFn({ method: "POST" })
 			throw new Error("Override not found");
 		}
 
+		await notifyRotationScheduleWorkflow(data.rotationId, { action: "update_override" });
+
 		return { id: updated[0]?.id };
 	});
 
@@ -551,6 +588,8 @@ export const updateRotationAnchor = createServerFn({ method: "POST" })
 		if (!result) {
 			throw new Error("Failed to update rotation anchor");
 		}
+
+		await notifyRotationScheduleWorkflow(data.id, { action: "update_anchor" });
 
 		return { id: result.id, anchorAt: result.anchorAt };
 	});
