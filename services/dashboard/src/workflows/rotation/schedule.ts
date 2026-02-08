@@ -5,7 +5,16 @@ import { db } from "~/lib/db";
 
 const ROTATION_SCHEDULE_POLL_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-export type RotationScheduleWakeAction = "update_anchor" | "update_shift_length" | "create_override" | "set_override" | "update_override" | "clear_override";
+export type RotationScheduleWakeAction =
+	| "update_anchor"
+	| "update_shift_length"
+	| "create_override"
+	| "set_override"
+	| "update_override"
+	| "clear_override"
+	| "add_assignee"
+	| "reorder_assignee"
+	| "remove_assignee";
 
 export type RotationScheduleWakeSignal = {
 	deleted?: boolean;

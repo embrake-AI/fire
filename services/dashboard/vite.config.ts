@@ -8,23 +8,24 @@ import viteTsConfigPaths from "vite-tsconfig-paths";
 import { workflow } from "workflow/vite";
 
 const isProd = process.env.NODE_ENV === "production";
-const workflowPlugins = workflow().filter((plugin) => plugin.name !== "workflow:hot-update");
 
 export default defineConfig({
 	server: {
 		allowedHosts: ["glowing-externally-sloth.ngrok-free.app"],
 	},
 	plugins: [
-		...workflowPlugins,
+		workflow(),
 		!isProd && devtools(),
 		viteTsConfigPaths({
 			projects: ["./tsconfig.json"],
 		}),
+		tailwindcss(),
 		tanstackStart({
 			spa: {
 				enabled: true,
 			},
 		}),
+		solidPlugin({ ssr: true }),
 		nitro({
 			preset: "vercel",
 			vercel: {
@@ -33,7 +34,5 @@ export default defineConfig({
 				},
 			},
 		}),
-		tailwindcss(),
-		solidPlugin({ ssr: true }),
 	],
 });

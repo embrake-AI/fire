@@ -301,6 +301,8 @@ export const addRotationAssignee = createServerFn({ method: "POST" })
 
 		await db.execute(getAddAssigneeSQL(data.rotationId, data.assigneeId));
 
+		await notifyRotationScheduleWorkflow(data.rotationId, { action: "add_assignee" });
+
 		return { success: true };
 	});
 
@@ -380,6 +382,8 @@ export const addSlackUserAsRotationAssignee = createServerFn({ method: "POST" })
 			await tx.execute(getAddAssigneeSQL(data.rotationId, userId));
 		});
 
+		await notifyRotationScheduleWorkflow(data.rotationId, { action: "add_assignee" });
+
 		return { success: true, userId };
 	});
 
@@ -401,6 +405,8 @@ export const reorderRotationAssignee = createServerFn({ method: "POST" })
 			await tx.execute(getMoveAssigneeSQL(data.rotationId, data.assigneeId, data.newPosition));
 		});
 
+		await notifyRotationScheduleWorkflow(data.rotationId, { action: "reorder_assignee" });
+
 		return { success: true };
 	});
 
@@ -421,6 +427,8 @@ export const removeRotationAssignee = createServerFn({ method: "POST" })
 			await tx.execute(sql`set constraints "rotation_member_rotation_position_idx" deferred`);
 			await tx.execute(getRemoveAssigneeSQL(data.rotationId, data.assigneeId, true));
 		});
+
+		await notifyRotationScheduleWorkflow(data.rotationId, { action: "remove_assignee" });
 
 		return { success: true };
 	});
