@@ -2,6 +2,7 @@ import { MutationCache, QueryClient, type QueryClientConfig } from "@tanstack/so
 import { createRouter } from "@tanstack/solid-router";
 import { isServer } from "solid-js/web";
 import { showToast } from "./components/ui/toast";
+import { extractUserFacingMessage, readErrorToastMeta } from "./lib/errors/user-facing-error";
 import { routeTree } from "./routeTree.gen";
 
 const queryClientOptions: QueryClientConfig = {
@@ -35,10 +36,17 @@ function getClientQueryClient() {
 		g.__QUERY_CLIENT__ = new QueryClient({
 			...queryClientOptions,
 			mutationCache: new MutationCache({
-				onError: (error) => {
+				onError: (error, _variables, _context, mutation) => {
+					const toastMeta = readErrorToastMeta(mutation.meta);
+					if (toastMeta?.enabled === false) {
+						return;
+					}
+
+					const description = toastMeta?.userMessage ?? extractUserFacingMessage(error) ?? "Please try again.";
+
 					showToast({
 						title: "Something went wrong",
-						description: error instanceof Error ? error.message : "An unexpected error occurred",
+						description,
 						variant: "error",
 					});
 				},

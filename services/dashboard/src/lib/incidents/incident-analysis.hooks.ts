@@ -4,6 +4,8 @@ import type { Accessor } from "solid-js";
 import { createIncidentAction, deleteIncidentAction, updateAnalysisImpact, updateAnalysisRootCause, updateAnalysisTimeline, updateIncidentAction } from "./incident-analysis";
 import type { IncidentAnalysis } from "./incidents";
 
+const isOptimisticActionId = (id: string) => id.startsWith("temp-");
+
 export function useUpdateAnalysisImpact(incidentId: Accessor<string>) {
 	const queryClient = useQueryClient();
 	const updateFn = useServerFn(updateAnalysisImpact);
@@ -106,7 +108,13 @@ export function useDeleteIncidentAction(incidentId: Accessor<string>) {
 	const deleteFn = useServerFn(deleteIncidentAction);
 
 	return useMutation(() => ({
-		mutationFn: async (id: string) => deleteFn({ data: { id } }),
+		mutationFn: async (id: string) => {
+			if (isOptimisticActionId(id)) {
+				return { id, skippedOptimisticDelete: true as const };
+			}
+			await deleteFn({ data: { id } });
+			return { id, skippedOptimisticDelete: false as const };
+		},
 
 		onMutate: async (id) => {
 			await queryClient.cancelQueries({ queryKey: ["analysis", incidentId()] });
@@ -118,8 +126,11 @@ export function useDeleteIncidentAction(incidentId: Accessor<string>) {
 			return { previous };
 		},
 
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["analysis", incidentId()] });
+		onSuccess: (result) => {
+			if (result.skippedOptimisticDelete) {
+				return;
+			}
+			void queryClient.invalidateQueries({ queryKey: ["analysis", incidentId()] });
 		},
 
 		onError: (_err, _variables, context) => {
@@ -133,6 +144,7 @@ export function useDeleteIncidentAction(incidentId: Accessor<string>) {
 export function useCreateIncidentAction(incidentId: Accessor<string>) {
 	const queryClient = useQueryClient();
 	const createFn = useServerFn(createIncidentAction);
+	const deleteFn = useServerFn(deleteIncidentAction);
 
 	return useMutation(() => ({
 		mutationFn: async (description: string) => createFn({ data: { incidentId: incidentId(), description } }),
@@ -140,16 +152,45 @@ export function useCreateIncidentAction(incidentId: Accessor<string>) {
 		onMutate: async (description) => {
 			await queryClient.cancelQueries({ queryKey: ["analysis", incidentId()] });
 			const previous = queryClient.getQueryData<IncidentAnalysis>(["analysis", incidentId()]);
+			const tempId = `temp-${Date.now()}`;
 			if (previous) {
-				const tempId = `temp-${Date.now()}`;
 				const actions = [...previous.actions, { id: tempId, description: description.trim() }];
 				queryClient.setQueryData(["analysis", incidentId()], { ...previous, actions });
 			}
-			return { previous };
+			return { previous, tempId };
 		},
 
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["analysis", incidentId()] });
+		onSuccess: async (created, _variables, context) => {
+			const tempId = context?.tempId;
+			let removedBeforePersist = false;
+
+			if (tempId) {
+				queryClient.setQueryData<IncidentAnalysis>(["analysis", incidentId()], (current) => {
+					if (!current) {
+						return current;
+					}
+
+					const actionIndex = current.actions.findIndex((action) => action.id === tempId);
+					if (actionIndex === -1) {
+						removedBeforePersist = true;
+						return current;
+					}
+
+					const actions = [...current.actions];
+					actions[actionIndex] = created;
+					return { ...current, actions };
+				});
+			}
+
+			if (removedBeforePersist) {
+				try {
+					await deleteFn({ data: { id: created.id } });
+				} catch {
+					// Best-effort cleanup when a temporary action was deleted before persistence.
+				}
+			}
+
+			void queryClient.invalidateQueries({ queryKey: ["analysis", incidentId()] });
 		},
 
 		onError: (_err, _variables, context) => {

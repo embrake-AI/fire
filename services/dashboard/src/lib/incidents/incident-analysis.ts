@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/solid-start";
 import { and, eq, exists } from "drizzle-orm";
 import { authMiddleware } from "../auth/auth-middleware";
 import { db } from "../db";
+import { createUserFacingError } from "../errors/user-facing-error";
 
 export const updateAnalysisImpact = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; impact: string }) => data)
@@ -13,7 +14,7 @@ export const updateAnalysisImpact = createServerFn({ method: "POST" })
 			.set({ impact: data.impact.trim() || null })
 			.where(and(eq(incidentAnalysis.id, data.id), eq(incidentAnalysis.clientId, context.clientId)))
 			.returning({ id: incidentAnalysis.id });
-		if (!updated) throw new Error("Analysis not found");
+		if (!updated) throw createUserFacingError("This analysis is no longer available.");
 		return updated;
 	});
 
@@ -26,7 +27,7 @@ export const updateAnalysisRootCause = createServerFn({ method: "POST" })
 			.set({ rootCause: data.rootCause.trim() || null })
 			.where(and(eq(incidentAnalysis.id, data.id), eq(incidentAnalysis.clientId, context.clientId)))
 			.returning({ id: incidentAnalysis.id });
-		if (!updated) throw new Error("Analysis not found");
+		if (!updated) throw createUserFacingError("This analysis is no longer available.");
 		return updated;
 	});
 
@@ -40,7 +41,7 @@ export const updateAnalysisTimeline = createServerFn({ method: "POST" })
 			.set({ timeline: filtered.length ? filtered : null })
 			.where(and(eq(incidentAnalysis.id, data.id), eq(incidentAnalysis.clientId, context.clientId)))
 			.returning({ id: incidentAnalysis.id });
-		if (!updated) throw new Error("Analysis not found");
+		if (!updated) throw createUserFacingError("This analysis is no longer available.");
 		return updated;
 	});
 
@@ -59,7 +60,7 @@ export const updateIncidentAction = createServerFn({ method: "POST" })
 			.set({ description: data.description.trim() })
 			.where(and(eq(incidentAction.id, data.id), ownsAction))
 			.returning({ id: incidentAction.id, incidentId: incidentAction.incidentId });
-		if (!updated) throw new Error("Action not found");
+		if (!updated) throw createUserFacingError("This action no longer exists.");
 		return updated;
 	});
 
@@ -77,7 +78,7 @@ export const deleteIncidentAction = createServerFn({ method: "POST" })
 			.delete(incidentAction)
 			.where(and(eq(incidentAction.id, data.id), ownsAction))
 			.returning({ id: incidentAction.id });
-		if (!deleted) throw new Error("Action not found");
+		if (!deleted) throw createUserFacingError("This action no longer exists.");
 		return deleted;
 	});
 
@@ -89,7 +90,7 @@ export const createIncidentAction = createServerFn({ method: "POST" })
 			.select({ id: incidentAnalysis.id })
 			.from(incidentAnalysis)
 			.where(and(eq(incidentAnalysis.id, data.incidentId), eq(incidentAnalysis.clientId, context.clientId)));
-		if (!analysis) throw new Error("Incident not found");
+		if (!analysis) throw createUserFacingError("This incident is no longer available.");
 		const [created] = await db
 			.insert(incidentAction)
 			.values({ incidentId: data.incidentId, description: data.description.trim() })

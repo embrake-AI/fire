@@ -4,6 +4,7 @@ import { createServerFn } from "@tanstack/solid-start";
 import { and, eq } from "drizzle-orm";
 import { authMiddleware } from "../auth/auth-middleware";
 import { db } from "../db";
+import { createUserFacingError } from "../errors/user-facing-error";
 import type { IncidentAction, IncidentAnalysis } from "../incidents/incidents";
 import { createNotionPage, postMortemToNotionBlocks, searchNotionPages } from "./notion";
 
@@ -40,12 +41,12 @@ export const exportToNotion = createServerFn({ method: "POST" })
 			.limit(1);
 
 		if (!notionIntegration?.data) {
-			throw new Error("Notion integration not found");
+			throw createUserFacingError("Notion isn't connected to this workspace.");
 		}
 
 		const integrationData = notionIntegration.data as NotionIntegrationData;
 		if (!integrationData.accessToken) {
-			throw new Error("Notion integration not found");
+			throw createUserFacingError("Notion isn't connected to this workspace.");
 		}
 
 		const analysis = await db.query.incidentAnalysis.findFirst({
@@ -62,7 +63,7 @@ export const exportToNotion = createServerFn({ method: "POST" })
 		});
 
 		if (!analysis) {
-			throw new Error("Incident analysis not found");
+			throw createUserFacingError("This analysis is no longer available.");
 		}
 
 		const fullAnalysis: IncidentAnalysis = {
