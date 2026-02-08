@@ -1,5 +1,5 @@
 import type { incidentAffection, incidentAffectionService, incidentAffectionUpdate, service, statusPage } from "@fire/db/schema";
-import type { InferSelectModel } from "drizzle-orm";
+import { type InferSelectModel, sql } from "drizzle-orm";
 import { db } from "./db";
 import { normalizeDomain } from "./status-pages.utils";
 
@@ -8,6 +8,45 @@ type ServiceRow = InferSelectModel<typeof service>;
 type IncidentAffectionRow = InferSelectModel<typeof incidentAffection>;
 type IncidentAffectionServiceRow = InferSelectModel<typeof incidentAffectionService>;
 type IncidentAffectionUpdateRow = InferSelectModel<typeof incidentAffectionUpdate>;
+
+const PUBLIC_PAGE_COLUMNS = {
+	id: true,
+	clientId: true,
+	name: true,
+	slug: true,
+	logoUrl: true,
+	faviconUrl: true,
+	serviceDisplayMode: true,
+	customDomain: true,
+	privacyPolicyUrl: true,
+	supportUrl: true,
+	termsOfServiceUrl: true,
+	createdAt: true,
+	updatedAt: true,
+} as const;
+
+const INCIDENT_DETAIL_PAGE_COLUMNS = {
+	id: true,
+	clientId: true,
+	name: true,
+	slug: true,
+	logoUrl: true,
+	faviconUrl: true,
+	serviceDisplayMode: true,
+	supportUrl: true,
+	privacyPolicyUrl: true,
+	termsOfServiceUrl: true,
+	createdAt: true,
+	updatedAt: true,
+} as const;
+
+const SNAPSHOT_PAGE_COLUMNS = {
+	id: true,
+	name: true,
+	slug: true,
+	createdAt: true,
+	updatedAt: true,
+} as const;
 
 export type StatusPageService = Pick<ServiceRow, "id" | "name" | "imageUrl"> & {
 	position: number | null;
@@ -48,14 +87,23 @@ function sortStatusPageServices(services: StatusPageService[]) {
 }
 
 async function buildStatusPagePublicData(pageRow: StatusPageRow): Promise<StatusPagePublicData> {
-	const client = await db.query.client.findFirst({
-		where: {
-			id: pageRow.clientId,
-		},
-		columns: {
-			image: true,
-		},
-	});
+	// Phase 1: load page metadata and linked services.
+	const [client, serviceLinks] = await Promise.all([
+		db.query.client.findFirst({
+			where: { id: pageRow.clientId },
+			columns: { image: true },
+		}),
+		db.query.statusPageService.findMany({
+			where: { statusPageId: pageRow.id },
+			columns: { position: true, description: true },
+			with: {
+				service: {
+					columns: { id: true, name: true, imageUrl: true, createdAt: true },
+				},
+			},
+			orderBy: (table, { asc }) => [asc(table.position)],
+		}),
+	]);
 
 	const page: StatusPageSummary = {
 		id: pageRow.id,
@@ -72,73 +120,38 @@ async function buildStatusPagePublicData(pageRow: StatusPageRow): Promise<Status
 		clientImage: client?.image ?? null,
 	};
 
-	const services = await db.query.statusPageService.findMany({
-		where: {
-			statusPageId: page.id,
-		},
-		columns: {
-			position: true,
-			description: true,
-		},
-		with: {
-			service: {
-				columns: {
-					id: true,
-					name: true,
-					imageUrl: true,
-					createdAt: true,
-				},
-			},
-		},
-		orderBy: (table, { asc }) => [asc(table.position)],
-	});
+	const mappedServices: StatusPageService[] = [];
+	for (const link of serviceLinks) {
+		if (!link.service) continue;
+		mappedServices.push({
+			id: link.service.id,
+			name: link.service.name,
+			description: link.description,
+			imageUrl: link.service.imageUrl,
+			position: link.position,
+			createdAt: link.service.createdAt,
+		});
+	}
+	const services = sortStatusPageServices(mappedServices);
 
-	const serviceRows = services
-		.map((row) => {
-			if (!row.service) return null;
-			return {
-				id: row.service.id,
-				name: row.service.name,
-				description: row.description,
-				imageUrl: row.service.imageUrl,
-				position: row.position,
-				createdAt: row.service.createdAt,
-			};
-		})
-		.filter((row): row is NonNullable<typeof row> => row !== null);
-	const sortedServiceRows = sortStatusPageServices(serviceRows);
-
-	const serviceIds = sortedServiceRows.map((row) => row.id);
+	const serviceIds = services.map((service) => service.id);
 	if (serviceIds.length === 0) {
-		return { page, services: sortedServiceRows, affections: [], updates: [] } satisfies StatusPagePublicData;
+		return { page, services, affections: [], updates: [] };
 	}
 
-	const affectionRows = await db.query.incidentAffectionService.findMany({
-		where: {
-			serviceId: {
-				in: serviceIds,
-			},
-		},
-		columns: {
-			serviceId: true,
-			impact: true,
-		},
+	// Phase 2: load incident affections that touch those services.
+	const serviceAffections = await db.query.incidentAffectionService.findMany({
+		where: { serviceId: { in: serviceIds } },
+		columns: { serviceId: true, impact: true },
 		with: {
 			affection: {
-				columns: {
-					id: true,
-					incidentId: true,
-					title: true,
-					createdAt: true,
-					updatedAt: true,
-					resolvedAt: true,
-				},
+				columns: { id: true, incidentId: true, title: true, createdAt: true, updatedAt: true, resolvedAt: true },
 			},
 		},
 	});
 
 	const affectionMap = new Map<string, StatusPageAffection>();
-	for (const row of affectionRows) {
+	for (const row of serviceAffections) {
 		const affection = row.affection;
 		if (!affection) {
 			continue;
@@ -162,49 +175,23 @@ async function buildStatusPagePublicData(pageRow: StatusPageRow): Promise<Status
 	const affections = Array.from(affectionMap.values());
 	const affectionIds = affections.map((affection) => affection.id);
 	if (affectionIds.length === 0) {
-		return { page, services: sortedServiceRows, affections, updates: [] } satisfies StatusPagePublicData;
+		return { page, services, affections, updates: [] };
 	}
 
+	// Phase 3: load updates once for all matched affections.
 	const updates = await db.query.incidentAffectionUpdate.findMany({
-		where: {
-			affectionId: {
-				in: affectionIds,
-			},
-		},
-		columns: {
-			id: true,
-			affectionId: true,
-			status: true,
-			message: true,
-			createdAt: true,
-			createdBy: true,
-		},
+		where: { affectionId: { in: affectionIds } },
+		columns: { id: true, affectionId: true, status: true, message: true, createdAt: true, createdBy: true },
 		orderBy: (table, { asc }) => [asc(table.createdAt)],
 	});
 
-	return { page, services: sortedServiceRows, affections, updates } satisfies StatusPagePublicData;
+	return { page, services, affections, updates };
 }
 
 export async function fetchPublicStatusPageBySlug(slug: string): Promise<StatusPagePublicData | null> {
 	const pageRow = await db.query.statusPage.findFirst({
-		where: {
-			slug,
-		},
-		columns: {
-			id: true,
-			clientId: true,
-			name: true,
-			slug: true,
-			logoUrl: true,
-			faviconUrl: true,
-			serviceDisplayMode: true,
-			customDomain: true,
-			privacyPolicyUrl: true,
-			supportUrl: true,
-			termsOfServiceUrl: true,
-			createdAt: true,
-			updatedAt: true,
-		},
+		where: { slug },
+		columns: PUBLIC_PAGE_COLUMNS,
 	});
 
 	if (!pageRow) {
@@ -221,24 +208,8 @@ export async function fetchPublicStatusPageByDomain(domain: string): Promise<Sta
 	}
 
 	const pageRow = await db.query.statusPage.findFirst({
-		where: {
-			customDomain: normalizedDomain,
-		},
-		columns: {
-			id: true,
-			clientId: true,
-			name: true,
-			slug: true,
-			logoUrl: true,
-			faviconUrl: true,
-			serviceDisplayMode: true,
-			customDomain: true,
-			privacyPolicyUrl: true,
-			supportUrl: true,
-			termsOfServiceUrl: true,
-			createdAt: true,
-			updatedAt: true,
-		},
+		where: { customDomain: normalizedDomain },
+		columns: PUBLIC_PAGE_COLUMNS,
 	});
 
 	if (!pageRow) {
@@ -331,34 +302,90 @@ export type IncidentDetailData = {
 	};
 };
 
-function buildIncidentDetailData(data: StatusPagePublicData, incidentId: string): IncidentDetailData | null {
-	const affection = data.affections.find((a) => a.id === incidentId);
+async function fetchIncidentDetailDirect(
+	pageRow: Pick<
+		StatusPageRow,
+		"id" | "clientId" | "name" | "slug" | "logoUrl" | "faviconUrl" | "serviceDisplayMode" | "supportUrl" | "privacyPolicyUrl" | "termsOfServiceUrl" | "createdAt" | "updatedAt"
+	>,
+	incidentId: string,
+): Promise<IncidentDetailData | null> {
+	// Phase 1: load page metadata and service IDs for this status page.
+	const [client, pageServices] = await Promise.all([
+		db.query.client.findFirst({
+			where: { id: pageRow.clientId },
+			columns: { image: true },
+		}),
+		db.query.statusPageService.findMany({
+			where: { statusPageId: pageRow.id },
+			columns: { serviceId: true },
+		}),
+	]);
+
+	const page: StatusPageSummary = {
+		id: pageRow.id,
+		name: pageRow.name,
+		slug: pageRow.slug,
+		logoUrl: pageRow.logoUrl,
+		faviconUrl: pageRow.faviconUrl,
+		serviceDisplayMode: pageRow.serviceDisplayMode,
+		supportUrl: pageRow.supportUrl,
+		privacyPolicyUrl: pageRow.privacyPolicyUrl,
+		termsOfServiceUrl: pageRow.termsOfServiceUrl,
+		createdAt: pageRow.createdAt,
+		updatedAt: pageRow.updatedAt,
+		clientImage: client?.image ?? null,
+	};
+
+	const serviceIds = pageServices.map((serviceLink) => serviceLink.serviceId);
+	if (serviceIds.length === 0) {
+		return null;
+	}
+
+	// Phase 2: load the requested incident (scoped to page services) plus its updates.
+	const [serviceAffections, updateRows] = await Promise.all([
+		db.query.incidentAffectionService.findMany({
+			where: { affectionId: incidentId, serviceId: { in: serviceIds } },
+			columns: { serviceId: true, impact: true },
+			with: {
+				service: {
+					columns: { id: true, name: true },
+				},
+				affection: {
+					columns: { id: true, title: true, createdAt: true, resolvedAt: true },
+				},
+			},
+		}),
+		db.query.incidentAffectionUpdate.findMany({
+			where: { affectionId: incidentId },
+			columns: { id: true, status: true, message: true, createdAt: true },
+			orderBy: (table, { desc }) => [desc(table.createdAt)],
+		}),
+	]);
+	if (serviceAffections.length === 0) {
+		return null;
+	}
+
+	const affection = serviceAffections[0]?.affection;
 	if (!affection) {
 		return null;
 	}
 
-	const severity: "partial" | "major" = affection.services.some((s) => s.impact === "major") ? "major" : "partial";
-	const affectedServices = affection.services.map((s) => {
-		const service = data.services.find((svc) => svc.id === s.id);
-		return {
-			id: s.id,
-			name: service?.name ?? "Unknown Service",
-			impact: s.impact,
-		};
-	});
+	const severity: "partial" | "major" = serviceAffections.some((service) => service.impact === "major") ? "major" : "partial";
+	const affectedServices = serviceAffections.map((service) => ({
+		id: service.serviceId,
+		name: service.service?.name ?? "Unknown Service",
+		impact: service.impact,
+	}));
 
-	const updates = data.updates
-		.filter((u) => u.affectionId === affection.id)
-		.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-		.map((u) => ({
-			id: u.id,
-			status: u.status,
-			message: u.message,
-			createdAt: u.createdAt,
-		}));
+	const updates = updateRows.map((update) => ({
+		id: update.id,
+		status: update.status,
+		message: update.message,
+		createdAt: update.createdAt,
+	}));
 
 	return {
-		page: data.page,
+		page,
 		incident: {
 			id: affection.id,
 			title: affection.title,
@@ -372,21 +399,32 @@ function buildIncidentDetailData(data: StatusPagePublicData, incidentId: string)
 }
 
 export async function fetchIncidentDetailByDomain(domain: string, incidentId: string): Promise<IncidentDetailData | null> {
-	const data = await fetchPublicStatusPageByDomain(domain);
-	if (!data) {
+	const normalizedDomain = normalizeDomain(domain);
+	if (!normalizedDomain) {
 		return null;
 	}
 
-	return buildIncidentDetailData(data, incidentId);
+	const pageRow = await db.query.statusPage.findFirst({
+		where: { customDomain: normalizedDomain },
+		columns: INCIDENT_DETAIL_PAGE_COLUMNS,
+	});
+	if (!pageRow) {
+		return null;
+	}
+
+	return fetchIncidentDetailDirect(pageRow, incidentId);
 }
 
 export async function fetchIncidentDetailBySlug(slug: string, incidentId: string): Promise<IncidentDetailData | null> {
-	const data = await fetchPublicStatusPageBySlug(slug);
-	if (!data) {
+	const pageRow = await db.query.statusPage.findFirst({
+		where: { slug },
+		columns: INCIDENT_DETAIL_PAGE_COLUMNS,
+	});
+	if (!pageRow) {
 		return null;
 	}
 
-	return buildIncidentDetailData(data, incidentId);
+	return fetchIncidentDetailDirect(pageRow, incidentId);
 }
 
 export type StatusSnapshotData = {
@@ -451,41 +489,91 @@ export function computeLiveStatusInfo(data: StatusPagePublicData, fallbackTimest
 	return { indicator, description, lastUpdatedAt, version };
 }
 
-function buildStatusSnapshotData(data: StatusPagePublicData): StatusSnapshotData {
-	const activeAffections = data.affections.filter((affection) => !affection.resolvedAt);
-	const activeMajorIncidentCount = activeAffections.filter((affection) => affection.services.some((service) => service.impact === "major")).length;
-	const activePartialIncidentCount = activeAffections.length - activeMajorIncidentCount;
-	const liveStatus = computeLiveStatusInfo(data);
+type SnapshotAggregateRow = {
+	total_affection_count: string;
+	active_count: string;
+	active_major_count: string;
+	total_update_count: string;
+	max_event_ts: string | null;
+};
+
+async function fetchStatusSnapshotDirect(pageRow: Pick<StatusPageRow, "id" | "name" | "slug" | "createdAt" | "updatedAt">): Promise<StatusSnapshotData> {
+	const { rows } = await db.execute<SnapshotAggregateRow>(sql`
+		WITH page_affections AS (
+			SELECT DISTINCT ia.id, ia.created_at, ia.updated_at, ia.resolved_at,
+				BOOL_OR(ias.impact = 'major') as has_major
+			FROM status_page_service sps
+			JOIN incident_affection_service ias ON ias.service_id = sps.service_id
+			JOIN incident_affection ia ON ia.id = ias.affection_id
+			WHERE sps.status_page_id = ${pageRow.id}
+			GROUP BY ia.id, ia.created_at, ia.updated_at, ia.resolved_at
+		)
+		SELECT
+			COALESCE(COUNT(*), 0) as total_affection_count,
+			COALESCE(COUNT(*) FILTER (WHERE resolved_at IS NULL), 0) as active_count,
+			COALESCE(COUNT(*) FILTER (WHERE resolved_at IS NULL AND has_major), 0) as active_major_count,
+			(SELECT COALESCE(COUNT(*), 0) FROM incident_affection_update
+			 WHERE affection_id IN (SELECT id FROM page_affections)) as total_update_count,
+			GREATEST(
+				MAX(created_at), MAX(updated_at), MAX(resolved_at),
+				(SELECT MAX(created_at) FROM incident_affection_update
+				 WHERE affection_id IN (SELECT id FROM page_affections))
+			) as max_event_ts
+		FROM page_affections
+	`);
+
+	const row = rows[0];
+	const totalAffectionCount = Number(row?.total_affection_count ?? 0);
+	const activeCount = Number(row?.active_count ?? 0);
+	const activeMajorCount = Number(row?.active_major_count ?? 0);
+	const activePartialCount = activeCount - activeMajorCount;
+	const totalUpdateCount = Number(row?.total_update_count ?? 0);
+
+	const candidates = [toTimestamp(pageRow.createdAt), toTimestamp(pageRow.updatedAt), row?.max_event_ts ? new Date(row.max_event_ts).getTime() : null].filter(
+		(v): v is number => v !== null && Number.isFinite(v),
+	);
+
+	const lastUpdatedAt = new Date(candidates.length > 0 ? Math.max(...candidates) : Date.now());
+	const version = `${lastUpdatedAt.getTime()}-${activeCount}-${totalUpdateCount}-${totalAffectionCount}`;
 
 	return {
-		page: {
-			id: data.page.id,
-			name: data.page.name,
-			slug: data.page.slug,
-		},
-		overallStatus: activeAffections.length > 0 ? "issues" : "operational",
-		hasActiveIncidents: activeAffections.length > 0,
-		activeIncidentCount: activeAffections.length,
-		activeMajorIncidentCount,
-		activePartialIncidentCount,
-		totalIncidentCount: data.affections.length,
-		lastUpdatedAt: liveStatus.lastUpdatedAt,
-		version: liveStatus.version,
+		page: { id: pageRow.id, name: pageRow.name, slug: pageRow.slug },
+		overallStatus: activeCount > 0 ? "issues" : "operational",
+		hasActiveIncidents: activeCount > 0,
+		activeIncidentCount: activeCount,
+		activeMajorIncidentCount: activeMajorCount,
+		activePartialIncidentCount: activePartialCount,
+		totalIncidentCount: totalAffectionCount,
+		lastUpdatedAt,
+		version,
 	};
 }
 
 export async function fetchStatusSnapshotByDomain(domain: string): Promise<StatusSnapshotData | null> {
-	const data = await fetchPublicStatusPageByDomain(domain);
-	if (!data) {
+	const normalizedDomain = normalizeDomain(domain);
+	if (!normalizedDomain) {
 		return null;
 	}
-	return buildStatusSnapshotData(data);
+
+	const pageRow = await db.query.statusPage.findFirst({
+		where: { customDomain: normalizedDomain },
+		columns: SNAPSHOT_PAGE_COLUMNS,
+	});
+	if (!pageRow) {
+		return null;
+	}
+
+	return fetchStatusSnapshotDirect(pageRow);
 }
 
 export async function fetchStatusSnapshotBySlug(slug: string): Promise<StatusSnapshotData | null> {
-	const data = await fetchPublicStatusPageBySlug(slug);
-	if (!data) {
+	const pageRow = await db.query.statusPage.findFirst({
+		where: { slug },
+		columns: SNAPSHOT_PAGE_COLUMNS,
+	});
+	if (!pageRow) {
 		return null;
 	}
-	return buildStatusSnapshotData(data);
+
+	return fetchStatusSnapshotDirect(pageRow);
 }
