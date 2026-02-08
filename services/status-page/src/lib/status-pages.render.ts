@@ -187,7 +187,6 @@ function renderStatusVersionPollingScript(statusApiPath: string, initialVersion:
 
 			const poll = async () => {
 				try {
-					if (document.visibilityState !== "visible") return;
 					const response = await fetch(statusApiPath, { credentials: "omit" });
 					if (response.status === 304) return;
 					if (!response.ok) return;
