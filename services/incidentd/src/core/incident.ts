@@ -19,7 +19,8 @@ const SERVICES_KEY = "SV";
 const AGENT_STATE_KEY = "AG";
 const ALARM_INTERVAL_MS = 200;
 const MAX_ATTEMPTS = 3;
-const AGENT_DEBOUNCE_MS = 30_000;
+const AGENT_INITIAL_DEBOUNCE_MS = 60_000;
+const AGENT_DEBOUNCE_MS = 10_000;
 
 type AgentState = {
 	lastProcessedEventId: number;
@@ -336,8 +337,10 @@ export class Incident extends DurableObject<Env> {
 		const toEventId = lastDispatchedEventId ?? agentState.toEventId;
 		if (lastDispatchedEventId !== null) {
 			agentState.toEventId = lastDispatchedEventId;
-			// Fixed delay: only schedule on first event in the burst.
-			if (agentState.nextAt === undefined) {
+			// First agent turn waits longer; afterwards use trailing-edge debounce.
+			if (agentState.lastProcessedEventId === 0) {
+				agentState.nextAt = now + AGENT_INITIAL_DEBOUNCE_MS;
+			} else {
 				agentState.nextAt = now + AGENT_DEBOUNCE_MS;
 			}
 			this.setAgentState(agentState);
