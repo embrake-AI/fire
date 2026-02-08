@@ -221,6 +221,7 @@ function renderLiveStatusPollingScript(statusApiPath: string): string {
 				try {
 					if (document.visibilityState !== "visible") return;
 					const response = await fetch(statusApiPath, { credentials: "omit" });
+					if (response.status === 304) return;
 					if (!response.ok) return;
 					const payload = await response.json();
 					applyPayload(payload);
@@ -228,7 +229,7 @@ function renderLiveStatusPollingScript(statusApiPath: string): string {
 			};
 
 			poll();
-			window.setInterval(poll, 10_000);
+			window.setInterval(poll, 60_000);
 		})();
 	</script>`;
 }
