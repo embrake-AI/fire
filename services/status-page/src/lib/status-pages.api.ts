@@ -26,24 +26,8 @@ function buildSnapshotPayload(snapshot: StatusSnapshotData): StatusSnapshotApiPa
 	};
 }
 
-export function buildStatusSnapshotResponse(options: { snapshot: StatusSnapshotData; ifNoneMatch?: string | null }): Response {
-	const { snapshot, ifNoneMatch } = options;
-	const etag = `"${snapshot.version}"`;
-
-	if (ifNoneMatch === etag) {
-		return new Response(null, {
-			status: 304,
-			headers: {
-				...STATUS_API_CORS_HEADERS,
-				"Cache-Control": STATUS_API_CACHE_CONTROL,
-				"CDN-Cache-Control": STATUS_API_CDN_CACHE_CONTROL,
-				"Vercel-CDN-Cache-Control": STATUS_API_CDN_CACHE_CONTROL,
-				ETag: etag,
-				"Last-Modified": snapshot.lastUpdatedAt.toUTCString(),
-			},
-		});
-	}
-
+export function buildStatusSnapshotResponse(options: { snapshot: StatusSnapshotData }): Response {
+	const { snapshot } = options;
 	const payload = buildSnapshotPayload(snapshot);
 	return new Response(JSON.stringify(payload), {
 		status: 200,
@@ -53,8 +37,6 @@ export function buildStatusSnapshotResponse(options: { snapshot: StatusSnapshotD
 			"Cache-Control": STATUS_API_CACHE_CONTROL,
 			"CDN-Cache-Control": STATUS_API_CDN_CACHE_CONTROL,
 			"Vercel-CDN-Cache-Control": STATUS_API_CDN_CACHE_CONTROL,
-			ETag: etag,
-			"Last-Modified": snapshot.lastUpdatedAt.toUTCString(),
 		},
 	});
 }

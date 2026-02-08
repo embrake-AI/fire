@@ -31,8 +31,5 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 		return new Response("Not found", { status: 404 });
 	}
 
-	return buildStatusSnapshotResponse({
-		snapshot,
-		ifNoneMatch: request.headers.get("if-none-match"),
-	});
+	return buildStatusSnapshotResponse({ snapshot });
 }
