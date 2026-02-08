@@ -19,6 +19,7 @@ import {
 	updateRotationName,
 	updateRotationOverride,
 	updateRotationShiftLength,
+	updateRotationSlackChannel,
 	updateRotationTeam,
 } from "./rotations";
 
@@ -78,6 +79,7 @@ export function useCreateRotation(options?: { onMutate?: (tempId: string) => voi
 			const optimisticRotation = {
 				id: tempId,
 				name: newData.name,
+				slackChannelId: null,
 				shiftStart: new Date(),
 				shiftLength: newData.shiftLength,
 				assignees: [],
@@ -200,6 +202,39 @@ export function useUpdateRotationTeam(options?: { onMutate?: () => void; onSucce
 			options?.onSuccess?.();
 			queryClient.invalidateQueries({ queryKey: ["rotations"] });
 			queryClient.invalidateQueries({ queryKey: ["teams"] });
+		},
+
+		onError: (_err, _variables, context) => {
+			if (context?.previousRotations) {
+				queryClient.setQueryData(["rotations"], context.previousRotations);
+			}
+			options?.onError?.();
+		},
+	}));
+}
+
+export function useUpdateRotationSlackChannel(options?: { onMutate?: () => void; onSuccess?: () => void; onError?: () => void }) {
+	const queryClient = useQueryClient();
+	const updateRotationSlackChannelFn = useServerFn(updateRotationSlackChannel);
+
+	return useMutation(() => ({
+		mutationFn: (data: { id: string; slackChannelId: string | null }) => updateRotationSlackChannelFn({ data }),
+
+		onMutate: async ({ id, slackChannelId }) => {
+			await queryClient.cancelQueries({ queryKey: ["rotations"] });
+
+			const previousRotations = queryClient.getQueryData<GetRotationsResponse>(["rotations"]);
+
+			queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) => old?.map((r) => (r.id === id ? { ...r, slackChannelId } : r)));
+
+			options?.onMutate?.();
+
+			return { previousRotations };
+		},
+
+		onSuccess: () => {
+			options?.onSuccess?.();
+			queryClient.invalidateQueries({ queryKey: ["rotations"] });
 		},
 
 		onError: (_err, _variables, context) => {

@@ -49,8 +49,24 @@ export const createRotation = createServerFn({ method: "POST" })
     // context.clientId, context.userId available from middleware
     const [newRotation] = await db.insert(rotation).values({ ... }).returning();
     return { id: newRotation.id };
-  });
+});
 ```
+
+---
+
+## User-Facing Errors
+
+When a server function fails due to user-correctable conditions (invalid selection, missing integration, missing record, permission/state constraints), throw `createUserFacingError(...)` from `src/lib/errors/user-facing-error.ts` instead of `new Error(...)`.
+
+```tsx
+import { createUserFacingError } from "~/lib/errors/user-facing-error";
+
+if (!workspaceSlackConnected) {
+  throw createUserFacingError("Slack isn't connected to this workspace.");
+}
+```
+
+Use `new Error(...)` only for internal/programmer errors that should not be shown directly to end users.
 
 ---
 

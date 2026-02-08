@@ -1,23 +1,6 @@
-import { sql } from "drizzle-orm";
-import { interval, pgView, text, timestamp, uuid } from "drizzle-orm/pg-core";
-import { rotation } from "./rotation";
-import { rotationMember } from "./rotation-member";
-import { rotationOverride } from "./rotation-override";
-
-export const rotationWithAssignee = pgView("rotationWithAssignee", {
-	id: uuid("id").notNull(),
-	name: text("name").notNull(),
-	slackChannelId: text("slack_channel_id"),
-	teamId: uuid("team_id"),
-	clientId: text("client_id").notNull(),
-	shiftStart: timestamp("shift_start", { withTimezone: true }),
-	shiftLength: interval("shift_length").notNull(),
-	assignees: text("assignees").array().notNull(),
-	effectiveAssignee: text("effective_assignee"),
-	baseAssignee: text("base_assignee"),
-	createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
-}).as(sql`
+DROP VIEW "rotationWithAssignee";--> statement-breakpoint
+ALTER TABLE "rotation" ADD COLUMN "slack_channel_id" text;--> statement-breakpoint
+CREATE VIEW "rotationWithAssignee" AS (
 	select
 		r.id as "id",
 		r.name as "name",
@@ -31,17 +14,17 @@ export const rotationWithAssignee = pgView("rotationWithAssignee", {
 		r.created_at as "created_at",
 		r.updated_at as "updated_at",
 		r.team_id as "team_id"
-	from ${rotation} r
+	from "rotation" r
 	left join lateral (
 		select
 			count(*)::int as n,
 			array_agg(rm.assignee_id order by rm.position) as assignees
-		from ${rotationMember} rm
+		from "rotation_member" rm
 		where rm.rotation_id = r.id
 	) m on true
 	left join lateral (
 		select rm.assignee_id as base_assignee
-		from ${rotationMember} rm
+		from "rotation_member" rm
 		where rm.rotation_id = r.id
 			and rm.position = case
 				when m.n = 0 then null
@@ -60,11 +43,11 @@ export const rotationWithAssignee = pgView("rotationWithAssignee", {
 	) b on true
 	left join lateral (
 		select ro.id, ro.assignee_id
-		from ${rotationOverride} ro
+		from "rotation_override" ro
 		where ro.rotation_id = r.id
 			and ro.start_at <= now()
 			and ro.end_at > now()
 		order by ro.created_at desc, ro.id desc
 		limit 1
 	) o on true
-`);
+);

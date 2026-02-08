@@ -3,6 +3,13 @@ export type ErrorToastMeta = {
 	userMessage?: string;
 };
 
+/**
+ * Dashboard error contract:
+ * - Throw `createUserFacingError(...)` in server functions for user-correctable failures.
+ * - Throw `Error` for internal/system failures that should not be exposed directly.
+ * - UI surfaces `UserFacingError` messages through the global mutation error handler.
+ */
+
 type MutationMetaRecord = {
 	errorToast?: ErrorToastMeta;
 };

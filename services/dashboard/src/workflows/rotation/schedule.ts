@@ -1,7 +1,9 @@
-import { rotation, rotationMember, rotationOverride } from "@fire/db/schema";
-import { and, desc, eq, gt } from "drizzle-orm";
+import type { SlackIntegrationData } from "@fire/db/schema";
+import { integration, rotation, rotationMember, rotationOverride, user } from "@fire/db/schema";
+import { and, desc, eq, gt, inArray } from "drizzle-orm";
 import { createHook, sleep } from "workflow";
 import { db } from "~/lib/db";
+import { postSlackMessage } from "~/lib/slack";
 
 const ROTATION_SCHEDULE_POLL_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
@@ -23,7 +25,9 @@ export type RotationScheduleWakeSignal = {
 
 type RotationState = {
 	rotationId: string;
+	clientId: string;
 	rotationName: string;
+	slackChannelId: string | null;
 	anchorAt: Date;
 	shiftLengthMs: number;
 	members: Array<{ assigneeId: string; position: number }>;
@@ -78,8 +82,11 @@ export async function rotationScheduleWorkflow(input: { rotationId: string }) {
 		const effectiveAssignee = getEffectiveAssignee(state, now);
 		if (lastEffectiveAssignee !== undefined && lastEffectiveAssignee !== effectiveAssignee) {
 			await logRotationChange({
+				workflowRotationId: input.rotationId,
 				rotationId: state.rotationId,
+				clientId: state.clientId,
 				rotationName: state.rotationName,
+				slackChannelId: state.slackChannelId,
 				reason: pendingReason,
 				previousAssigneeId: lastEffectiveAssignee,
 				nextAssigneeId: effectiveAssignee,
@@ -129,7 +136,9 @@ async function loadRotationState(rotationId: string, now: Date): Promise<Rotatio
 	const [rotationRow] = await db
 		.select({
 			id: rotation.id,
+			clientId: rotation.clientId,
 			name: rotation.name,
+			slackChannelId: rotation.slackChannelId,
 			anchorAt: rotation.anchorAt,
 			shiftLength: rotation.shiftLength,
 		})
@@ -164,7 +173,9 @@ async function loadRotationState(rotationId: string, now: Date): Promise<Rotatio
 
 	return {
 		rotationId: rotationRow.id,
+		clientId: rotationRow.clientId,
 		rotationName: rotationRow.name,
+		slackChannelId: rotationRow.slackChannelId,
 		anchorAt: rotationRow.anchorAt,
 		shiftLengthMs: parseIntervalToMs(rotationRow.shiftLength),
 		members,
@@ -240,8 +251,11 @@ function toWakeReason(action?: RotationScheduleWakeAction): NotificationReason {
 }
 
 async function logRotationChange(params: {
+	workflowRotationId: string;
 	rotationId: string;
+	clientId: string;
 	rotationName: string;
+	slackChannelId: string | null;
 	reason: NotificationReason;
 	previousAssigneeId: string | null;
 	nextAssigneeId: string | null;
@@ -252,12 +266,110 @@ async function logRotationChange(params: {
 		[
 			"[rotation-notification]",
 			`rotationId=${params.rotationId}`,
+			`clientId=${params.clientId}`,
 			`rotationName=${params.rotationName}`,
+			`slackChannelId=${params.slackChannelId ?? "none"}`,
 			`reason=${params.reason}`,
 			`previousAssigneeId=${params.previousAssigneeId ?? "none"}`,
 			`nextAssigneeId=${params.nextAssigneeId ?? "none"}`,
 		].join(" "),
 	);
+
+	if (!params.slackChannelId) {
+		return;
+	}
+
+	try {
+		const [slackIntegration] = await db
+			.select({ data: integration.data })
+			.from(integration)
+			.where(and(eq(integration.clientId, params.clientId), eq(integration.platform, "slack")))
+			.limit(1);
+
+		if (!slackIntegration?.data) {
+			return;
+		}
+
+		const slackData = slackIntegration.data as SlackIntegrationData;
+		if (!slackData.botToken) {
+			return;
+		}
+
+		const assigneeIds = [params.nextAssigneeId].filter((id): id is string => !!id);
+		const assigneesByUserId = new Map<string, { slackId: string | null; name: string }>();
+		if (assigneeIds.length > 0) {
+			const users = await db
+				.select({
+					id: user.id,
+					name: user.name,
+					slackId: user.slackId,
+				})
+				.from(user)
+				.where(inArray(user.id, assigneeIds));
+
+			for (const assignee of users) {
+				assigneesByUserId.set(assignee.id, { slackId: assignee.slackId, name: assignee.name });
+			}
+		}
+
+		const rotationUrl = getRotationUrl(params.workflowRotationId);
+		const message = [
+			`*${params.rotationName}* rotation changed (${formatReasonLabel(params.reason)}).`,
+			`Next: ${formatAssigneeReference(params.nextAssigneeId, assigneesByUserId.get(params.nextAssigneeId ?? ""))}`,
+			rotationUrl ? `View rotation: ${rotationUrl}` : `View rotation: /rotations/${params.workflowRotationId}`,
+		].join("\n");
+
+		await postSlackMessage(slackData.botToken, {
+			channel: params.slackChannelId,
+			text: message,
+		});
+	} catch (error) {
+		console.error("Failed to send rotation notification to Slack", {
+			rotationId: params.rotationId,
+			clientId: params.clientId,
+			channelId: params.slackChannelId,
+			error,
+		});
+	}
+}
+
+function formatAssigneeReference(assigneeId: string | null, assignee?: { slackId: string | null; name: string }): string {
+	if (!assigneeId) {
+		return "_Unassigned_";
+	}
+	if (assignee?.slackId) {
+		return `<@${assignee.slackId}>`;
+	}
+	if (assignee?.name) {
+		return assignee.name;
+	}
+	return `user:${assigneeId}`;
+}
+
+function formatReasonLabel(reason: NotificationReason): string {
+	switch (reason) {
+		case "shift_change":
+			return "shift change";
+		case "override_start":
+			return "override start";
+		case "override_end":
+			return "override end";
+		default:
+			return "schedule update";
+	}
+}
+
+function getRotationUrl(rotationId: string): string | null {
+	const appUrl = process.env.VITE_APP_URL;
+	if (!appUrl) {
+		return null;
+	}
+
+	try {
+		return new URL(`/rotations/${rotationId}`, appUrl).toString();
+	} catch {
+		return null;
+	}
 }
 
 function parseIntervalToMs(interval: unknown): number {

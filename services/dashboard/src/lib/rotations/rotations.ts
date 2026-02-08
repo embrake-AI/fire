@@ -10,7 +10,8 @@ import { getRotationScheduleWakeToken, type RotationScheduleWakeAction, rotation
 import { authMiddleware } from "../auth/auth-middleware";
 import { uploadImageFromUrl } from "../blob";
 import { db } from "../db";
-import { fetchSlackUserById } from "../slack";
+import { createUserFacingError } from "../errors/user-facing-error";
+import { fetchSlackSelectableChannels, fetchSlackUserById, joinSlackChannel } from "../slack";
 
 export type { SlackUser } from "../slack";
 
@@ -41,6 +42,7 @@ export const getRotations = createServerFn({
 			.select({
 				id: rotationWithAssignee.id,
 				name: rotationWithAssignee.name,
+				slackChannelId: rotationWithAssignee.slackChannelId,
 				shiftStart: rotationWithAssignee.shiftStart,
 				shiftLength: rotationWithAssignee.shiftLength,
 				assignees: rotationWithAssignee.assignees,
@@ -98,6 +100,7 @@ export const getRotations = createServerFn({
 			return {
 				id: r.id,
 				name: r.name,
+				slackChannelId: r.slackChannelId,
 				shiftStart: r.shiftStart,
 				shiftLength: r.shiftLength,
 				assignees: reorderedAssignees,
@@ -108,6 +111,27 @@ export const getRotations = createServerFn({
 				teamId: r.teamId,
 			};
 		});
+	});
+
+export const getRotationSelectableSlackChannels = createServerFn({ method: "GET" })
+	.middleware([authMiddleware])
+	.handler(async ({ context }) => {
+		const [slackIntegration] = await db
+			.select({ data: integration.data })
+			.from(integration)
+			.where(and(eq(integration.clientId, context.clientId), eq(integration.platform, "slack")))
+			.limit(1);
+
+		if (!slackIntegration?.data) {
+			return [];
+		}
+
+		const slackData = slackIntegration.data as SlackIntegrationData;
+		if (!slackData.botToken) {
+			return [];
+		}
+
+		return fetchSlackSelectableChannels(slackData.botToken);
 	});
 
 type ShiftLength = (typeof SHIFT_LENGTH_OPTIONS)[number]["value"];
@@ -261,6 +285,69 @@ export const updateRotationTeam = createServerFn({ method: "POST" })
 		}
 
 		return { id: updated.id, teamId: updated.teamId };
+	});
+
+export const updateRotationSlackChannel = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
+	.inputValidator((data: { id: string; slackChannelId: string | null }) => data)
+	.handler(async ({ data, context }) => {
+		const [existingRotation] = await db
+			.select({ id: rotation.id })
+			.from(rotation)
+			.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)))
+			.limit(1);
+
+		if (!existingRotation) {
+			throw createUserFacingError("This rotation no longer exists.");
+		}
+
+		if (data.slackChannelId) {
+			const [slackIntegration] = await db
+				.select({ data: integration.data })
+				.from(integration)
+				.where(and(eq(integration.clientId, context.clientId), eq(integration.platform, "slack")))
+				.limit(1);
+
+			if (!slackIntegration?.data) {
+				throw createUserFacingError("Slack isn't connected to this workspace.");
+			}
+
+			const slackData = slackIntegration.data as SlackIntegrationData;
+			let channels: Awaited<ReturnType<typeof fetchSlackSelectableChannels>>;
+			try {
+				channels = await fetchSlackSelectableChannels(slackData.botToken);
+			} catch {
+				throw createUserFacingError("We couldn't load Slack channels right now. Please try again.");
+			}
+			const selectedChannel = channels.find((channel) => channel.id === data.slackChannelId);
+
+			if (!selectedChannel) {
+				throw createUserFacingError("The selected Slack channel isn't available.");
+			}
+
+			if (!selectedChannel.isMember) {
+				if (selectedChannel.isPrivate) {
+					throw createUserFacingError("Invite the Fire bot to that private channel before selecting it.");
+				}
+				try {
+					await joinSlackChannel(slackData.botToken, selectedChannel.id);
+				} catch {
+					throw createUserFacingError("Couldn't join that Slack channel automatically. Please invite the Fire bot and try again.");
+				}
+			}
+		}
+
+		const [updated] = await db
+			.update(rotation)
+			.set({ slackChannelId: data.slackChannelId })
+			.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)))
+			.returning({ id: rotation.id, slackChannelId: rotation.slackChannelId });
+
+		if (!updated) {
+			throw new Error("Rotation not found");
+		}
+
+		return { id: updated.id, slackChannelId: updated.slackChannelId };
 	});
 
 type InferFromSQL<T> = T extends SQL<infer R> ? R : never;

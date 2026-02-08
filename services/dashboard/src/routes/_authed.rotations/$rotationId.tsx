@@ -1,5 +1,7 @@
 import { SHIFT_LENGTH_OPTIONS } from "@fire/common";
+import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
+import { useServerFn } from "@tanstack/solid-start";
 import { Check, ChevronLeft, ChevronRight, ExternalLink, GripVertical, LoaderCircle, Pencil, Plus, Trash2, Users as UsersIcon, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, Suspense } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
@@ -12,7 +14,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
-import type { getRotations } from "~/lib/rotations/rotations";
+import { getRotationSelectableSlackChannels, type getRotations } from "~/lib/rotations/rotations";
 import {
 	toAddAssigneeInput,
 	toAddSlackUserAssigneeInput,
@@ -28,6 +30,7 @@ import {
 	useUpdateRotationName,
 	useUpdateRotationOverride,
 	useUpdateRotationShiftLength,
+	useUpdateRotationSlackChannel,
 	useUpdateRotationTeam,
 } from "~/lib/rotations/rotations.hooks";
 import { useTeams } from "~/lib/teams/teams.hooks";
@@ -82,6 +85,13 @@ function RotationHeader(props: { rotation: Rotation }) {
 	const updateShiftLengthMutation = useUpdateRotationShiftLength();
 	const updateAnchorMutation = useUpdateRotationAnchor();
 	const updateTeamMutation = useUpdateRotationTeam();
+	const updateSlackChannelMutation = useUpdateRotationSlackChannel();
+	const getSlackBotChannelsFn = useServerFn(getRotationSelectableSlackChannels);
+	const slackChannelsQuery = useQuery(() => ({
+		queryKey: ["rotation-slack-selectable-channels"],
+		queryFn: getSlackBotChannelsFn,
+		staleTime: Infinity,
+	}));
 
 	const [isEditingName, setIsEditingName] = createSignal(false);
 	const [name, setName] = createSignal(props.rotation.name);
@@ -89,8 +99,17 @@ function RotationHeader(props: { rotation: Rotation }) {
 	const [anchorInput, setAnchorInput] = createSignal("");
 
 	const NO_TEAM_VALUE = "none";
+	const NO_CHANNEL_VALUE = "none";
 	const teamOptions = createMemo(() => [NO_TEAM_VALUE, ...(teamsQuery.data?.map((t) => t.id) ?? [])]);
 	const teamsById = createMemo(() => new Map(teamsQuery.data?.map((t) => [t.id, t]) ?? []));
+	const slackChannelsById = createMemo(() => new Map((slackChannelsQuery.data ?? []).map((channel) => [channel.id, channel])));
+	const channelOptions = createMemo(() => {
+		const channelIds = slackChannelsQuery.data?.map((channel) => channel.id) ?? [];
+		if (props.rotation.slackChannelId && !channelIds.includes(props.rotation.slackChannelId)) {
+			return [NO_CHANNEL_VALUE, props.rotation.slackChannelId, ...channelIds];
+		}
+		return [NO_CHANNEL_VALUE, ...channelIds];
+	});
 	const team = createMemo(() => (props.rotation.teamId ? teamsById().get(props.rotation.teamId) : undefined));
 	const eligibleTeamIds = createMemo(() => {
 		if (!teamsQuery.data || !usersQuery.data) {
@@ -110,6 +129,7 @@ function RotationHeader(props: { rotation: Rotation }) {
 		return eligible;
 	});
 	const currentTeamValue = createMemo(() => props.rotation.teamId ?? NO_TEAM_VALUE);
+	const currentSlackChannelValue = createMemo(() => props.rotation.slackChannelId ?? NO_CHANNEL_VALUE);
 	const currentShiftLength = createMemo(() => normalizeShiftLength(props.rotation.shiftLength));
 
 	createEffect(() => {
@@ -149,6 +169,14 @@ function RotationHeader(props: { rotation: Rotation }) {
 		const currentTeamId = props.rotation.teamId ?? null;
 		if (nextTeamId === currentTeamId) return;
 		updateTeamMutation.mutate({ id: props.rotation.id, teamId: nextTeamId });
+	};
+
+	const handleSlackChannelChange = (value: string | null) => {
+		if (!value) return;
+		const nextChannelId = value === NO_CHANNEL_VALUE ? null : value;
+		const currentChannelId = props.rotation.slackChannelId ?? null;
+		if (nextChannelId === currentChannelId) return;
+		updateSlackChannelMutation.mutate({ id: props.rotation.id, slackChannelId: nextChannelId });
 	};
 
 	const handleAnchorSave = () => {
@@ -296,6 +324,35 @@ function RotationHeader(props: { rotation: Rotation }) {
 							</Link>
 						)}
 					</Show>
+					<Select
+						value={currentSlackChannelValue()}
+						onChange={handleSlackChannelChange}
+						options={channelOptions()}
+						itemComponent={(itemProps) => {
+							const channelId = itemProps.item.rawValue;
+							if (channelId === NO_CHANNEL_VALUE) {
+								return <SelectItem item={itemProps.item}>No Slack channel</SelectItem>;
+							}
+							const channel = slackChannelsById().get(channelId);
+							return (
+								<SelectItem item={itemProps.item}>{channel ? `#${channel.name}${channel.isMember ? "" : " (bot will auto-join)"}` : `Unknown channel (${channelId})`}</SelectItem>
+							);
+						}}
+						disabled={updateSlackChannelMutation.isPending || slackChannelsQuery.isPending}
+					>
+						<SelectTrigger class="h-auto py-0.5 px-2.5 text-xs font-normal border-border bg-transparent hover:bg-muted/50 w-auto gap-1 [&>svg]:w-3 [&>svg]:h-3">
+							<SelectValue<string>>
+								{(state) => {
+									const selected = state.selectedOption();
+									if (!selected || selected === NO_CHANNEL_VALUE) return "No Slack channel";
+									const channel = slackChannelsById().get(selected);
+									if (!channel) return `Unknown channel (${selected})`;
+									return `#${channel.name}`;
+								}}
+							</SelectValue>
+						</SelectTrigger>
+						<SelectContent />
+					</Select>
 				</div>
 			</div>
 		</div>

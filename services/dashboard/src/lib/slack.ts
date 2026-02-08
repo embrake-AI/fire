@@ -11,6 +11,10 @@ export type SlackChannel = {
 	isPrivate: boolean;
 };
 
+export type SlackSelectableChannel = SlackChannel & {
+	isMember: boolean;
+};
+
 type SlackUserResponse = {
 	ok: boolean;
 	members?: Array<{
@@ -91,6 +95,26 @@ type SlackUsersConversationsResponse = {
 	error?: string;
 };
 
+type SlackConversationsListResponse = {
+	ok: boolean;
+	channels?: Array<{
+		id: string;
+		name: string;
+		is_channel: boolean;
+		is_private: boolean;
+		is_member?: boolean;
+	}>;
+	response_metadata?: {
+		next_cursor?: string;
+	};
+	error?: string;
+};
+
+type SlackConversationsJoinResponse = {
+	ok: boolean;
+	error?: string;
+};
+
 /**
  * Fetch Slack channels where the bot is a member using the users.conversations endpoint.
  * @see https://docs.slack.dev/reference/methods/users.conversations/
@@ -136,6 +160,86 @@ export async function fetchSlackBotChannels(botToken: string): Promise<SlackChan
 	} while (cursor);
 
 	return channels;
+}
+
+/**
+ * Fetch selectable Slack channels for rotation settings.
+ * Uses conversations.list so public channels are returned even when the bot is not a member.
+ * @see https://docs.slack.dev/reference/methods/conversations.list/
+ */
+export async function fetchSlackSelectableChannels(botToken: string): Promise<SlackSelectableChannel[]> {
+	const channels: SlackSelectableChannel[] = [];
+	let cursor: string | undefined;
+
+	do {
+		const params = new URLSearchParams({
+			types: "public_channel,private_channel",
+			exclude_archived: "true",
+			limit: "200",
+		});
+		if (cursor) {
+			params.set("cursor", cursor);
+		}
+
+		const response = await fetch(`https://slack.com/api/conversations.list?${params.toString()}`, {
+			headers: {
+				Authorization: `Bearer ${botToken}`,
+				"Content-Type": "application/json",
+			},
+		});
+
+		const data: SlackConversationsListResponse = await response.json();
+
+		if (!data.ok) {
+			throw new Error(`Slack API error: ${data.error}`);
+		}
+
+		if (data.channels) {
+			for (const channel of data.channels) {
+				if (!channel.is_channel) {
+					continue;
+				}
+				// Only show private channels when the bot is already a member.
+				// Public channels remain selectable so we can auto-join on save.
+				if (channel.is_private && !channel.is_member) {
+					continue;
+				}
+				channels.push({
+					id: channel.id,
+					name: channel.name,
+					isPrivate: channel.is_private,
+					isMember: channel.is_member ?? false,
+				});
+			}
+		}
+
+		cursor = data.response_metadata?.next_cursor;
+	} while (cursor);
+
+	return channels.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Join a public Slack channel as the bot.
+ * @see https://docs.slack.dev/reference/methods/conversations.join/
+ */
+export async function joinSlackChannel(botToken: string, channelId: string): Promise<void> {
+	const response = await fetch("https://slack.com/api/conversations.join", {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${botToken}`,
+			"Content-Type": "application/x-www-form-urlencoded",
+		},
+		body: new URLSearchParams({
+			channel: channelId,
+		}),
+	});
+
+	const data: SlackConversationsJoinResponse = await response.json();
+
+	if (!data.ok) {
+		throw new Error(`Slack API error: ${data.error}`);
+	}
 }
 
 type SlackEmojiResponse = {
@@ -247,4 +351,34 @@ export async function fetchSlackUserById(botToken: string, userId: string): Prom
 		email: member.profile.email || "",
 		avatar: member.profile.image_192 || member.profile.image_72 || member.profile.image_48,
 	};
+}
+
+type SlackPostMessageResponse = {
+	ok: boolean;
+	error?: string;
+};
+
+/**
+ * Post a message to a Slack channel as the bot.
+ * @see https://docs.slack.dev/reference/methods/chat.postMessage/
+ */
+export async function postSlackMessage(botToken: string, params: { channel: string; text: string }): Promise<void> {
+	const response = await fetch("https://slack.com/api/chat.postMessage", {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${botToken}`,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			channel: params.channel,
+			text: params.text,
+			mrkdwn: true,
+		}),
+	});
+
+	const data: SlackPostMessageResponse = await response.json();
+
+	if (!data.ok) {
+		throw new Error(`Slack API error: ${data.error}`);
+	}
 }

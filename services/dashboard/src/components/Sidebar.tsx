@@ -82,7 +82,7 @@ export default function Sidebar() {
 	return (
 		<aside
 			class={cn(
-				"flex flex-col bg-zinc-50 border-r border-zinc-200 transition-[width] duration-200 ease-in-out shrink-0 sticky top-0 h-screen overflow-y-auto",
+				"flex flex-col bg-zinc-50 border-r border-zinc-200 transition-[width] duration-200 ease-in-out shrink-0 sticky top-0 h-screen overflow-y-auto overflow-x-hidden",
 				collapsed() ? "w-[60px]" : "w-[200px]",
 			)}
 		>

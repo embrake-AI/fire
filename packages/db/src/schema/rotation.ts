@@ -5,6 +5,7 @@ import { team } from "./team";
 export const rotation = pgTable("rotation", {
 	id: uuid("id").primaryKey().defaultRandom(),
 	name: text("name").notNull(),
+	slackChannelId: text("slack_channel_id"),
 	clientId: text("client_id")
 		.notNull()
 		.references(() => client.id, { onDelete: "cascade" }),
