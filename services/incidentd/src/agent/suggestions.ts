@@ -1,5 +1,5 @@
 import type { IS } from "@fire/common";
-import type { AgentAffectionInfo, AgentEvent, AgentSuggestion, AgentSuggestionContext } from "./types";
+import type { AgentAffectionInfo, AgentAffectionStatus, AgentEvent, AgentSuggestion, AgentSuggestionContext } from "./types";
 
 export const SYSTEM_PROMPT = `You are an incident operations agent. You may suggest actions for a human dispatcher by calling tools. Each tool call is treated as a suggested action - it is NOT executed automatically. Tools are optional: only call a tool when the suggestion would be genuinely useful to the dispatcher. If nothing warrants a suggestion, call no tools.
 
@@ -12,8 +12,10 @@ Rules:
 - Do not suggest actions for things that have not already happened or been confirmed.
 - For status page suggestions:
 	1. Only suggest them for clearly confirmed incidents that affect external users in a meaningful way.
-	2. You MUST follow the provided status-page context: if hasAffection=false, the first public update MUST use affectionStatus=investigating (never mitigating/resolved) and include title + services.
-	3. If hasAffection=true and there is meaningful new external-user progress/impact information, you SHOULD suggest add_status_page_update in this turn without a status field (even if incident status does not change). Do NOT repeat status, omit it to post an update.
+	2. HARD GATE: NEVER suggest add_status_page_update when the only evidence is INCIDENT_CREATED and/or ambiguous chat (for example: "not sure", "looks right", "can you check your PC", "maybe"). Those are unconfirmed signals.
+	3. Require at least one corroborating post-create signal before add_status_page_update: e.g. measured errors/latency, a second independent report, explicit engineer confirmation of impact, or a concrete mitigation/progress update.
+		4. You MUST follow the provided status-page context: if hasAffection=false, the first public update MUST use affectionStatus=investigating (never mitigating/resolved) and include title + services.
+		5. If hasAffection=true and there is meaningful new external-user progress/impact information, you SHOULD suggest add_status_page_update in this turn without a status field (even if incident status does not change). Do NOT repeat status, omit it to post an update.
 - "Resolved" means the issue is fully over and the incident will be closed. Only suggest resolved when a human explicitly confirms the incident is OVER - the fix is verified AND the problem is completely gone (e.g. "confirmed working", "error rate back to zero", "verified fix", "all clear"). Do NOT suggest resolved when: a fix/restart/purge was just initiated or is in progress, errors have decreased but are not zero, retries are still failing, some users/regions are still affected, or someone is still monitoring/investigating. When in doubt, do NOT suggest resolved - wait for the next turn.
 - Resolved requires TWO conditions met simultaneously: (1) a remediation action was completed, AND (2) a human confirmed the problem is gone. A restart being initiated, errors dropping to non-zero, or retries still failing means condition (2) is NOT met.
 - Keep suggestion messages short (max ~200 characters).
@@ -25,6 +27,7 @@ Allowed actions (use tools):
 3) add_status_page_update: post a public update. Must include a message. If no status page incident exists yet, you MUST include status=investigating and include a title and services (choose from allowed services).`;
 
 export const VOLATILE_EVENT_KEYS = new Set(["created_at", "createdAt", "ts", "timestamp", "messageId", "promptTs", "promptThreadTs"]);
+const AFFECTION_STATUSES: AgentAffectionStatus[] = ["investigating", "mitigating", "resolved"];
 
 type SuggestionMessage = { role: "system" | "user" | "assistant" | "tool"; content?: string; tool_calls?: unknown; name?: string };
 export type SuggestionTool = { type: "function"; function: { name: string; description: string; parameters: unknown } };
@@ -129,7 +132,7 @@ export function buildEventMessages(events: AgentEvent[], processedThroughId: num
 			boundaryInserted = true;
 		}
 
-		const isSuggestion = !!event.event_metadata?.agentSuggestionId;
+		const isSuggestion = event.event_type === "MESSAGE_ADDED" && event.event_metadata?.kind === "suggestion" && !!event.event_metadata?.agentSuggestionId;
 		const role = isSuggestion ? "assistant" : "user";
 		const content = isSuggestion ? formatSuggestionEvent(event) : `${event.event_type}: ${JSON.stringify(normalizeEventData(event.event_data))}`;
 		messages.push({ role, content });
@@ -196,7 +199,7 @@ export function buildSuggestionTools(context: AgentSuggestionContext): Suggestio
 					properties: {
 						evidence: { type: "string", description: "The specific event(s) from the log that justify this suggestion." },
 						message: { type: "string" },
-						affectionStatus: { type: "string", enum: ["investigating", "mitigating", "resolved"] },
+						affectionStatus: { type: "string", enum: ["investigating", "mitigating", "resolved", "update"] },
 						title: { type: "string" },
 						services: {
 							type: "array",
@@ -226,17 +229,56 @@ export function buildContextUserMessage(context: AgentSuggestionContext): string
 	return `Allowed services:\n${servicesDescription}`;
 }
 
+function parseAffectionStatus(value: unknown): AgentAffectionStatus | undefined {
+	if (typeof value !== "string" || value === "update") {
+		return undefined;
+	}
+	return AFFECTION_STATUSES.includes(value as AgentAffectionStatus) ? (value as AgentAffectionStatus) : undefined;
+}
+
+function formatRelativeTime(value?: string): string {
+	if (!value) {
+		return "none";
+	}
+
+	const direct = Date.parse(value);
+	const parsed = Number.isNaN(direct) && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value) ? Date.parse(`${value.replace(" ", "T")}Z`) : direct;
+
+	if (Number.isNaN(parsed)) {
+		return "unknown";
+	}
+
+	const diffMs = Date.now() - parsed;
+	if (diffMs <= 0) {
+		return "just now";
+	}
+
+	const diffMinutes = Math.floor(diffMs / 60_000);
+	if (diffMinutes < 1) {
+		return "just now";
+	}
+	if (diffMinutes < 60) {
+		return `${diffMinutes} minute${diffMinutes === 1 ? "" : "s"} ago`;
+	}
+
+	const diffHours = Math.floor(diffMinutes / 60);
+	if (diffHours < 24) {
+		return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+	}
+
+	const diffDays = Math.floor(diffHours / 24);
+	return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+}
+
 export function buildStatusPageContextMessage(context: AgentSuggestionContext): string {
 	const created = context.affection.hasAffection ? "yes" : "no";
 	const lastStatus = context.affection.lastStatus ?? "none";
-	const lastUpdatedAt = context.affection.lastUpdateAt ?? "none";
+	const lastUpdatedAt = formatRelativeTime(context.affection.lastUpdateAt);
 
 	return `Status page state:
 - created: ${created}
 - lastStatus: ${lastStatus}
-- lastUpdatedAt: ${lastUpdatedAt}
-- If created=no and you suggest add_status_page_update, you MUST set affectionStatus=investigating and include title + services.
-- If created=yes and there is meaningful external-user progress/new information in recent events, you SHOULD suggest add_status_page_update now even if incident status is unchanged.`;
+- lastUpdatedAt: ${lastUpdatedAt}`;
 }
 
 export function buildIncidentStateMessage(context: AgentSuggestionContext): string {
@@ -313,7 +355,7 @@ export function normalizeSuggestions(suggestions: AgentSuggestion[], context: Ag
 					continue;
 				}
 				const services = Array.isArray(suggestion.services) ? suggestion.services : undefined;
-				const affectionStatus = suggestion.affectionStatus;
+				const affectionStatus = parseAffectionStatus(suggestion.affectionStatus);
 				const title = suggestion.title?.trim();
 
 				if (!context.affection.hasAffection) {
@@ -340,7 +382,7 @@ export function normalizeSuggestions(suggestions: AgentSuggestion[], context: Ag
 export async function generateIncidentSuggestions(
 	context: AgentSuggestionContext,
 	openaiApiKey: string,
-	stepDo: (name: string, callback: () => Promise<unknown>) => Promise<unknown>,
+	stepDo: <T extends Rpc.Serializable<T>>(name: string, callback: () => Promise<T>) => Promise<T>,
 	stepLabel: string,
 ): Promise<AgentSuggestion[]> {
 	const userMessage = buildContextUserMessage(context);
@@ -359,115 +401,110 @@ export async function generateIncidentSuggestions(
 		{ role: "user", content: incidentStateMessage },
 		{ role: "user", content: "Return suggestions." },
 	];
+
 	const usedToolNames = new Set<string>();
 	const incidentId = context.incident.id;
 	const promptCacheKey = `is:v1:${incidentId.slice(0, 12)}:${incidentId.slice(-8)}`;
 
-	for (let i = 0; i < 5 && suggestions.length < 3; i += 1) {
-		const input = toResponsesInputMessages(messages);
-		const responseTools = toResponsesTools(tools);
-		const requestBody = {
-			model: "gpt-5.2",
-			input,
-			tools: responseTools,
-			tool_choice: "auto" as const,
-			prompt_cache_key: promptCacheKey,
-		};
-		const serializedRequestBody = JSON.stringify(requestBody);
+	const input = toResponsesInputMessages(messages);
+	const responseTools = toResponsesTools(tools);
+	const requestBody = {
+		model: "gpt-5.2",
+		input,
+		tools: responseTools,
+		tool_choice: "auto" as const,
+		prompt_cache_key: promptCacheKey,
+	};
+	const serializedRequestBody = JSON.stringify(requestBody);
 
-		const data = (await stepDo(`agent-suggest.fetch:${stepLabel}:${i + 1}`, async () => {
-			const response = await fetch("https://api.openai.com/v1/responses", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${openaiApiKey}`,
-				},
-				body: serializedRequestBody,
-			});
+	const data = await stepDo(`agent-suggest.fetch:${stepLabel}`, async () => {
+		const response = await fetch("https://api.openai.com/v1/responses", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${openaiApiKey}`,
+			},
+			body: serializedRequestBody,
+		});
 
-			if (!response.ok) {
-				const error = await response.text();
-				throw new Error(`OpenAI API error: ${response.status} - ${error}`);
-			}
-
-			return (await response.json()) as OpenAIResponsesCreateResponse;
-		})) as OpenAIResponsesCreateResponse;
-		const toolCalls = (data.output ?? [])
-			.filter(
-				(item): item is Required<Pick<OpenAIResponseFunctionCallItem, "name">> & OpenAIResponseFunctionCallItem => item.type === "function_call" && typeof item.name === "string",
-			)
-			.map((item) => ({
-				function: {
-					name: item.name,
-					arguments: typeof item.arguments === "string" ? item.arguments : "{}",
-				},
-			}));
-		if (!toolCalls.length) {
-			break;
+		if (!response.ok) {
+			const error = await response.text();
+			throw new Error(`OpenAI API error: ${response.status} - ${error}`);
 		}
 
-		let addedSuggestionThisRound = false;
-		for (const toolCall of toolCalls) {
-			if (usedToolNames.has(toolCall.function.name)) {
-				continue;
-			}
+		return (await response.json()) as OpenAIResponsesCreateResponse;
+	});
+	const toolCalls = (data.output ?? [])
+		.filter(
+			(item): item is Required<Pick<OpenAIResponseFunctionCallItem, "name">> & OpenAIResponseFunctionCallItem => item.type === "function_call" && typeof item.name === "string",
+		)
+		.map((item) => ({
+			function: {
+				name: item.name,
+				arguments: typeof item.arguments === "string" ? item.arguments : "{}",
+			},
+		}));
+	if (!toolCalls.length) {
+		return suggestions;
+	}
 
-			usedToolNames.add(toolCall.function.name);
-			const args = toolCall.function.arguments ? (JSON.parse(toolCall.function.arguments) as Record<string, unknown>) : {};
-			switch (toolCall.function.name) {
-				case "update_status": {
-					if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.status === "string" && typeof args.message === "string") {
-						suggestions.push({
-							action: "update_status",
-							status: args.status as Exclude<IS["status"], "open">,
-							message: args.message,
-						});
-						messages.push({
-							role: "assistant",
-							content: `[SUGGESTION] update_status status=${args.status} message=${args.message}`,
-						});
-						addedSuggestionThisRound = true;
-					}
-					break;
-				}
-				case "update_severity": {
-					if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.severity === "string") {
-						suggestions.push({
-							action: "update_severity",
-							severity: args.severity as IS["severity"],
-						});
-						messages.push({
-							role: "assistant",
-							content: `[SUGGESTION] update_severity severity=${args.severity}`,
-						});
-						addedSuggestionThisRound = true;
-					}
-					break;
-				}
-				case "add_status_page_update": {
-					if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.message === "string") {
-						suggestions.push({
-							action: "add_status_page_update",
-							message: args.message,
-							...(typeof args.affectionStatus === "string" ? { affectionStatus: args.affectionStatus as "investigating" | "mitigating" | "resolved" } : {}),
-							...(typeof args.title === "string" ? { title: args.title } : {}),
-							...(Array.isArray(args.services) ? { services: args.services as { id: string; impact: "partial" | "major" }[] } : {}),
-						});
-						messages.push({
-							role: "assistant",
-							content: `[SUGGESTION] add_status_page_update message=${args.message}`,
-						});
-						addedSuggestionThisRound = true;
-					}
-					break;
-				}
-				default:
-					break;
-			}
+	for (const toolCall of toolCalls) {
+		if (suggestions.length >= 3) {
+			break;
+		}
+		if (usedToolNames.has(toolCall.function.name)) {
+			continue;
 		}
 
-		if (!addedSuggestionThisRound) {
-			break;
+		usedToolNames.add(toolCall.function.name);
+		const args = toolCall.function.arguments ? (JSON.parse(toolCall.function.arguments) as Record<string, unknown>) : {};
+		switch (toolCall.function.name) {
+			case "update_status": {
+				if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.status === "string" && typeof args.message === "string") {
+					suggestions.push({
+						action: "update_status",
+						status: args.status as Exclude<IS["status"], "open">,
+						message: args.message,
+					});
+					messages.push({
+						role: "assistant",
+						content: `[SUGGESTION] update_status status=${args.status} message=${args.message}`,
+					});
+				}
+				break;
+			}
+			case "update_severity": {
+				if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.severity === "string") {
+					suggestions.push({
+						action: "update_severity",
+						severity: args.severity as IS["severity"],
+					});
+					messages.push({
+						role: "assistant",
+						content: `[SUGGESTION] update_severity severity=${args.severity}`,
+					});
+				}
+				break;
+			}
+			case "add_status_page_update": {
+				if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.message === "string") {
+					const affectionStatus = parseAffectionStatus(args.affectionStatus);
+					suggestions.push({
+						action: "add_status_page_update",
+						message: args.message,
+						...(affectionStatus ? { affectionStatus } : {}),
+						...(typeof args.title === "string" ? { title: args.title } : {}),
+						...(Array.isArray(args.services) ? { services: args.services as { id: string; impact: "partial" | "major" }[] } : {}),
+					});
+					messages.push({
+						role: "assistant",
+						content: `[SUGGESTION] add_status_page_update message=${args.message}`,
+					});
+				}
+				break;
+			}
+			default:
+				break;
 		}
 	}
 

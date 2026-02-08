@@ -17,7 +17,7 @@ export class IncidentAgentTurnWorkflow extends WorkflowEntrypoint<Env, AgentTurn
 			validStatusTransitions: getValidStatusTransitions(incident.status),
 		};
 
-		const stepDo = (name: string, callback: () => Promise<unknown>) => step.do(name, { retries: { limit: 3, delay: "5 seconds" } }, callback as Parameters<WorkflowStep["do"]>[2]);
+		const stepDo = <T extends Rpc.Serializable<T>>(name: string, callback: () => Promise<T>): Promise<T> => step.do(name, { retries: { limit: 3, delay: "5 seconds" } }, callback);
 
 		const suggestions = await generateIncidentSuggestions(context, this.env.OPENAI_API_KEY, stepDo, turnId);
 

@@ -28,9 +28,11 @@ export type AgentService = {
 	prompt: string | null;
 };
 
+export type AgentAffectionStatus = "investigating" | "mitigating" | "resolved";
+
 export type AgentAffectionInfo = {
 	hasAffection: boolean;
-	lastStatus?: "investigating" | "mitigating" | "resolved";
+	lastStatus?: AgentAffectionStatus;
 	lastUpdateAt?: string;
 };
 
@@ -69,7 +71,7 @@ export type AgentSuggestion =
 	| {
 			action: "add_status_page_update";
 			message: string;
-			affectionStatus?: "investigating" | "mitigating" | "resolved";
+			affectionStatus?: AgentAffectionStatus;
 			title?: string;
 			services?: { id: string; impact: "partial" | "major" }[];
 	  };
