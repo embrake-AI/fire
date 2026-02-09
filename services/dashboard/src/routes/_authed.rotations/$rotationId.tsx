@@ -47,6 +47,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 const MIN_OVERRIDE_MS = 15 * 60 * 1000;
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const ALL_OVERRIDES_START = new Date("1970-01-01T00:00:00.000Z");
+const ALL_OVERRIDES_END = new Date("9999-12-31T23:59:59.999Z");
 
 function RotationDetailsPage() {
 	const params = Route.useParams();
@@ -556,6 +558,10 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 	const [viewAnchor, setViewAnchor] = createSignal(startOfDay(new Date()));
 	const selectedRange = createMemo(() => rangeOptions.find((option) => option.days === rangeDays()) ?? rangeOptions[1]);
 	const calendarMonthStart = createMemo(() => startOfMonth(viewAnchor()));
+	const isCalendarView = createMemo(() => viewMode() === "calendar");
+	const calendarMonthEnd = createMemo(() => addMonths(calendarMonthStart(), 1));
+	const calendarGridStart = createMemo(() => startOfWeek(calendarMonthStart()));
+	const calendarGridEnd = createMemo(() => endOfWeek(addDays(calendarMonthEnd(), -1)));
 	const viewStart = createMemo(() => (viewMode() === "calendar" ? calendarMonthStart() : viewAnchor()));
 	const viewEnd = createMemo(() => {
 		if (viewMode() === "calendar") {
@@ -563,11 +569,13 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 		}
 		return new Date(viewAnchor().getTime() + rangeDays() * DAY_MS);
 	});
+	const scheduleStart = createMemo(() => (isCalendarView() ? calendarGridStart() : viewStart()));
+	const scheduleEnd = createMemo(() => (isCalendarView() ? addDays(calendarGridEnd(), 1) : viewEnd()));
 
 	const overridesQuery = useRotationOverrides({
 		rotationId: () => props.rotation.id,
-		startAt: viewStart,
-		endAt: viewEnd,
+		startAt: () => ALL_OVERRIDES_START,
+		endAt: () => ALL_OVERRIDES_END,
 	});
 
 	const usersById = createMemo(() => {
@@ -590,6 +598,26 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 		return map;
 	});
 
+	const normalizedOverrides = createMemo<RotationOverrideSegment[]>(() => {
+		return (overridesQuery.data ?? [])
+			.map((override) => ({
+				id: override.id,
+				assigneeId: override.assigneeId,
+				start: new Date(override.startAt),
+				end: new Date(override.endAt),
+				createdAt: new Date(override.createdAt),
+			}))
+			.filter((override) => {
+				const startAt = override.start.getTime();
+				const endAt = override.end.getTime();
+				return !Number.isNaN(startAt) && !Number.isNaN(endAt) && endAt > startAt;
+			});
+	});
+
+	const scheduleOverrides = createMemo(() => normalizedOverrides().filter((override) => override.start < scheduleEnd() && override.end > scheduleStart()));
+
+	const overridesByPriority = createMemo(() => [...scheduleOverrides()].sort((a, b) => compareOverridePriority(b, a)));
+
 	const baseSegments = createMemo(() => {
 		if (!props.rotation.assignees.length) return [];
 		const shiftMs = parseShiftLengthMs(props.rotation.shiftLength);
@@ -600,15 +628,22 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 			assignees: props.rotation.assignees,
 			shiftStart,
 			shiftMs,
-			viewStart: viewStart(),
-			viewEnd: viewEnd(),
+			viewStart: scheduleStart(),
+			viewEnd: scheduleEnd(),
 		});
 	});
 
-	const isCalendarView = createMemo(() => viewMode() === "calendar");
-	const calendarMonthEnd = createMemo(() => addMonths(calendarMonthStart(), 1));
-	const calendarGridStart = createMemo(() => startOfWeek(calendarMonthStart()));
-	const calendarGridEnd = createMemo(() => endOfWeek(addDays(calendarMonthEnd(), -1)));
+	const timelineBaseSegments = createMemo(() => {
+		const overrides = scheduleOverrides();
+		return baseSegments().map((segment) => ({
+			...segment,
+			inactiveRanges: collectOverlapRanges(
+				segment,
+				overrides.filter((override) => override.assigneeId !== segment.assigneeId),
+			),
+		}));
+	});
+
 	const calendarDays = createMemo(() => {
 		const days: Date[] = [];
 		for (let day = calendarGridStart(); day <= calendarGridEnd(); day = addDays(day, 1)) {
@@ -635,12 +670,11 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 	});
 	const calendarAssigneeByDay = createMemo(() => {
 		const segments = baseSegments();
+		const overrides = overridesByPriority();
 		const map = new Map<string, string | undefined>();
 		for (const day of calendarDays()) {
 			const dayStart = startOfDay(day);
-			const midday = new Date(dayStart.getTime() + 12 * HOUR_MS);
-			const segment = segments.find((item) => item.start <= midday && item.end > midday);
-			map.set(dayStart.toDateString(), segment?.assigneeId);
+			map.set(dayStart.toDateString(), getCalendarDayAssigneeId(dayStart, segments, overrides));
 		}
 		return map;
 	});
@@ -649,31 +683,34 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 	const dayLabels = createMemo(() => Array.from({ length: totalDays() }, (_, index) => new Date(viewStart().getTime() + index * DAY_MS)));
 
 	const overrideLayout = createMemo(() => {
-		const overrides = overridesQuery.data ?? [];
-		const sortedOverrides = [...overrides]
-			.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
-			.map((override) => ({
-				id: override.id,
-				start: new Date(override.startAt),
-				end: new Date(override.endAt),
-				assigneeId: override.assigneeId,
-			}));
-
-		const rows: Date[] = [];
-		const items: { id: string; start: Date; end: Date; assigneeId: string; row: number }[] = [];
+		const overrides = scheduleOverrides().filter((override) => override.start < viewEnd() && override.end > viewStart());
+		const prioritizedOverrides = [...overrides].sort((a, b) => compareOverridePriority(b, a));
+		const sortedOverrides = [...overrides].sort((a, b) => a.start.getTime() - b.start.getTime());
+		const rowEndTimes: Date[] = [];
+		const items: (RotationOverrideSegment & { row: number; inactiveRanges: TimeRange[] })[] = [];
 
 		for (const override of sortedOverrides) {
-			let rowIndex = rows.findIndex((end) => end.getTime() <= override.start.getTime());
-			if (rowIndex === -1) {
-				rowIndex = rows.length;
-				rows.push(override.end);
+			let row = rowEndTimes.findIndex((end) => end.getTime() <= override.start.getTime());
+			if (row === -1) {
+				row = rowEndTimes.length;
+				rowEndTimes.push(override.end);
 			} else {
-				rows[rowIndex] = override.end;
+				rowEndTimes[row] = override.end;
 			}
-			items.push({ ...override, row: rowIndex });
+
+			const higherPriorityOverrides = prioritizedOverrides.filter((candidate) => compareOverridePriority(candidate, override) > 0 && candidate.assigneeId !== override.assigneeId);
+
+			items.push({
+				...override,
+				row,
+				inactiveRanges: collectOverlapRanges(override, higherPriorityOverrides),
+			});
 		}
 
-		return { items, rowCount: rows.length };
+		return {
+			items,
+			rowCount: rowEndTimes.length,
+		};
 	});
 
 	let timelineRef: HTMLDivElement | undefined;
@@ -1006,11 +1043,14 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 									</Show>
 
 									{(() => {
-										const rows = 1 + overrideLayout().rowCount;
+										const overrideRows = overrideLayout().rowCount;
+										const previewOverrideRows = isSelecting() || popoverOpen() ? 1 : 0;
+										const visibleOverrideRows = Math.max(overrideRows, previewOverrideRows);
 										const rowHeight = 48;
 										const rowGap = 8;
 										const baseTop = rowGap;
-										const containerHeight = rows * (rowHeight + rowGap) + rowGap;
+										const overrideTop = baseTop + rowHeight + rowGap;
+										const containerHeight = (1 + visibleOverrideRows) * (rowHeight + rowGap) + rowGap;
 										const totalMs = viewEnd().getTime() - viewStart().getTime();
 
 										const now = new Date();
@@ -1037,7 +1077,7 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 													</div>
 												</Show>
 
-												<For each={baseSegments()}>
+												<For each={timelineBaseSegments()}>
 													{(segment) => {
 														const left = ((segment.start.getTime() - viewStart().getTime()) / totalMs) * 100;
 														const width = ((segment.end.getTime() - segment.start.getTime()) / totalMs) * 100;
@@ -1046,11 +1086,17 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 
 														return (
 															<div
-																class={cn("absolute h-10 rounded border px-2 flex items-center text-xs font-medium truncate pointer-events-none", colorClass)}
+																class={cn("absolute z-0 h-10 rounded border px-2 flex items-center text-xs font-medium truncate pointer-events-none overflow-hidden", colorClass)}
 																style={{ left: `${left}%`, width: `${Math.max(width, 1)}%`, top: `${baseTop}px` }}
 																title={`${assignee?.name ?? "Unassigned"} • ${formatDateRange(segment.start, segment.end)}`}
 															>
-																<span class="truncate">{assignee?.name ?? "Unassigned"}</span>
+																<For each={segment.inactiveRanges}>
+																	{(inactiveRange) => {
+																		const relativeRange = getRelativeRangePercent(inactiveRange, segment);
+																		return <div class="absolute inset-y-0" style={getShadedOverlayStyle(relativeRange)} />;
+																	}}
+																</For>
+																<span class="relative z-10 truncate">{assignee?.name ?? "Unassigned"}</span>
 															</div>
 														);
 													}}
@@ -1062,14 +1108,14 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 														const width = ((override.end.getTime() - override.start.getTime()) / totalMs) * 100;
 														const assignee = usersById().get(override.assigneeId);
 														const colorClass = override.assigneeId ? assigneeColorById().get(override.assigneeId) : "bg-muted text-muted-foreground border-border";
-														const top = baseTop + (override.row + 1) * (rowHeight + rowGap);
+														const top = overrideTop + override.row * (rowHeight + rowGap);
 														const isDeleting = clearOverrideMutation.isPending && clearOverrideMutation.variables?.overrideId === override.id;
 														const isNarrow = width < 8;
 
 														return (
 															<div
 																class={cn(
-																	"group absolute h-10 rounded border-2 border-amber-400/80 flex items-center text-xs font-medium select-none pointer-events-auto",
+																	"group absolute z-10 h-10 rounded border-2 border-amber-400/80 flex items-center text-xs font-medium select-none pointer-events-auto overflow-hidden",
 																	colorClass,
 																	isNarrow ? "justify-center px-0.5" : "px-2 gap-2",
 																)}
@@ -1077,8 +1123,14 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 																title={`${assignee?.name ?? "Unassigned"} • ${formatDateRange(override.start, override.end)} (override)`}
 																data-override="true"
 															>
-																<span class={cn("truncate min-w-0", isNarrow && "hidden")}>{assignee?.name ?? "Unassigned"}</span>
-																<div class={cn("flex items-center gap-0.5 transition-opacity", isNarrow ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
+																<For each={override.inactiveRanges}>
+																	{(inactiveRange) => {
+																		const relativeRange = getRelativeRangePercent(inactiveRange, override);
+																		return <div class="absolute inset-y-0" style={getShadedOverlayStyle(relativeRange)} />;
+																	}}
+																</For>
+																<span class={cn("relative z-10 truncate min-w-0", isNarrow && "hidden")}>{assignee?.name ?? "Unassigned"}</span>
+																<div class={cn("relative z-10 flex items-center gap-0.5 transition-opacity", isNarrow ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
 																	<Button
 																		variant="ghost"
 																		size="icon"
@@ -1111,11 +1163,11 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 												<Show when={isSelecting() && selectionRange()}>
 													{(range) => (
 														<div
-															class="absolute h-10 rounded bg-primary/15 border-2 border-primary/50 border-dashed pointer-events-none"
+															class="absolute z-30 h-10 rounded bg-primary/15 border-2 border-primary/50 border-dashed pointer-events-none"
 															style={{
 																left: `${((range().start.getTime() - viewStart().getTime()) / totalMs) * 100}%`,
 																width: `${Math.max(((range().end.getTime() - range().start.getTime()) / totalMs) * 100, 1)}%`,
-																top: `${baseTop}px`,
+																top: `${overrideTop}px`,
 															}}
 														/>
 													)}
@@ -1123,11 +1175,11 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 
 												<Show when={popoverOpen() && parsedOverrideStart() && parsedOverrideEnd()}>
 													<div
-														class="absolute h-10 rounded bg-primary/15 border-2 border-primary/50 pointer-events-none"
+														class="absolute z-30 h-10 rounded bg-primary/15 border-2 border-primary/50 pointer-events-none"
 														style={{
 															left: `${((parsedOverrideStart()!.getTime() - viewStart().getTime()) / totalMs) * 100}%`,
 															width: `${Math.max(((parsedOverrideEnd()!.getTime() - parsedOverrideStart()!.getTime()) / totalMs) * 100, 1)}%`,
-															top: `${baseTop}px`,
+															top: `${overrideTop}px`,
 														}}
 													/>
 												</Show>
@@ -1320,7 +1372,9 @@ function AssigneePickerContent(props: {
 	);
 }
 
-type BaseSegment = { start: Date; end: Date; assigneeId?: string };
+type TimeRange = { start: Date; end: Date };
+type BaseSegment = TimeRange & { assigneeId?: string };
+type RotationOverrideSegment = TimeRange & { id: string; assigneeId: string; createdAt: Date };
 
 function parseShiftLengthMs(interval: string) {
 	const match = interval.match(/(\d+)\s*(day|week)s?/);
@@ -1361,6 +1415,93 @@ function buildBaseSegments(input: { assignees: Rotation["assignees"]; shiftStart
 	}
 
 	return segments;
+}
+
+function compareOverridePriority(a: RotationOverrideSegment, b: RotationOverrideSegment) {
+	const createdAtDiff = a.createdAt.getTime() - b.createdAt.getTime();
+	if (createdAtDiff !== 0) return createdAtDiff;
+	return a.id.localeCompare(b.id);
+}
+
+function getEffectiveAssigneeIdAt(at: Date, baseSegments: BaseSegment[], overridesByPriority: RotationOverrideSegment[]) {
+	const activeOverride = overridesByPriority.find((override) => override.start <= at && override.end > at);
+	if (activeOverride) {
+		return activeOverride.assigneeId;
+	}
+	return baseSegments.find((segment) => segment.start <= at && segment.end > at)?.assigneeId;
+}
+
+function getCalendarDayAssigneeId(dayStart: Date, baseSegments: BaseSegment[], overridesByPriority: RotationOverrideSegment[]) {
+	const dayEnd = addDays(dayStart, 1);
+	const midday = new Date(dayStart.getTime() + 12 * HOUR_MS);
+
+	const overrideAtMidday = overridesByPriority.find((override) => override.start <= midday && override.end > midday);
+	if (overrideAtMidday) {
+		return overrideAtMidday.assigneeId;
+	}
+
+	const overlappingOverride = overridesByPriority.find((override) => override.start < dayEnd && override.end > dayStart);
+	if (overlappingOverride) {
+		return overlappingOverride.assigneeId;
+	}
+
+	return getEffectiveAssigneeIdAt(midday, baseSegments, overridesByPriority);
+}
+
+function collectOverlapRanges(target: TimeRange, ranges: TimeRange[]): TimeRange[] {
+	const targetStart = target.start.getTime();
+	const targetEnd = target.end.getTime();
+	if (targetEnd <= targetStart) return [];
+
+	const overlapRanges = ranges
+		.map((range) => {
+			const start = Math.max(targetStart, range.start.getTime());
+			const end = Math.min(targetEnd, range.end.getTime());
+			return end > start ? { start, end } : null;
+		})
+		.filter((range): range is { start: number; end: number } => range !== null)
+		.sort((a, b) => a.start - b.start);
+
+	if (overlapRanges.length === 0) return [];
+
+	const mergedRanges: { start: number; end: number }[] = [overlapRanges[0]];
+	for (const range of overlapRanges.slice(1)) {
+		const current = mergedRanges[mergedRanges.length - 1];
+		if (range.start <= current.end) {
+			current.end = Math.max(current.end, range.end);
+		} else {
+			mergedRanges.push({ ...range });
+		}
+	}
+
+	return mergedRanges.map((range) => ({
+		start: new Date(range.start),
+		end: new Date(range.end),
+	}));
+}
+
+function getRelativeRangePercent(range: TimeRange, container: TimeRange) {
+	const containerDuration = container.end.getTime() - container.start.getTime();
+	if (containerDuration <= 0) {
+		return { left: 0, width: 0 };
+	}
+
+	const left = ((range.start.getTime() - container.start.getTime()) / containerDuration) * 100;
+	const width = ((range.end.getTime() - range.start.getTime()) / containerDuration) * 100;
+
+	return {
+		left: Math.max(0, Math.min(left, 100)),
+		width: Math.max(0, Math.min(width, 100)),
+	};
+}
+
+function getShadedOverlayStyle(range: { left: number; width: number }) {
+	return {
+		left: `${range.left}%`,
+		width: `${Math.max(range.width, 0)}%`,
+		"background-color": "rgba(148, 163, 184, 0.22)",
+		"background-image": "repeating-linear-gradient(135deg, rgba(71, 85, 105, 0.35) 0px, rgba(71, 85, 105, 0.35) 2px, transparent 2px, transparent 10px)",
+	};
 }
 
 function mod(value: number, base: number) {
