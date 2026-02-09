@@ -20,6 +20,7 @@ import { Route as ApiMetricsIndexRouteImport } from './routes/api/metrics/index'
 import { Route as AuthedMetricsIndexRouteImport } from './routes/_authed.metrics/index'
 import { Route as SlackOauthCallbackRouteImport } from './routes/slack/oauth/callback'
 import { Route as NotionOauthCallbackRouteImport } from './routes/notion/oauth/callback'
+import { Route as ApiRotationsStartWorkflowRouteImport } from './routes/api/rotations/start-workflow'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedTeamsTeamIdRouteImport } from './routes/_authed.teams/$teamId'
 import { Route as AuthedStatusPageStatusPageIdRouteImport } from './routes/_authed.status-page/$statusPageId'
@@ -97,6 +98,12 @@ const NotionOauthCallbackRoute = NotionOauthCallbackRouteImport.update({
   path: '/notion/oauth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRotationsStartWorkflowRoute =
+  ApiRotationsStartWorkflowRouteImport.update({
+    id: '/api/rotations/start-workflow',
+    path: '/api/rotations/start-workflow',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -241,6 +248,7 @@ export interface FileRoutesByFullPath {
   '/status-page/$statusPageId': typeof AuthedStatusPageStatusPageIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/rotations/start-workflow': typeof ApiRotationsStartWorkflowRoute
   '/notion/oauth/callback': typeof NotionOauthCallbackRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/metrics': typeof AuthedMetricsIndexRoute
@@ -275,6 +283,7 @@ export interface FileRoutesByTo {
   '/status-page/$statusPageId': typeof AuthedStatusPageStatusPageIdRoute
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/rotations/start-workflow': typeof ApiRotationsStartWorkflowRoute
   '/notion/oauth/callback': typeof NotionOauthCallbackRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/metrics': typeof AuthedMetricsIndexRoute
@@ -311,6 +320,7 @@ export interface FileRoutesById {
   '/_authed/status-page/$statusPageId': typeof AuthedStatusPageStatusPageIdRoute
   '/_authed/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/rotations/start-workflow': typeof ApiRotationsStartWorkflowRoute
   '/notion/oauth/callback': typeof NotionOauthCallbackRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/_authed/metrics/': typeof AuthedMetricsIndexRoute
@@ -347,6 +357,7 @@ export interface FileRouteTypes {
     | '/status-page/$statusPageId'
     | '/teams/$teamId'
     | '/api/auth/$'
+    | '/api/rotations/start-workflow'
     | '/notion/oauth/callback'
     | '/slack/oauth/callback'
     | '/metrics'
@@ -381,6 +392,7 @@ export interface FileRouteTypes {
     | '/status-page/$statusPageId'
     | '/teams/$teamId'
     | '/api/auth/$'
+    | '/api/rotations/start-workflow'
     | '/notion/oauth/callback'
     | '/slack/oauth/callback'
     | '/metrics'
@@ -416,6 +428,7 @@ export interface FileRouteTypes {
     | '/_authed/status-page/$statusPageId'
     | '/_authed/teams/$teamId'
     | '/api/auth/$'
+    | '/api/rotations/start-workflow'
     | '/notion/oauth/callback'
     | '/slack/oauth/callback'
     | '/_authed/metrics/'
@@ -437,6 +450,7 @@ export interface RootRouteChildren {
   ApiUploadRoute: typeof ApiUploadRoute
   AuthErrorRoute: typeof AuthErrorRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiRotationsStartWorkflowRoute: typeof ApiRotationsStartWorkflowRoute
   NotionOauthCallbackRoute: typeof NotionOauthCallbackRoute
   SlackOauthCallbackRoute: typeof SlackOauthCallbackRoute
   ApiMetricsIndexRoute: typeof ApiMetricsIndexRoute
@@ -519,6 +533,13 @@ declare module '@tanstack/solid-router' {
       path: '/notion/oauth/callback'
       fullPath: '/notion/oauth/callback'
       preLoaderRoute: typeof NotionOauthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/rotations/start-workflow': {
+      id: '/api/rotations/start-workflow'
+      path: '/api/rotations/start-workflow'
+      fullPath: '/api/rotations/start-workflow'
+      preLoaderRoute: typeof ApiRotationsStartWorkflowRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -774,6 +795,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiUploadRoute: ApiUploadRoute,
   AuthErrorRoute: AuthErrorRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiRotationsStartWorkflowRoute: ApiRotationsStartWorkflowRoute,
   NotionOauthCallbackRoute: NotionOauthCallbackRoute,
   SlackOauthCallbackRoute: SlackOauthCallbackRoute,
   ApiMetricsIndexRoute: ApiMetricsIndexRoute,
@@ -783,10 +805,11 @@ export const routeTree = rootRouteImport
   ._addFileTypes<FileRouteTypes>()
 
 import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/solid-start'
+import type { startInstance } from './start.ts'
 declare module '@tanstack/solid-start' {
   interface Register {
     ssr: true
     router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
   }
 }
