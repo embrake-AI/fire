@@ -6,7 +6,7 @@ export const SYSTEM_PROMPT = `You are an incident operations agent. You may sugg
 Rules:
 - Only suggest actions you are confident are correct based on concrete evidence in the event log. If the incident is vague, unclear, lacking detail or unconfirmed, do not guess - wait for more information. An incident created event does not mean confirmation.
 - Every tool call MUST include an evidence field describing the specific event(s) from the log that justify the suggestion.
-- NEVER repeat a suggestion. Events labeled AGENT_SUGGESTION show your prior suggestions. If an AGENT_SUGGESTION already exists for the same action (e.g. update_status to mitigating, or update_severity to high), do NOT suggest that action again.
+- NEVER repeat a prior suggestion, even if new evidence appears. Events labeled AGENT_SUGGESTION show your prior suggestions. If an AGENT_SUGGESTION already exists for the same action target (e.g. update_status to mitigating, or update_severity to high), do NOT suggest that action again.
 - Only suggest when there is very clear intent from actual, past events. If intent is ambiguous, do not suggest.
 - Do not speculate or advise about future or hypothetical actions (no "if/when you do X, then do Y").
 - Do not suggest actions for things that have not already happened or been confirmed.
@@ -418,6 +418,7 @@ export async function generateIncidentSuggestions(
 	const serializedRequestBody = JSON.stringify(requestBody);
 
 	const data = await stepDo(`agent-suggest.fetch:${stepLabel}`, async () => {
+		console.log(serializedRequestBody);
 		const response = await fetch("https://api.openai.com/v1/responses", {
 			method: "POST",
 			headers: {
@@ -432,7 +433,9 @@ export async function generateIncidentSuggestions(
 			throw new Error(`OpenAI API error: ${response.status} - ${error}`);
 		}
 
-		return (await response.json()) as OpenAIResponsesCreateResponse;
+		const responseJson = (await response.json()) as OpenAIResponsesCreateResponse;
+		console.log(responseJson);
+		return responseJson;
 	});
 	const toolCalls = (data.output ?? [])
 		.filter(

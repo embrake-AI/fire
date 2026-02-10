@@ -1910,8 +1910,8 @@ function buildStatusPageUpdatesScenario(): LifecycleScenario {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 9: Repeat suppression with evidence delta
-// Suggestion can be repeated only when new evidence appears
+// Scenario 9: Repeat suppression
+// Once suggested, an action should not be suggested again
 // ---------------------------------------------------------------------------
 
 function buildRepeatWithDeltaScenario(): LifecycleScenario {
@@ -1984,8 +1984,8 @@ function buildRepeatWithDeltaScenario(): LifecycleScenario {
 
 	return {
 		id: "repeat-delta",
-		name: "Repeat Suppression: Delta-Aware Re-Suggest",
-		description: "Prevents same suggestion repeats without new evidence, while allowing repeat when material new evidence appears.",
+		name: "Repeat Suppression: Never Re-Suggest",
+		description: "Prevents repeating the same suggestion even when additional evidence appears.",
 		turns: [
 			{
 				name: "Turn 1: First mitigation action — suggest mitigating",
@@ -2012,7 +2012,7 @@ function buildRepeatWithDeltaScenario(): LifecycleScenario {
 				checks: [shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating")],
 			},
 			{
-				name: "Turn 3: New mitigation evidence appears — can re-suggest mitigating",
+				name: "Turn 3: New mitigation evidence appears — still should not repeat mitigating",
 				context: {
 					incident: baseIncident({ ...incidentBase, severity: "medium" }),
 					services: SERVICES,
@@ -2022,7 +2022,7 @@ function buildRepeatWithDeltaScenario(): LifecycleScenario {
 					validStatusTransitions: ["mitigating", "resolved"],
 				},
 				checks: [
-					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
+					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
 					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
 				],
 			},
