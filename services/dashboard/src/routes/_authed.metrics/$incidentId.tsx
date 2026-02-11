@@ -27,6 +27,7 @@ import {
 import { computeIncidentMetrics, getAnalysisById, getIncidents, type IncidentAction, type IncidentAnalysis, type IncidentTimelineItem } from "~/lib/incidents/incidents";
 import { useIntegrations } from "~/lib/integrations/integrations.hooks";
 import { exportToNotion, getNotionPages } from "~/lib/notion/notion-export";
+import { useDebounce } from "~/lib/useDebounce";
 import { useUserBySlackId } from "~/lib/users/users.hooks";
 
 function AnalysisSkeleton() {
@@ -307,38 +308,27 @@ function ExportToNotionDialog(props: { incidentId: string; title: string }) {
 				Export to Notion
 			</DialogTrigger>
 			<Show when={open()}>
-				<Suspense fallback={<ExportToNotionDialogLoading />}>
-					<ExportToNotionDialogContent incidentId={props.incidentId} title={props.title} onClose={() => setOpen(false)} />
-				</Suspense>
+				<ExportToNotionDialogContent incidentId={props.incidentId} title={props.title} onClose={() => setOpen(false)} />
 			</Show>
 		</Dialog>
-	);
-}
-
-function ExportToNotionDialogLoading() {
-	return (
-		<DialogContent>
-			<DialogHeader>
-				<DialogTitle>Export to Notion</DialogTitle>
-			</DialogHeader>
-			<div class="flex items-center justify-center py-6">
-				<LoaderCircle class="w-5 h-5 animate-spin text-muted-foreground" />
-			</div>
-		</DialogContent>
 	);
 }
 
 function ExportToNotionDialogContent(props: { incidentId: string; title: string; onClose: () => void }) {
 	const [selectedPageId, setSelectedPageId] = createSignal<string | null>(null);
 	const [searchQuery, setSearchQuery] = createSignal("");
+	const debouncedSearchQuery = useDebounce(searchQuery, 250);
 	const queryClient = useQueryClient();
 
 	const getNotionPagesFn = useServerFn(getNotionPages);
 	const notionPagesQuery = useQuery(() => ({
-		queryKey: ["notion-pages", searchQuery()],
-		queryFn: () => getNotionPagesFn({ data: { query: searchQuery() } }),
+		queryKey: ["notion-pages", debouncedSearchQuery()],
+		queryFn: () => getNotionPagesFn({ data: { query: debouncedSearchQuery() } }),
 		staleTime: 30_000,
+		placeholderData: (previous) => previous,
 	}));
+	const isSearchSettling = () => searchQuery() !== debouncedSearchQuery();
+	const isListUpdating = () => isSearchSettling() || (notionPagesQuery.isFetching && !notionPagesQuery.isLoading);
 
 	const exportToNotionFn = useServerFn(exportToNotion);
 	const exportMutation = useMutation(() => ({
@@ -369,14 +359,25 @@ function ExportToNotionDialogContent(props: { incidentId: string; title: string;
 			</DialogHeader>
 			<div class="space-y-4">
 				<p class="text-sm text-muted-foreground">Select a parent page where the post-mortem will be created.</p>
-				<input
-					type="text"
-					placeholder="Search pages..."
-					value={searchQuery()}
-					onInput={(e) => setSearchQuery(e.currentTarget.value)}
-					class="w-full px-3 py-2 border rounded-md text-sm"
-				/>
-				<div class="max-h-60 overflow-y-auto space-y-1 border rounded-md p-1">
+				<div class="relative">
+					<input
+						type="text"
+						placeholder="Search pages..."
+						value={searchQuery()}
+						onInput={(e) => setSearchQuery(e.currentTarget.value)}
+						class="w-full px-3 py-2 pr-9 border rounded-md text-sm"
+					/>
+					<div
+						class={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-opacity duration-150 ${isListUpdating() ? "opacity-100" : "opacity-0"}`}
+					>
+						<LoaderCircle class={`w-3.5 h-3.5 ${isListUpdating() ? "animate-spin" : ""}`} />
+					</div>
+				</div>
+				<div
+					class={`h-60 overflow-y-auto space-y-1 border rounded-md p-1 transition-[opacity,transform,filter] duration-200 ease-out will-change-[opacity,transform,filter] ${
+						isListUpdating() ? "opacity-75 translate-y-0.5 blur-[0.5px]" : "opacity-100 translate-y-0 blur-0"
+					}`}
+				>
 					<Show when={notionPagesQuery.isLoading}>
 						<div class="flex items-center justify-center py-4">
 							<LoaderCircle class="w-5 h-5 animate-spin text-muted-foreground" />
