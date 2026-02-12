@@ -69,7 +69,14 @@ async function callOpenAI(input: InputMessage[], tools: ResponsesToolDef[], apiK
 	const response = await fetch("https://api.openai.com/v1/responses", {
 		method: "POST",
 		headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-		body: JSON.stringify({ model, input, tools, tool_choice: "auto" }),
+		body: JSON.stringify({
+			model,
+			input,
+			tools,
+			tool_choice: "auto",
+			reasoning: { effort: "medium" },
+			text: { verbosity: "low" },
+		}),
 	});
 
 	if (!response.ok) {
@@ -198,7 +205,7 @@ function mkSuggestionEvent(suggestion: Record<string, unknown>, minutesAfterBase
 			event_type: "MESSAGE_ADDED",
 			event_data: { message: JSON.stringify(suggestion), userId: "fire", suggestion },
 			adapter: "fire",
-			event_metadata: { agentSuggestionId: suggestionId },
+			event_metadata: { kind: "suggestion", agentSuggestionId: suggestionId },
 		},
 		minutesAfterBase,
 	);
@@ -1875,7 +1882,7 @@ function buildStatusPageUpdatesScenario(): LifecycleScenario {
 				checks: [
 					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
 					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
-					shouldSuggest("add_status_page_update"),
+					shouldSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "mitigating"),
 				],
 			},
 			{
@@ -2129,7 +2136,7 @@ function buildFirstStatusPageInvestigatingScenario(): LifecycleScenario {
 	return {
 		id: "first-statuspage",
 		name: "Status Page: First Update Must Be Investigating",
-		description: "Ensures first public status-page suggestion is investigating when no affection exists, then progresses to mitigating/resolved.",
+		description: "Ensures first public status-page suggestion is investigating when no affection exists, then transitions to mitigating/resolved alongside lifecycle changes.",
 		turns: [
 			{
 				name: "Turn 1: First external update — must be investigating",
@@ -2157,7 +2164,10 @@ function buildFirstStatusPageInvestigatingScenario(): LifecycleScenario {
 					processedThroughId: t2ProcessedThrough,
 					validStatusTransitions: ["mitigating", "resolved"],
 				},
-				checks: [shouldSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "mitigating")],
+				checks: [
+					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
+					shouldSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "mitigating"),
+				],
 			},
 			{
 				name: "Turn 3: Fully recovered — suggest resolved status-page update",
@@ -2170,6 +2180,282 @@ function buildFirstStatusPageInvestigatingScenario(): LifecycleScenario {
 					validStatusTransitions: ["resolved"],
 				},
 				checks: [shouldSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "resolved")],
+			},
+		],
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 11: Real incident replay — API performance degradation
+// ---------------------------------------------------------------------------
+
+function buildRealPerformanceIncidentScenario(): LifecycleScenario {
+	const USERS = {
+		reporter: "U_FAKE_REPORTER",
+		oncall: "U_FAKE_ONCALL",
+		engineerA: "U_FAKE_ENG_A",
+		engineerB: "U_FAKE_ENG_B",
+	};
+	const SERVICES: AgentSuggestionContext["services"] = [
+		{ id: "00000000-0000-4000-8000-000000000101", name: "API", prompt: "Public API" },
+		{ id: "00000000-0000-4000-8000-000000000102", name: "Web", prompt: "Web app" },
+	];
+
+	const incidentBase = {
+		title: "Performance issues reported",
+		description: "API slowness and intermittent errors, with instance health-check instability.",
+		prompt: "We are having some performance issues",
+	};
+
+	/**
+	 * Pattern-matched historical outcomes from the real incident log:
+	 *
+	 * Approved-like suggestions (matched later applied events):
+	 * - update_severity=high (later SEVERITY_UPDATE high)
+	 * - update_status=mitigating (later STATUS_UPDATE mitigating)
+	 * - add_status_page_update investigating "API degradation..." (later AFFECTION_UPDATE investigating)
+	 * - add_status_page_update root-cause autoscaling delay (later AFFECTION_UPDATE matching update)
+	 * - update_status=resolved (later STATUS_UPDATE resolved)
+	 * - add_status_page_update resolved (later AFFECTION_UPDATE resolved)
+	 *
+	 * Not-approved-like suggestions (no matching apply event, superseded, or duplicate/noisy):
+	 * - early update_status=resolved while incident was still active
+	 * - repeated update_status=mitigating / update_severity=high duplicates
+	 * - repeated near-duplicate investigating status-page updates without material new info
+	 */
+
+	// Turn 1: early contradictory chat; a prior bad "resolved" suggestion exists but was not applied.
+	resetIds();
+	const t1Events: AgentEvent[] = [
+		mkEvent(
+			{
+				event_type: "INCIDENT_CREATED",
+				event_data: {
+					status: "open",
+					severity: "medium",
+					createdBy: USERS.reporter,
+					...incidentBase,
+					source: "slack",
+					assignee: USERS.oncall,
+					entryPointId: "00000000-0000-4000-8000-00000000e001",
+					rotationId: "00000000-0000-4000-8000-00000000d001",
+				},
+			},
+			0,
+		),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "esta ok", userId: USERS.oncall } }, 3),
+		mkSuggestionEvent({ action: "update_status", status: "resolved", message: "Reporter indicates performance is OK now; closing incident." }, 4, "sug_real_bad_1"),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "No esta ok", userId: USERS.engineerA } }, 5),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "hi ha un munt de cors errors", userId: USERS.reporter } }, 6),
+	];
+
+	// Turn 2: confirmed impact and scope; should move to mitigating/high and first public update.
+	resetIds();
+	const t2Events: AgentEvent[] = [
+		...t1Events,
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Hi ha dos instàncies mortes", userId: USERS.engineerB } }, 8),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Si, es api que va molt lent, la bbdd esta ok", userId: USERS.engineerA } }, 9),
+	];
+	const t2ProcessedThrough = t1Events[t1Events.length - 1]!.id;
+
+	// Turn 3: approved mitigating/high/first investigating update already happened; avoid noisy duplicate updates.
+	resetIds();
+	const t3Events: AgentEvent[] = [
+		...t2Events,
+		mkSuggestionEvent({ action: "update_severity", severity: "high" }, 10, "sug_real_ok_1"),
+		mkEvent({ event_type: "SEVERITY_UPDATE", event_data: { severity: "high" } }, 11),
+		mkSuggestionEvent(
+			{ action: "update_status", status: "mitigating", message: "Confirmed core errors; team investigating/mitigating (possibly API-related)." },
+			12,
+			"sug_real_ok_2",
+		),
+		mkEvent({ event_type: "STATUS_UPDATE", event_data: { status: "mitigating", message: "Confirmed core errors; team investigating/mitigating (possibly API-related)." } }, 13),
+		mkSuggestionEvent(
+			{
+				action: "add_status_page_update",
+				affectionStatus: "investigating",
+				title: "API degradation causing slow responses",
+				message: "Investigating degraded performance and elevated error rates; some API instances are down causing slow responses.",
+				services: [{ id: "00000000-0000-4000-8000-000000000101", impact: "major" }],
+			},
+			14,
+			"sug_real_ok_3",
+		),
+		mkEvent(
+			{
+				event_type: "AFFECTION_UPDATE",
+				event_data: {
+					status: "investigating",
+					title: "API degradation causing slow responses",
+					message: "Investigating degraded performance and elevated error rates; some API instances are down causing slow responses.",
+					services: [{ id: "00000000-0000-4000-8000-000000000101", impact: "major" }],
+					createdBy: USERS.engineerA,
+				},
+			},
+			15,
+		),
+		mkSuggestionEvent(
+			{
+				action: "add_status_page_update",
+				affectionStatus: "investigating",
+				title: "Ongoing API performance degradation",
+				message: "Performance is still degraded. Sustained high CPU on API instances; mitigation continues.",
+				services: [{ id: "00000000-0000-4000-8000-000000000101", impact: "major" }],
+			},
+			16,
+			"sug_real_bad_2",
+		),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Has de mirar aixo, que no hi hagi errors no vol dir que funcioni bé", userId: USERS.engineerA } }, 17),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "No sustained", userId: USERS.engineerA } }, 18),
+	];
+	const t3ProcessedThrough = t3Events[t3Events.length - 3]!.id;
+
+	// Turn 4: materially new root-cause insight; should suggest a substantive public update.
+	resetIds();
+	const t4Events: AgentEvent[] = [
+		...t3Events,
+		mkEvent(
+			{
+				event_type: "AFFECTION_UPDATE",
+				event_data: {
+					status: "mitigating",
+					title: "Monitoring API instance health",
+					message: "Added additional API capacity and monitoring instance health; performance improving.",
+					services: [{ id: "00000000-0000-4000-8000-000000000101", impact: "major" }],
+					createdBy: "fire",
+				},
+			},
+			20,
+		),
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "si, es q al escalar han fallat 2 instancies el health check i no ha pogut escalar fins q les ha recuperat, pel q anava retrassat",
+					userId: USERS.oncall,
+				},
+			},
+			21,
+		),
+	];
+	const t4ProcessedThrough = t3Events[t3Events.length - 1]!.id;
+
+	// Turn 5: final human all-clear; should close incident and publish resolved update.
+	resetIds();
+	const t5Events: AgentEvent[] = [
+		...t4Events,
+		mkSuggestionEvent(
+			{
+				action: "add_status_page_update",
+				title: "Update: autoscaling delay due to health check failures",
+				message:
+					"We believe degradation was triggered during autoscaling: two API instances failed health checks, delaying scale-out until recovered. Capacity has been added and we continue monitoring.",
+				services: [{ id: "00000000-0000-4000-8000-000000000101", impact: "major" }],
+			},
+			22,
+			"sug_real_ok_4",
+		),
+		mkEvent(
+			{
+				event_type: "AFFECTION_UPDATE",
+				event_data: {
+					title: "Update: autoscaling delay due to health check failures",
+					message:
+						"We believe degradation was triggered during autoscaling: two API instances failed health checks, delaying scale-out until recovered. Capacity has been added and we continue monitoring.",
+					services: [{ id: "00000000-0000-4000-8000-000000000101", impact: "major" }],
+					createdBy: USERS.oncall,
+				},
+			},
+			23,
+		),
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "Yup all good, per mi tanquem, ara passo el link del postmortem q generi :)",
+					userId: USERS.oncall,
+				},
+			},
+			24,
+		),
+	];
+	const t5ProcessedThrough = t5Events[t5Events.length - 2]!.id;
+
+	return {
+		id: "real-performance",
+		name: "Real Incident: API Performance Degradation",
+		description: "Replay of a real incident with early false-resolve noise, approved mitigating/high transitions, status-page spam risk, and final close.",
+		turns: [
+			{
+				name: "Turn 1: Conflicting early signals — do not resolve",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t1Events,
+					processedThroughId: 0,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+			},
+			{
+				name: "Turn 2: Confirmed impact — suggest mitigating/high and first public update",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t2Events,
+					processedThroughId: t2ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [
+					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
+					shouldSuggest("update_severity", (s) => s.action === "update_severity" && s.severity === "high"),
+					shouldSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "investigating"),
+				],
+			},
+			{
+				name: "Turn 3: Ongoing noise with no material new external info — avoid duplicates",
+				context: {
+					incident: baseIncident({ ...incidentBase, status: "mitigating", severity: "high" }),
+					services: SERVICES,
+					affection: { hasAffection: true, lastStatus: "investigating" },
+					events: t3Events,
+					processedThroughId: t3ProcessedThrough,
+					validStatusTransitions: ["resolved"],
+				},
+				checks: [
+					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
+					shouldNotSuggest("update_severity", (s) => s.action === "update_severity" && s.severity === "high"),
+					shouldNotSuggest("add_status_page_update"),
+				],
+			},
+			{
+				name: "Turn 4: Root-cause insight and capacity update — suggest public update",
+				context: {
+					incident: baseIncident({ ...incidentBase, status: "mitigating", severity: "high" }),
+					services: SERVICES,
+					affection: { hasAffection: true, lastStatus: "mitigating" },
+					events: t4Events,
+					processedThroughId: t4ProcessedThrough,
+					validStatusTransitions: ["resolved"],
+				},
+				checks: [shouldSuggest("add_status_page_update"), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+			},
+			{
+				name: "Turn 5: Human all-clear — suggest resolved + resolved status-page update",
+				context: {
+					incident: baseIncident({ ...incidentBase, status: "mitigating", severity: "high" }),
+					services: SERVICES,
+					affection: { hasAffection: true, lastStatus: "mitigating" },
+					events: t5Events,
+					processedThroughId: t5ProcessedThrough,
+					validStatusTransitions: ["resolved"],
+				},
+				checks: [
+					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+					shouldSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "resolved"),
+				],
 			},
 		],
 	};
@@ -2190,6 +2476,7 @@ export const SCENARIOS: LifecycleScenario[] = [
 	buildStatusPageUpdatesScenario(),
 	buildRepeatWithDeltaScenario(),
 	buildFirstStatusPageInvestigatingScenario(),
+	buildRealPerformanceIncidentScenario(),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2782,6 +3069,7 @@ async function main() {
 	const judgeModel = judgeModelArg ? judgeModelArg.split("=")[1]! : undefined;
 	const scenarioArg = process.argv.find((a) => a.startsWith("--scenario="));
 	const scenarioFilter = scenarioArg ? scenarioArg.split("=")[1]! : undefined;
+	const promptFileArg = process.argv.find((a) => a.startsWith("--prompt-file="));
 	const outArg = process.argv.find((a) => a.startsWith("--out="));
 	const outputPath = resolve(outArg ? outArg.split("=")[1]! : buildDefaultOutputPath());
 	const skipJudge = process.argv.includes("--skip-judge");
@@ -2796,15 +3084,16 @@ async function main() {
 	console.log(`Running ${scenarios.length} lifecycle scenario(s) (${scenarios.reduce((n, s) => n + s.turns.length, 0)} turns)${runs > 1 ? ` x${runs} runs` : ""}...`);
 	if (model) console.log(`Model: ${model}`);
 	if (judgeModel) console.log(`Judge model: ${judgeModel}`);
+	if (promptFileArg) console.log(`Prompt file: ${promptFileArg.split("=")[1]}`);
 	console.log();
 
 	const modelName = model ?? "gpt-5.2";
-	const systemPrompt = SYSTEM_PROMPT;
+	const systemPrompt = promptFileArg ? await readFile(resolve(promptFileArg.split("=")[1]!), "utf8") : SYSTEM_PROMPT;
 	const results: ScenarioCapture[] = [];
 	for (const scenario of scenarios) {
 		console.log(`>> ${scenario.name}`);
 		console.log(`   ${scenario.description}\n`);
-		const result = await runLifecycleScenario(scenario, { verbose, runs, model: modelName });
+		const result = await runLifecycleScenario(scenario, { verbose, runs, model: modelName, systemPrompt });
 		results.push(result);
 	}
 

@@ -1,25 +1,48 @@
 import type { IS } from "@fire/common";
 import type { AgentAffectionInfo, AgentAffectionStatus, AgentEvent, AgentSuggestion, AgentSuggestionContext } from "./types";
 
-export const SYSTEM_PROMPT = `You are an incident operations agent. You may suggest actions for a human dispatcher by calling tools. Each tool call is treated as a suggested action - it is NOT executed automatically. Tools are optional: only call a tool when the suggestion would be genuinely useful to the dispatcher. If nothing warrants a suggestion, call no tools.
+export const SYSTEM_PROMPT = `You are an incident operations agent. You may suggest actions for a human dispatcher by calling tools. Tool calls are suggestions only (not auto-executed). If no action is clearly warranted, call no tools.
 
-Rules:
-- Only suggest actions you are confident are correct based on concrete evidence in the event log. If the incident is vague, unclear, lacking detail or unconfirmed, do not guess - wait for more information. An incident created event does not mean confirmation.
-- Every tool call MUST include an evidence field describing the specific event(s) from the log that justify the suggestion.
-- NEVER repeat a prior suggestion, even if new evidence appears. Events labeled AGENT_SUGGESTION show your prior suggestions. If an AGENT_SUGGESTION already exists for the same action target (e.g. update_status to mitigating, or update_severity to high), do NOT suggest that action again.
-- Only suggest when there is very clear intent from actual, past events. If intent is ambiguous, do not suggest.
-- Do not speculate or advise about future or hypothetical actions (no "if/when you do X, then do Y").
-- Do not suggest actions for things that have not already happened or been confirmed.
-- For status page suggestions:
-	1. Only suggest them for clearly confirmed incidents that affect external users in a meaningful way.
-	2. HARD GATE: NEVER suggest add_status_page_update when the only evidence is INCIDENT_CREATED and/or ambiguous chat (for example: "not sure", "looks right", "can you check your PC", "maybe"). Those are unconfirmed signals.
-	3. Require at least one corroborating post-create signal before add_status_page_update: e.g. measured errors/latency, a second independent report, explicit engineer confirmation of impact, or a concrete mitigation/progress update.
-		4. You MUST follow the provided status-page context: if hasAffection=false, the first public update MUST use affectionStatus=investigating (never mitigating/resolved) and include title + services.
-		5. If hasAffection=true and there is meaningful new external-user progress/impact information, you SHOULD suggest add_status_page_update in this turn without a status field (even if incident status does not change). Do NOT repeat status, omit it to post an update.
-- "Resolved" means the issue is fully over and the incident will be closed. Only suggest resolved when a human explicitly confirms the incident is OVER - the fix is verified AND the problem is completely gone (e.g. "confirmed working", "error rate back to zero", "verified fix", "all clear"). Do NOT suggest resolved when: a fix/restart/purge was just initiated or is in progress, errors have decreased but are not zero, retries are still failing, some users/regions are still affected, or someone is still monitoring/investigating. When in doubt, do NOT suggest resolved - wait for the next turn.
-- Resolved requires TWO conditions met simultaneously: (1) a remediation action was completed, AND (2) a human confirmed the problem is gone. A restart being initiated, errors dropping to non-zero, or retries still failing means condition (2) is NOT met.
-- Keep suggestion messages short (max ~200 characters).
+Goal: maximize operational correctness and signal quality.
+Priority:
+1) Correct internal lifecycle/severity state
+2) Correct public status-page communication
+3) Avoid duplicates/noise
+
+Hard rules:
+- Use only concrete evidence from the event log. If ambiguous, suggest nothing.
+- Every tool call MUST include evidence citing specific supporting events.
+- NEVER repeat a prior update_status or update_severity target already present in AGENT_SUGGESTION events.
+- NEVER suggest a status transition that is not in validStatusTransitions.
+- Do not speculate about hypothetical/future actions.
+
+Lifecycle guidance:
+- Suggest update_status=mitigating when there is clear ongoing user impact and incident is not resolved.
+- Do NOT suggest update_status=mitigating if AGENT_SUGGESTION already includes update_status=mitigating.
+- Suggest update_severity only when evidence supports an actual severity change.
+- Suggest update_status=resolved only when BOTH are true:
+  1) remediation happened, and
+  2) a human confirms all-clear / issue fully over.
+- False alarm rule: if humans confirm no real user impact and stable metrics, prefer update_status=resolved.
+
+Severity guidance:
+- Prefer high for confirmed broad external impact (for example widespread errors, major degradation, critical service affected).
+- Do not re-suggest the same severity target once already suggested/applied unless target changes.
+
+Status-page guidance:
+- Suggest status-page updates only for confirmed external-user impact.
+- If hasAffection=false, the first status-page update MUST use affectionStatus=investigating and include title + services.
+- If hasAffection=true, use this decision table for affectionStatus:
+  1) If you suggest update_status in this turn, set affectionStatus to that same lifecycle status (mitigating or resolved).
+  2) If you do NOT suggest update_status in this turn, set affectionStatus=update for follow-up public communication.
+- If hasAffection=true and no status change, suggest a status-page update only when there is materially new external information (new impact/scope, renewed errors, mitigation progress, root-cause insight, recovery milestone, or clear next-step/update commitment).
+- New-information gate (strict): for hasAffection=true with no lifecycle status change, require at least one new external-facing fact that was NOT already communicated in recent AFFECTION_UPDATE or prior add_status_page_update AGENT_SUGGESTION events. Rewording the same state, internal debate, or repeated/ambiguous signals is NOT enough.
+- Anti-spam: do not post near-duplicate public updates that add no new external value.
+
+Output constraints:
+- Keep suggestion messages concise (~200 chars max).
 - Suggest at most 3 actions total.
+- If uncertain, suggest nothing.
 
 Allowed actions (use tools):
 1) update_status: move to mitigating or resolved. Must include a concise message. Updating to resolved terminates (closes) the incident.
@@ -191,8 +214,9 @@ export function buildSuggestionTools(context: AgentSuggestionContext): Suggestio
 				description: `Suggest posting a public status page update. Only call when the incident should be notified to external users.
 - Use the status-page context provided in the prompt:
   - If hasAffection=false, this is the FIRST public update. You MUST set affectionStatus=investigating and include title + services. Do NOT set mitigating/resolved.
-  - If hasAffection=true and there is meaningful external progress/new impact information, you SHOULD call this tool for a follow-up update even when incident status is unchanged.
-- Subsequent updates: share updates regularly to keep external users informed - post when there is meaningful progress, status changes, scope changes, or new information about impact/timeline. You do not need to wait for a status change to post an update.
+  - If hasAffection=true and you also suggest update_status in this turn, set affectionStatus to the same lifecycle status (mitigating/resolved).
+  - If hasAffection=true and incident status is unchanged in this turn, set affectionStatus=update for follow-up communication.
+- Subsequent updates: share updates when there is meaningful progress, status changes, scope changes, or genuinely new external information about impact/timeline. If the latest public update already communicates the same external state, do NOT post another update.
 - Do NOT call this tool for internal-only issues (e.g. internal tooling, demo/staging environments, internal dashboards, background jobs that do not affect end users). If the incident has no external user impact, simply do not call this tool.`,
 				parameters: {
 					type: "object",
@@ -413,10 +437,11 @@ export async function generateIncidentSuggestions(
 		input,
 		tools: responseTools,
 		tool_choice: "auto" as const,
+		reasoning: { effort: "medium" as const },
+		text: { verbosity: "low" as const },
 		prompt_cache_key: promptCacheKey,
 	};
 	const serializedRequestBody = JSON.stringify(requestBody);
-
 	const data = await stepDo(`agent-suggest.fetch:${stepLabel}`, async () => {
 		console.log(serializedRequestBody);
 		const response = await fetch("https://api.openai.com/v1/responses", {
