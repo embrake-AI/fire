@@ -29,7 +29,9 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Skeleton } from "~/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { useClient } from "~/lib/client/client.hooks";
+import { isDemoMode } from "~/lib/demo/mode";
 import { useServices } from "~/lib/services/services.hooks";
 import {
 	useStatusPages,
@@ -119,6 +121,7 @@ function BrowserChrome(props: { page: StatusPageData }) {
 	const updateStatusPageMutation = useUpdateStatusPage();
 	const uploadImageMutation = useUploadImage("status-page");
 	const verifyDomainMutation = useVerifyCustomDomain();
+	const demoMode = isDemoMode();
 	const [isEditingSlug, setIsEditingSlug] = createSignal(false);
 	const [isEditingFavicon, setIsEditingFavicon] = createSignal(false);
 	const [slug, setSlug] = createSignal(props.page.slug);
@@ -247,6 +250,10 @@ function BrowserChrome(props: { page: StatusPageData }) {
 	};
 
 	const handleVerifyDomain = async () => {
+		if (demoMode) {
+			setVerificationStatus("misconfigured");
+			return;
+		}
 		setVerificationStatus("checking");
 		try {
 			const result = await verifyDomainMutation.mutateAsync(props.page.id);
@@ -574,12 +581,24 @@ function BrowserChrome(props: { page: StatusPageData }) {
 							<Show
 								when={verificationStatus() === "verified"}
 								fallback={
-									<Button onClick={handleVerifyDomain} disabled={verifyDomainMutation.isPending}>
-										<Show when={verifyDomainMutation.isPending} fallback="Verify Configuration">
-											<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-											Verifying...
-										</Show>
-									</Button>
+									<Show
+										when={demoMode}
+										fallback={
+											<Button onClick={handleVerifyDomain} disabled={verifyDomainMutation.isPending}>
+												<Show when={verifyDomainMutation.isPending} fallback="Verify Configuration">
+													<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+													Verifying...
+												</Show>
+											</Button>
+										}
+									>
+										<Tooltip>
+											<TooltipTrigger as="span" class="inline-flex">
+												<Button disabled>Unavailable in demo</Button>
+											</TooltipTrigger>
+											<TooltipContent>Unavailable in demo mode (browser only).</TooltipContent>
+										</Tooltip>
+									</Show>
 								}
 							>
 								<Button onClick={handleCloseWizard}>Done</Button>

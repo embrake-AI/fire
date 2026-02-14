@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/solid-query";
+import { isDemoMode } from "../demo/mode";
 
 export type UploadImageType = "user" | "client" | "team" | "service" | "status-page";
 
@@ -18,8 +19,34 @@ type UploadImageOptions = {
 	onSettled?: (data: UploadImageResult | undefined, error: unknown | null, variables: UploadImageInput) => void;
 };
 
+async function toDataUrl(file: File): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			const result = reader.result;
+			if (typeof result !== "string") {
+				reject(new Error("Failed to read image"));
+				return;
+			}
+			resolve(result);
+		};
+		reader.onerror = () => reject(new Error("Failed to read image"));
+		reader.readAsDataURL(file);
+	});
+}
+
 async function uploadImage(type: UploadImageType, { file, url }: UploadImageInput): Promise<UploadImageResult> {
 	if (!file && !url) {
+		throw new Error("No image provided");
+	}
+
+	if (isDemoMode()) {
+		if (url?.trim()) {
+			return { imageUrl: url.trim() };
+		}
+		if (file) {
+			return { imageUrl: await toDataUrl(file) };
+		}
 		throw new Error("No image provided");
 	}
 

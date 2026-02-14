@@ -21,6 +21,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/u
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Textarea } from "~/components/ui/textarea";
+import { runDemoAware } from "~/lib/demo/runtime";
+import { getIncidentByIdDemo, getIncidentsDemo } from "~/lib/demo/store";
 import type { AffectionImpact, AffectionStatus, IncidentAffectionData } from "~/lib/incident-affections/incident-affections";
 import {
 	useAddIncidentAffectionUpdate,
@@ -157,7 +159,11 @@ function IncidentDetail() {
 	const getIncidentByIdFn = useServerFn(getIncidentById);
 	const incidentQuery = useQuery(() => ({
 		queryKey: ["incident", params().incidentId],
-		queryFn: () => getIncidentByIdFn({ data: { id: params().incidentId } }),
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getIncidentByIdDemo({ id: params().incidentId }),
+				remote: () => getIncidentByIdFn({ data: { id: params().incidentId } }),
+			}),
 		staleTime: Infinity,
 		refetchInterval: 5_000,
 	}));
@@ -179,7 +185,11 @@ function IncidentDetail() {
 		}
 		void queryClient.prefetchQuery({
 			queryKey: ["incidents"],
-			queryFn: getIncidentsFn,
+			queryFn: () =>
+				runDemoAware({
+					demo: () => getIncidentsDemo(),
+					remote: () => getIncidentsFn(),
+				}),
 			staleTime: 10_000,
 		});
 	};

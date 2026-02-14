@@ -2,6 +2,26 @@ import type { SHIFT_LENGTH_OPTIONS } from "@fire/common";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
+import { runDemoAware } from "../demo/runtime";
+import {
+	addRotationAssigneeDemo,
+	addSlackUserAsRotationAssigneeDemo,
+	clearRotationOverrideDemo,
+	createRotationDemo,
+	createRotationOverrideDemo,
+	deleteRotationDemo,
+	getRotationOverridesDemo,
+	getRotationsDemo,
+	removeRotationAssigneeDemo,
+	reorderRotationAssigneeDemo,
+	setRotationOverrideDemo,
+	updateRotationAnchorDemo,
+	updateRotationNameDemo,
+	updateRotationOverrideDemo,
+	updateRotationShiftLengthDemo,
+	updateRotationSlackChannelDemo,
+	updateRotationTeamDemo,
+} from "../demo/store";
 import type { getUsers } from "../users/users";
 import {
 	addRotationAssignee,
@@ -55,7 +75,11 @@ export function useRotations(options?: { enabled?: Accessor<boolean> }) {
 	const getRotationsFn = useServerFn(getRotations);
 	return useQuery(() => ({
 		queryKey: ["rotations"],
-		queryFn: getRotationsFn,
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getRotationsDemo(),
+				remote: () => getRotationsFn(),
+			}),
 		staleTime: 60_000,
 		enabled: options?.enabled?.() ?? true,
 	}));
@@ -67,7 +91,11 @@ export function useCreateRotation(options?: { onMutate?: (tempId: string) => voi
 	const createRotationFn = useServerFn(createRotation);
 
 	return useMutation(() => ({
-		mutationFn: (data: { name: string; shiftLength: ShiftLength; anchorAt?: Date; teamId?: string }) => createRotationFn({ data }),
+		mutationFn: (data: { name: string; shiftLength: ShiftLength; anchorAt?: Date; teamId?: string }) =>
+			runDemoAware({
+				demo: () => createRotationDemo(data),
+				remote: () => createRotationFn({ data }),
+			}),
 
 		onMutate: async (newData) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
@@ -119,7 +147,11 @@ export function useDeleteRotation(options?: { onSuccess?: () => void; onError?: 
 	const deleteRotationFn = useServerFn(deleteRotation);
 
 	return useMutation(() => ({
-		mutationFn: (id: string) => deleteRotationFn({ data: { id } }),
+		mutationFn: (id: string) =>
+			runDemoAware({
+				demo: () => deleteRotationDemo({ id }),
+				remote: () => deleteRotationFn({ data: { id } }),
+			}),
 
 		onMutate: async (id) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
@@ -151,7 +183,11 @@ export function useUpdateRotationName(options?: { onMutate?: () => void; onSucce
 	const updateRotationNameFn = useServerFn(updateRotationName);
 
 	return useMutation(() => ({
-		mutationFn: (data: { id: string; name: string }) => updateRotationNameFn({ data }),
+		mutationFn: (data: { id: string; name: string }) =>
+			runDemoAware({
+				demo: () => updateRotationNameDemo(data),
+				remote: () => updateRotationNameFn({ data }),
+			}),
 
 		onMutate: async ({ id, name }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
@@ -184,7 +220,11 @@ export function useUpdateRotationTeam(options?: { onMutate?: () => void; onSucce
 	const updateRotationTeamFn = useServerFn(updateRotationTeam);
 
 	return useMutation(() => ({
-		mutationFn: (data: { id: string; teamId: string | null }) => updateRotationTeamFn({ data }),
+		mutationFn: (data: { id: string; teamId: string | null }) =>
+			runDemoAware({
+				demo: () => updateRotationTeamDemo(data),
+				remote: () => updateRotationTeamFn({ data }),
+			}),
 
 		onMutate: async ({ id, teamId }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
@@ -218,7 +258,11 @@ export function useUpdateRotationSlackChannel(options?: { onMutate?: () => void;
 	const updateRotationSlackChannelFn = useServerFn(updateRotationSlackChannel);
 
 	return useMutation(() => ({
-		mutationFn: (data: { id: string; slackChannelId: string | null }) => updateRotationSlackChannelFn({ data }),
+		mutationFn: (data: { id: string; slackChannelId: string | null }) =>
+			runDemoAware({
+				demo: () => updateRotationSlackChannelDemo(data),
+				remote: () => updateRotationSlackChannelFn({ data }),
+			}),
 
 		onMutate: async ({ id, slackChannelId }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
@@ -251,7 +295,11 @@ export function useUpdateRotationShiftLength(options?: { onSuccess?: () => void;
 	const updateRotationShiftLengthFn = useServerFn(updateRotationShiftLength);
 
 	return useMutation(() => ({
-		mutationFn: (data: { id: string; shiftLength: string }) => updateRotationShiftLengthFn({ data }),
+		mutationFn: (data: { id: string; shiftLength: string }) =>
+			runDemoAware({
+				demo: () => updateRotationShiftLengthDemo(data),
+				remote: () => updateRotationShiftLengthFn({ data }),
+			}),
 
 		onMutate: async ({ id, shiftLength }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
@@ -282,7 +330,11 @@ export function useUpdateRotationAnchor(options?: { onSuccess?: () => void; onEr
 	const updateRotationAnchorFn = useServerFn(updateRotationAnchor);
 
 	return useMutation(() => ({
-		mutationFn: (data: { id: string; anchorAt: Date }) => updateRotationAnchorFn({ data }),
+		mutationFn: (data: { id: string; anchorAt: Date }) =>
+			runDemoAware({
+				demo: () => updateRotationAnchorDemo(data),
+				remote: () => updateRotationAnchorFn({ data }),
+			}),
 
 		onMutate: async ({ id, anchorAt }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
@@ -314,7 +366,10 @@ export function useAddRotationAssignee(options?: { onSuccess?: () => void; onErr
 
 	return useMutation(() => ({
 		mutationFn: (data: { rotationId: string; assigneeId: string; optimisticData: { name?: string; avatar?: string } }) =>
-			addRotationAssigneeFn({ data: { rotationId: data.rotationId, assigneeId: data.assigneeId } }),
+			runDemoAware({
+				demo: () => addRotationAssigneeDemo({ rotationId: data.rotationId, assigneeId: data.assigneeId }),
+				remote: () => addRotationAssigneeFn({ data: { rotationId: data.rotationId, assigneeId: data.assigneeId } }),
+			}),
 
 		onMutate: async ({ rotationId, assigneeId, optimisticData }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
@@ -356,7 +411,10 @@ export function useAddSlackUserAsRotationAssignee(options?: { onSuccess?: () => 
 
 	return useMutation(() => ({
 		mutationFn: (data: { rotationId: string; slackUserId: string; optimisticData: { name?: string; avatar?: string } }) =>
-			addSlackUserAsRotationAssigneeFn({ data: { rotationId: data.rotationId, slackUserId: data.slackUserId } }),
+			runDemoAware({
+				demo: () => addSlackUserAsRotationAssigneeDemo({ rotationId: data.rotationId, slackUserId: data.slackUserId }),
+				remote: () => addSlackUserAsRotationAssigneeFn({ data: { rotationId: data.rotationId, slackUserId: data.slackUserId } }),
+			}),
 
 		onMutate: async ({ rotationId, slackUserId, optimisticData }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
@@ -432,7 +490,11 @@ export function useRemoveRotationAssignee(options?: { onSuccess?: () => void; on
 	const removeRotationAssigneeFn = useServerFn(removeRotationAssignee);
 
 	return useMutation(() => ({
-		mutationFn: (data: { rotationId: string; assigneeId: string }) => removeRotationAssigneeFn({ data }),
+		mutationFn: (data: { rotationId: string; assigneeId: string }) =>
+			runDemoAware({
+				demo: () => removeRotationAssigneeDemo(data),
+				remote: () => removeRotationAssigneeFn({ data }),
+			}),
 
 		onMutate: async ({ rotationId, assigneeId }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
@@ -477,7 +539,11 @@ export function useRotationOverrides(options: { rotationId: Accessor<string | nu
 
 		return {
 			queryKey: ["rotation-overrides", rotationId, startAt.toISOString(), endAt.toISOString()],
-			queryFn: () => getRotationOverridesFn({ data: { rotationId: rotationId!, startAt, endAt } }),
+			queryFn: () =>
+				runDemoAware({
+					demo: () => getRotationOverridesDemo({ rotationId: rotationId!, startAt, endAt }),
+					remote: () => getRotationOverridesFn({ data: { rotationId: rotationId!, startAt, endAt } }),
+				}),
 			enabled: (options.enabled?.() ?? true) && !!rotationId,
 			staleTime: 60_000,
 			suspense: false,
@@ -491,7 +557,11 @@ export function useCreateRotationOverride(options?: { onSuccess?: () => void; on
 	const createRotationOverrideFn = useServerFn(createRotationOverride);
 
 	return useMutation(() => ({
-		mutationFn: (data: { rotationId: string; assigneeId: string; startAt: Date; endAt: Date }) => createRotationOverrideFn({ data }),
+		mutationFn: (data: { rotationId: string; assigneeId: string; startAt: Date; endAt: Date }) =>
+			runDemoAware({
+				demo: () => createRotationOverrideDemo(data),
+				remote: () => createRotationOverrideFn({ data }),
+			}),
 
 		onMutate: async ({ rotationId, assigneeId, startAt, endAt }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotation-overrides", rotationId] });
@@ -579,7 +649,11 @@ export function useSetRotationOverride(options?: { onSuccess?: () => void; onErr
 	const setRotationOverrideFn = useServerFn(setRotationOverride);
 
 	return useMutation(() => ({
-		mutationFn: (data: { rotationId: string; assigneeId: string }) => setRotationOverrideFn({ data }),
+		mutationFn: (data: { rotationId: string; assigneeId: string }) =>
+			runDemoAware({
+				demo: () => setRotationOverrideDemo(data),
+				remote: () => setRotationOverrideFn({ data }),
+			}),
 
 		onMutate: async ({ rotationId, assigneeId }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
@@ -621,7 +695,11 @@ export function useClearRotationOverride(options?: { onSuccess?: () => void; onE
 	const clearRotationOverrideFn = useServerFn(clearRotationOverride);
 
 	return useMutation(() => ({
-		mutationFn: (data: { rotationId: string; overrideId: string }) => clearRotationOverrideFn({ data }),
+		mutationFn: (data: { rotationId: string; overrideId: string }) =>
+			runDemoAware({
+				demo: () => clearRotationOverrideDemo(data),
+				remote: () => clearRotationOverrideFn({ data }),
+			}),
 
 		onMutate: async ({ rotationId, overrideId }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });
@@ -673,7 +751,11 @@ export function useUpdateRotationOverride(options?: { onSuccess?: () => void; on
 	const updateRotationOverrideFn = useServerFn(updateRotationOverride);
 
 	return useMutation(() => ({
-		mutationFn: (data: { rotationId: string; overrideId: string; assigneeId: string; startAt: Date; endAt: Date }) => updateRotationOverrideFn({ data }),
+		mutationFn: (data: { rotationId: string; overrideId: string; assigneeId: string; startAt: Date; endAt: Date }) =>
+			runDemoAware({
+				demo: () => updateRotationOverrideDemo(data),
+				remote: () => updateRotationOverrideFn({ data }),
+			}),
 
 		onMutate: async ({ rotationId, overrideId, assigneeId, startAt, endAt }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotation-overrides", rotationId] });
@@ -751,7 +833,11 @@ export function useReorderRotationAssignee(options?: { onSuccess?: () => void; o
 	const reorderRotationAssigneeFn = useServerFn(reorderRotationAssignee);
 
 	return useMutation(() => ({
-		mutationFn: (data: { rotationId: string; assigneeId: string; newPosition: number }) => reorderRotationAssigneeFn({ data }),
+		mutationFn: (data: { rotationId: string; assigneeId: string; newPosition: number }) =>
+			runDemoAware({
+				demo: () => reorderRotationAssigneeDemo(data),
+				remote: () => reorderRotationAssigneeFn({ data }),
+			}),
 
 		onMutate: async ({ rotationId, assigneeId, newPosition }) => {
 			await queryClient.cancelQueries({ queryKey: ["rotations"] });

@@ -1529,8 +1529,8 @@ function buildNoisyAlertsScenario(): LifecycleScenario {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 7: Severity Escalation and De-escalation
-// Starts low, escalates to high, then narrows scope and de-escalates
+// Scenario 7: Severity Increase and Decrease
+// Starts low, increases to high, then narrows scope and decreases
 // ---------------------------------------------------------------------------
 
 function buildSeverityScenario(): LifecycleScenario {
@@ -1653,8 +1653,8 @@ function buildSeverityScenario(): LifecycleScenario {
 
 	return {
 		id: "severity",
-		name: "Severity: Escalation and De-escalation",
-		description: "Starts low, escalates to high on confirmed impact, then de-escalates to medium as scope narrows, then resolved.",
+		name: "Severity: Increase and Decrease",
+		description: "Starts low, increases to high on confirmed impact, then decreases to medium as scope narrows, then resolved.",
 		turns: [
 			{
 				name: "Turn 1: Confirmed revenue impact — should suggest high severity",
@@ -1684,7 +1684,7 @@ function buildSeverityScenario(): LifecycleScenario {
 				],
 			},
 			{
-				name: "Turn 3: Scope narrowed — should de-escalate severity",
+				name: "Turn 3: Scope narrowed — should suggest lower severity",
 				context: {
 					incident: baseIncident({ ...incidentBase, status: "mitigating", severity: "high" }),
 					services: SERVICES,

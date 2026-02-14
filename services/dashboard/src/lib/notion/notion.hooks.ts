@@ -1,6 +1,9 @@
 import { useMutation, useQuery } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
+import { isDemoMode } from "../demo/mode";
+import { runDemoAware } from "../demo/runtime";
+import { getNotionPagesDemo } from "../demo/store";
 import { exportToNotion, getNotionPages } from "./notion-export";
 
 export function useNotionPages(options: Accessor<{ query?: string }>) {
@@ -8,7 +11,11 @@ export function useNotionPages(options: Accessor<{ query?: string }>) {
 
 	return useQuery(() => ({
 		queryKey: ["notion-pages", options().query],
-		queryFn: () => getNotionPagesFn({ data: { query: options().query } }),
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getNotionPagesDemo({ query: options().query }),
+				remote: () => getNotionPagesFn({ data: { query: options().query } }),
+			}),
 		staleTime: 30_000,
 	}));
 }
@@ -17,6 +24,11 @@ export function useExportToNotion() {
 	const exportToNotionFn = useServerFn(exportToNotion);
 
 	return useMutation(() => ({
-		mutationFn: (data: { incidentId: string; parentPageId: string }) => exportToNotionFn({ data }),
+		mutationFn: (data: { incidentId: string; parentPageId: string }) => {
+			if (isDemoMode()) {
+				throw new Error("Export to Notion is not supported in demo mode yet.");
+			}
+			return exportToNotionFn({ data });
+		},
 	}));
 }

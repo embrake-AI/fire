@@ -12,6 +12,8 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { showToast } from "~/components/ui/toast";
 import { createApiKey, revokeApiKey } from "~/lib/api-keys/api-keys";
 import { useApiKeys } from "~/lib/api-keys/api-keys.hooks";
+import { runDemoAware } from "~/lib/demo/runtime";
+import { createApiKeyDemo, revokeApiKeyDemo } from "~/lib/demo/store";
 
 // --- Name Generator ---
 
@@ -252,7 +254,11 @@ function ApiKeysContent() {
 
 	const createApiKeyFn = useServerFn(createApiKey);
 	const createMutation = useMutation(() => ({
-		mutationFn: createApiKeyFn,
+		mutationFn: (data: { data: { name: string } }) =>
+			runDemoAware({
+				demo: () => createApiKeyDemo(data.data),
+				remote: () => createApiKeyFn(data),
+			}),
 		onSuccess: (result) => {
 			setCreatedKey({ key: result.key, name: result.name });
 			setCreateDialogOpen(false);
@@ -263,7 +269,11 @@ function ApiKeysContent() {
 
 	const revokeApiKeyFn = useServerFn(revokeApiKey);
 	const revokeMutation = useMutation(() => ({
-		mutationFn: revokeApiKeyFn,
+		mutationFn: (data: { data: { id: string } }) =>
+			runDemoAware({
+				demo: () => revokeApiKeyDemo(data.data),
+				remote: () => revokeApiKeyFn(data),
+			}),
 		onMutate: async ({ data }) => {
 			await queryClient.cancelQueries({ queryKey: ["api-keys"] });
 			const previousData = queryClient.getQueryData<typeof apiKeysQuery.data>(["api-keys"]);

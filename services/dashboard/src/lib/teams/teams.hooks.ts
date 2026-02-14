@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
+import { runDemoAware } from "../demo/runtime";
+import { addSlackUserAsTeamMemberDemo, addTeamMemberDemo, createTeamDemo, deleteTeamDemo, getTeamsDemo, removeTeamMemberDemo, updateTeamDemo } from "../demo/store";
 import type { getUsers } from "../users/users";
 import { addSlackUserAsTeamMember, addTeamMember, createTeam, deleteTeam, getTeams, removeTeamMember, updateTeam } from "./teams";
 
@@ -11,7 +13,11 @@ export function useTeams(options?: { enabled?: Accessor<boolean> }) {
 	const getTeamsFn = useServerFn(getTeams);
 	return useQuery(() => ({
 		queryKey: ["teams"],
-		queryFn: getTeamsFn,
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getTeamsDemo(),
+				remote: () => getTeamsFn(),
+			}),
 		staleTime: 60_000,
 		enabled: options?.enabled?.() ?? true,
 	}));
@@ -22,7 +28,11 @@ export function useUpdateTeam(options?: { onMutate?: () => void; onSuccess?: () 
 	const updateTeamFn = useServerFn(updateTeam);
 
 	return useMutation(() => ({
-		mutationFn: (data: { id: string; name?: string; imageUrl?: string | null }) => updateTeamFn({ data }),
+		mutationFn: (data: { id: string; name?: string; imageUrl?: string | null }) =>
+			runDemoAware({
+				demo: () => updateTeamDemo(data),
+				remote: () => updateTeamFn({ data }),
+			}),
 
 		onMutate: async (newData) => {
 			await queryClient.cancelQueries({ queryKey: ["teams"] });
@@ -55,7 +65,11 @@ export function useCreateTeam(options?: { onMutate?: (tempId: string) => void; o
 	const createTeamFn = useServerFn(createTeam);
 
 	return useMutation(() => ({
-		mutationFn: (data: { name: string }) => createTeamFn({ data }),
+		mutationFn: (data: { name: string }) =>
+			runDemoAware({
+				demo: () => createTeamDemo(data),
+				remote: () => createTeamFn({ data }),
+			}),
 
 		onMutate: async (newData) => {
 			await queryClient.cancelQueries({ queryKey: ["teams"] });
@@ -101,7 +115,11 @@ export function useDeleteTeam(options?: { onSuccess?: () => void; onError?: () =
 	const deleteTeamFn = useServerFn(deleteTeam);
 
 	return useMutation(() => ({
-		mutationFn: (id: string) => deleteTeamFn({ data: { id } }),
+		mutationFn: (id: string) =>
+			runDemoAware({
+				demo: () => deleteTeamDemo({ id }),
+				remote: () => deleteTeamFn({ data: { id } }),
+			}),
 
 		onMutate: async (id) => {
 			await queryClient.cancelQueries({ queryKey: ["teams"] });
@@ -140,7 +158,11 @@ export function useAddTeamMember(options?: { onSuccess?: () => void; onError?: (
 	const addTeamMemberFn = useServerFn(addTeamMember);
 
 	return useMutation(() => ({
-		mutationFn: (data: AddTeamMemberMutationInput) => addTeamMemberFn({ data: { teamId: data.teamId, userId: data.userId } }),
+		mutationFn: (data: AddTeamMemberMutationInput) =>
+			runDemoAware({
+				demo: () => addTeamMemberDemo({ teamId: data.teamId, userId: data.userId }),
+				remote: () => addTeamMemberFn({ data: { teamId: data.teamId, userId: data.userId } }),
+			}),
 
 		onMutate: async ({ teamId, userId }) => {
 			await queryClient.cancelQueries({ queryKey: ["users"] });
@@ -176,7 +198,11 @@ export function useRemoveTeamMember(options?: { onSuccess?: () => void; onError?
 	const removeTeamMemberFn = useServerFn(removeTeamMember);
 
 	return useMutation(() => ({
-		mutationFn: (data: { teamId: string; userId: string }) => removeTeamMemberFn({ data }),
+		mutationFn: (data: { teamId: string; userId: string }) =>
+			runDemoAware({
+				demo: () => removeTeamMemberDemo(data),
+				remote: () => removeTeamMemberFn({ data }),
+			}),
 
 		onMutate: async ({ teamId, userId }) => {
 			await queryClient.cancelQueries({ queryKey: ["users"] });
@@ -219,7 +245,10 @@ export function useAddSlackUserAsTeamMember(options?: { onSuccess?: () => void; 
 
 	return useMutation(() => ({
 		mutationFn: (data: { teamId: string; slackUserId: string; name: string; avatar?: string | null }) =>
-			addSlackUserAsTeamMemberFn({ data: { teamId: data.teamId, slackUserId: data.slackUserId } }),
+			runDemoAware({
+				demo: () => addSlackUserAsTeamMemberDemo({ teamId: data.teamId, slackUserId: data.slackUserId }),
+				remote: () => addSlackUserAsTeamMemberFn({ data: { teamId: data.teamId, slackUserId: data.slackUserId } }),
+			}),
 
 		onMutate: async ({ teamId, slackUserId, name, avatar }) => {
 			await queryClient.cancelQueries({ queryKey: ["users"] });

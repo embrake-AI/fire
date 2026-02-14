@@ -21,6 +21,22 @@ bun run lint       # Placeholder script (lint runs from monorepo root)
 
 ---
 
+## Demo Mode Requirements
+
+The dashboard has a browser-only demo mode hosted at `demo.firedash.ai`.
+
+- Detect demo mode with `isDemoMode()` (`src/lib/demo/mode.ts`).
+- Route query/mutation execution via `runDemoAware(...)` (`src/lib/demo/runtime.ts`).
+- Implement local behavior in `src/lib/demo/store.ts` for demo-supported features.
+
+When shipping new dashboard features that read/write data:
+
+1. Add demo-mode behavior alongside server behavior (hooks/routes/components should not bypass demo dispatch).
+2. Keep return shapes compatible between demo and server paths.
+3. If a feature is intentionally unsupported in demo mode, block it explicitly in UI with a clear user-facing message instead of faking persistence.
+
+---
+
 ## File Naming Convention
 
 Domain modules in `src/lib/` follow a consistent structure:

@@ -1,6 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
+import { runDemoAware } from "../demo/runtime";
+import {
+	createEntryPointDemo,
+	createEntryPointFromSlackUserDemo,
+	deleteEntryPointDemo,
+	getEntryPointsDemo,
+	setFallbackEntryPointDemo,
+	updateEntryPointPromptDemo,
+} from "../demo/store";
 import type { getUsers } from "../users/users";
 import {
 	type CreateEntryPointInput,
@@ -21,7 +30,11 @@ export function useEntryPoints(options?: { enabled?: Accessor<boolean> }) {
 	const getEntryPointsFn = useServerFn(getEntryPoints);
 	return useQuery(() => ({
 		queryKey: ["entry-points"],
-		queryFn: () => getEntryPointsFn(),
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getEntryPointsDemo(),
+				remote: () => getEntryPointsFn(),
+			}),
 		staleTime: 60_000,
 		enabled: options?.enabled?.() ?? true,
 	}));
@@ -42,11 +55,20 @@ export function useCreateEntryPoint(options?: {
 		mutationFn: (data: CreateEntryPointInputWithSlack) => {
 			switch (data.type) {
 				case "user":
-					return createEntryPointFn({ data: { type: "user", userId: data.userId, prompt: data.prompt } });
+					return runDemoAware({
+						demo: () => createEntryPointDemo({ type: "user", userId: data.userId, prompt: data.prompt }),
+						remote: () => createEntryPointFn({ data: { type: "user", userId: data.userId, prompt: data.prompt } }),
+					});
 				case "rotation":
-					return createEntryPointFn({ data: { type: "rotation", rotationId: data.rotationId, prompt: data.prompt } });
+					return runDemoAware({
+						demo: () => createEntryPointDemo({ type: "rotation", rotationId: data.rotationId, prompt: data.prompt }),
+						remote: () => createEntryPointFn({ data: { type: "rotation", rotationId: data.rotationId, prompt: data.prompt } }),
+					});
 				case "slack-user":
-					return createEntryPointFromSlackUserFn({ data: { slackUserId: data.slackUserId, prompt: data.prompt } });
+					return runDemoAware({
+						demo: () => createEntryPointFromSlackUserDemo({ slackUserId: data.slackUserId, prompt: data.prompt }),
+						remote: () => createEntryPointFromSlackUserFn({ data: { slackUserId: data.slackUserId, prompt: data.prompt } }),
+					});
 				default:
 					throw new Error("Invalid entry point type");
 			}
@@ -159,7 +181,11 @@ export function useDeleteEntryPoint(options?: { onSuccess?: () => void; onError?
 	const deleteEntryPointFn = useServerFn(deleteEntryPoint);
 
 	return useMutation(() => ({
-		mutationFn: (id: string) => deleteEntryPointFn({ data: { id } }),
+		mutationFn: (id: string) =>
+			runDemoAware({
+				demo: () => deleteEntryPointDemo({ id }),
+				remote: () => deleteEntryPointFn({ data: { id } }),
+			}),
 
 		onMutate: async (id) => {
 			await queryClient.cancelQueries({ queryKey: ["entry-points"] });
@@ -192,7 +218,11 @@ export function useUpdateEntryPointPrompt(options?: { onSuccess?: () => void; on
 	const updateEntryPointPromptFn = useServerFn(updateEntryPointPrompt);
 
 	return useMutation(() => ({
-		mutationFn: (data: { id: string; prompt: string }) => updateEntryPointPromptFn({ data }),
+		mutationFn: (data: { id: string; prompt: string }) =>
+			runDemoAware({
+				demo: () => updateEntryPointPromptDemo(data),
+				remote: () => updateEntryPointPromptFn({ data }),
+			}),
 
 		onMutate: async ({ id, prompt }) => {
 			await queryClient.cancelQueries({ queryKey: ["entry-points"] });
@@ -224,7 +254,11 @@ export function useSetFallbackEntryPoint(options?: { onSuccess?: () => void; onE
 	const setFallbackEntryPointFn = useServerFn(setFallbackEntryPoint);
 
 	return useMutation(() => ({
-		mutationFn: (id: string) => setFallbackEntryPointFn({ data: { id } }),
+		mutationFn: (id: string) =>
+			runDemoAware({
+				demo: () => setFallbackEntryPointDemo({ id }),
+				remote: () => setFallbackEntryPointFn({ data: { id } }),
+			}),
 
 		onMutate: async (id) => {
 			await queryClient.cancelQueries({ queryKey: ["entry-points"] });

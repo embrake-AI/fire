@@ -33,6 +33,7 @@ SolidJS operator dashboard.
 - Incident and configuration UI.
 - Server functions with auth middleware.
 - TanStack Router + Query patterns documented in `services/dashboard/AGENTS.md`.
+- Includes a browser-only demo mode at `demo.firedash.ai` (local IndexedDB-backed behavior).
 
 ### `services/status-page`
 
@@ -61,6 +62,12 @@ bun run dev:status-page
 ## Environment
 
 Each service uses its own `.env` file. See service READMEs for required variables.
+
+## Demo Mode
+
+Dashboard demo mode runs at `demo.firedash.ai` and stores data locally in the browser.
+
+When adding new dashboard features, include demo-mode support in the same change when practical. If a feature is not supported in demo mode yet, gate it clearly in UI with an explicit message.
 
 ## License
 

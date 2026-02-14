@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import { type Accessor, createMemo } from "solid-js";
 import { useClient } from "../client/client.hooks";
+import { runDemoAware } from "../demo/runtime";
+import { getCurrentUserDemo, getUsersDemo, updateUserDemo } from "../demo/store";
 import { useSlackUsers } from "../useSlackUsers";
 import { getCurrentUser, getUsers, updateUser } from "./users";
 
@@ -37,7 +39,11 @@ export function useUsers(options?: { enabled?: Accessor<boolean> }) {
 	const getUsersFn = useServerFn(getUsers);
 	return useQuery(() => ({
 		queryKey: ["users"],
-		queryFn: getUsersFn,
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getUsersDemo(),
+				remote: () => getUsersFn(),
+			}),
 		staleTime: 60_000,
 		enabled: options?.enabled?.() ?? true,
 	}));
@@ -67,7 +73,11 @@ export function useCurrentUser() {
 	const getCurrentUserFn = useServerFn(getCurrentUser);
 	return useQuery(() => ({
 		queryKey: ["current-user"],
-		queryFn: getCurrentUserFn,
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getCurrentUserDemo(),
+				remote: () => getCurrentUserFn(),
+			}),
 		staleTime: 60_000,
 	}));
 }
@@ -76,7 +86,11 @@ export function useUpdateUser() {
 	const queryClient = useQueryClient();
 	const updateUserFn = useServerFn(updateUser);
 	return useMutation(() => ({
-		mutationFn: (data: { name?: string; image?: string | null }) => updateUserFn({ data }),
+		mutationFn: (data: { name?: string; image?: string | null }) =>
+			runDemoAware({
+				demo: () => updateUserDemo(data),
+				remote: () => updateUserFn({ data }),
+			}),
 		onMutate: async (newData) => {
 			await queryClient.cancelQueries({ queryKey: ["current-user"] });
 

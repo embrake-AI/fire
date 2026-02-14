@@ -1,6 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
+import { runDemoAware } from "../demo/runtime";
+import {
+	addServiceDependencyDemo,
+	addServiceTeamOwnerDemo,
+	addServiceUserOwnerDemo,
+	createServiceDemo,
+	deleteServiceDemo,
+	getServicesDemo,
+	removeServiceDependencyDemo,
+	removeServiceTeamOwnerDemo,
+	removeServiceUserOwnerDemo,
+	updateServiceDemo,
+} from "../demo/store";
 import {
 	addServiceDependency,
 	addServiceTeamOwner,
@@ -20,7 +33,11 @@ export function useServices(options?: { enabled?: Accessor<boolean> }) {
 	const getServicesFn = useServerFn(getServices);
 	return useQuery(() => ({
 		queryKey: ["services"],
-		queryFn: () => getServicesFn(),
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getServicesDemo(),
+				remote: () => getServicesFn(),
+			}),
 		staleTime: 60_000,
 		enabled: options?.enabled?.() ?? true,
 	}));
@@ -31,7 +48,11 @@ export function useCreateService(options?: { onMutate?: (tempId: string) => void
 	const createServiceFn = useServerFn(createService);
 
 	return useMutation(() => ({
-		mutationFn: (data: { name?: string; description?: string | null; prompt?: string | null; teamOwnerIds?: string[] }) => createServiceFn({ data }),
+		mutationFn: (data: { name?: string; description?: string | null; prompt?: string | null; teamOwnerIds?: string[] }) =>
+			runDemoAware({
+				demo: () => createServiceDemo(data),
+				remote: () => createServiceFn({ data }),
+			}),
 
 		onMutate: async (newData) => {
 			await queryClient.cancelQueries({ queryKey: ["services"] });
@@ -84,7 +105,11 @@ export function useUpdateService(options?: { onSuccess?: () => void; onError?: (
 	const updateServiceFn = useServerFn(updateService);
 
 	return useMutation(() => ({
-		mutationFn: (data: { id: string; name?: string; description?: string | null; prompt?: string | null; imageUrl?: string | null }) => updateServiceFn({ data }),
+		mutationFn: (data: { id: string; name?: string; description?: string | null; prompt?: string | null; imageUrl?: string | null }) =>
+			runDemoAware({
+				demo: () => updateServiceDemo(data),
+				remote: () => updateServiceFn({ data }),
+			}),
 
 		onMutate: async (data) => {
 			await queryClient.cancelQueries({ queryKey: ["services"] });
@@ -126,7 +151,11 @@ export function useDeleteService(options?: { onSuccess?: () => void; onError?: (
 	const deleteServiceFn = useServerFn(deleteService);
 
 	return useMutation(() => ({
-		mutationFn: (id: string) => deleteServiceFn({ data: { id } }),
+		mutationFn: (id: string) =>
+			runDemoAware({
+				demo: () => deleteServiceDemo({ id }),
+				remote: () => deleteServiceFn({ data: { id } }),
+			}),
 
 		onMutate: async (id) => {
 			await queryClient.cancelQueries({ queryKey: ["services"] });
@@ -157,7 +186,11 @@ export function useAddServiceTeamOwner(options?: { onSuccess?: () => void; onErr
 	const addTeamOwnerFn = useServerFn(addServiceTeamOwner);
 
 	return useMutation(() => ({
-		mutationFn: (data: { serviceId: string; teamId: string }) => addTeamOwnerFn({ data }),
+		mutationFn: (data: { serviceId: string; teamId: string }) =>
+			runDemoAware({
+				demo: () => addServiceTeamOwnerDemo(data),
+				remote: () => addTeamOwnerFn({ data }),
+			}),
 
 		onMutate: async ({ serviceId, teamId }) => {
 			await queryClient.cancelQueries({ queryKey: ["services"] });
@@ -189,7 +222,11 @@ export function useRemoveServiceTeamOwner(options?: { onSuccess?: () => void; on
 	const removeTeamOwnerFn = useServerFn(removeServiceTeamOwner);
 
 	return useMutation(() => ({
-		mutationFn: (data: { serviceId: string; teamId: string }) => removeTeamOwnerFn({ data }),
+		mutationFn: (data: { serviceId: string; teamId: string }) =>
+			runDemoAware({
+				demo: () => removeServiceTeamOwnerDemo(data),
+				remote: () => removeTeamOwnerFn({ data }),
+			}),
 
 		onMutate: async ({ serviceId, teamId }) => {
 			await queryClient.cancelQueries({ queryKey: ["services"] });
@@ -221,7 +258,11 @@ export function useAddServiceUserOwner(options?: { onSuccess?: () => void; onErr
 	const addUserOwnerFn = useServerFn(addServiceUserOwner);
 
 	return useMutation(() => ({
-		mutationFn: (data: { serviceId: string; userId: string }) => addUserOwnerFn({ data }),
+		mutationFn: (data: { serviceId: string; userId: string }) =>
+			runDemoAware({
+				demo: () => addServiceUserOwnerDemo(data),
+				remote: () => addUserOwnerFn({ data }),
+			}),
 
 		onMutate: async ({ serviceId, userId }) => {
 			await queryClient.cancelQueries({ queryKey: ["services"] });
@@ -253,7 +294,11 @@ export function useRemoveServiceUserOwner(options?: { onSuccess?: () => void; on
 	const removeUserOwnerFn = useServerFn(removeServiceUserOwner);
 
 	return useMutation(() => ({
-		mutationFn: (data: { serviceId: string; userId: string }) => removeUserOwnerFn({ data }),
+		mutationFn: (data: { serviceId: string; userId: string }) =>
+			runDemoAware({
+				demo: () => removeServiceUserOwnerDemo(data),
+				remote: () => removeUserOwnerFn({ data }),
+			}),
 
 		onMutate: async ({ serviceId, userId }) => {
 			await queryClient.cancelQueries({ queryKey: ["services"] });
@@ -285,7 +330,11 @@ export function useAddServiceDependency(options?: { onSuccess?: () => void; onEr
 	const addDependencyFn = useServerFn(addServiceDependency);
 
 	return useMutation(() => ({
-		mutationFn: (data: { baseServiceId: string; affectedServiceId: string }) => addDependencyFn({ data }),
+		mutationFn: (data: { baseServiceId: string; affectedServiceId: string }) =>
+			runDemoAware({
+				demo: () => addServiceDependencyDemo(data),
+				remote: () => addDependencyFn({ data }),
+			}),
 
 		onMutate: async ({ baseServiceId, affectedServiceId }) => {
 			await queryClient.cancelQueries({ queryKey: ["services"] });
@@ -325,7 +374,11 @@ export function useRemoveServiceDependency(options?: { onSuccess?: () => void; o
 	const removeDependencyFn = useServerFn(removeServiceDependency);
 
 	return useMutation(() => ({
-		mutationFn: (data: { baseServiceId: string; affectedServiceId: string }) => removeDependencyFn({ data }),
+		mutationFn: (data: { baseServiceId: string; affectedServiceId: string }) =>
+			runDemoAware({
+				demo: () => removeServiceDependencyDemo(data),
+				remote: () => removeDependencyFn({ data }),
+			}),
 
 		onMutate: async ({ baseServiceId, affectedServiceId }) => {
 			await queryClient.cancelQueries({ queryKey: ["services"] });

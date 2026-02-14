@@ -32,7 +32,6 @@ import { Route as AuthedCatalogTeamsRouteImport } from './routes/_authed.catalog
 import { Route as AuthedCatalogStatusPagesRouteImport } from './routes/_authed.catalog.status-pages'
 import { Route as AuthedCatalogServicesRouteImport } from './routes/_authed.catalog.services'
 import { Route as AuthedCatalogRotationRouteImport } from './routes/_authed.catalog.rotation'
-import { Route as AuthedCatalogEscalationRouteImport } from './routes/_authed.catalog.escalation'
 import { Route as AuthedCatalogEntryPointsRouteImport } from './routes/_authed.catalog.entry-points'
 import { Route as AuthedTeamsTeamIdUsersRouteImport } from './routes/_authed.teams/$teamId.users'
 import { Route as AuthedTeamsTeamIdServicesRouteImport } from './routes/_authed.teams/$teamId.services'
@@ -163,11 +162,6 @@ const AuthedCatalogRotationRoute = AuthedCatalogRotationRouteImport.update({
   path: '/rotation',
   getParentRoute: () => AuthedCatalogRoute,
 } as any)
-const AuthedCatalogEscalationRoute = AuthedCatalogEscalationRouteImport.update({
-  id: '/escalation',
-  path: '/escalation',
-  getParentRoute: () => AuthedCatalogRoute,
-} as any)
 const AuthedCatalogEntryPointsRoute =
   AuthedCatalogEntryPointsRouteImport.update({
     id: '/entry-points',
@@ -236,7 +230,6 @@ export interface FileRoutesByFullPath {
   '/auth/error': typeof AuthErrorRoute
   '/': typeof AuthedIndexRoute
   '/catalog/entry-points': typeof AuthedCatalogEntryPointsRoute
-  '/catalog/escalation': typeof AuthedCatalogEscalationRoute
   '/catalog/rotation': typeof AuthedCatalogRotationRoute
   '/catalog/services': typeof AuthedCatalogServicesRoute
   '/catalog/status-pages': typeof AuthedCatalogStatusPagesRoute
@@ -271,7 +264,6 @@ export interface FileRoutesByTo {
   '/auth/error': typeof AuthErrorRoute
   '/': typeof AuthedIndexRoute
   '/catalog/entry-points': typeof AuthedCatalogEntryPointsRoute
-  '/catalog/escalation': typeof AuthedCatalogEscalationRoute
   '/catalog/rotation': typeof AuthedCatalogRotationRoute
   '/catalog/services': typeof AuthedCatalogServicesRoute
   '/catalog/status-pages': typeof AuthedCatalogStatusPagesRoute
@@ -308,7 +300,6 @@ export interface FileRoutesById {
   '/auth/error': typeof AuthErrorRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/catalog/entry-points': typeof AuthedCatalogEntryPointsRoute
-  '/_authed/catalog/escalation': typeof AuthedCatalogEscalationRoute
   '/_authed/catalog/rotation': typeof AuthedCatalogRotationRoute
   '/_authed/catalog/services': typeof AuthedCatalogServicesRoute
   '/_authed/catalog/status-pages': typeof AuthedCatalogStatusPagesRoute
@@ -345,7 +336,6 @@ export interface FileRouteTypes {
     | '/auth/error'
     | '/'
     | '/catalog/entry-points'
-    | '/catalog/escalation'
     | '/catalog/rotation'
     | '/catalog/services'
     | '/catalog/status-pages'
@@ -380,7 +370,6 @@ export interface FileRouteTypes {
     | '/auth/error'
     | '/'
     | '/catalog/entry-points'
-    | '/catalog/escalation'
     | '/catalog/rotation'
     | '/catalog/services'
     | '/catalog/status-pages'
@@ -416,7 +405,6 @@ export interface FileRouteTypes {
     | '/auth/error'
     | '/_authed/'
     | '/_authed/catalog/entry-points'
-    | '/_authed/catalog/escalation'
     | '/_authed/catalog/rotation'
     | '/_authed/catalog/services'
     | '/_authed/catalog/status-pages'
@@ -619,13 +607,6 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AuthedCatalogRotationRouteImport
       parentRoute: typeof AuthedCatalogRoute
     }
-    '/_authed/catalog/escalation': {
-      id: '/_authed/catalog/escalation'
-      path: '/escalation'
-      fullPath: '/catalog/escalation'
-      preLoaderRoute: typeof AuthedCatalogEscalationRouteImport
-      parentRoute: typeof AuthedCatalogRoute
-    }
     '/_authed/catalog/entry-points': {
       id: '/_authed/catalog/entry-points'
       path: '/entry-points'
@@ -701,7 +682,6 @@ declare module '@tanstack/solid-router' {
 
 interface AuthedCatalogRouteChildren {
   AuthedCatalogEntryPointsRoute: typeof AuthedCatalogEntryPointsRoute
-  AuthedCatalogEscalationRoute: typeof AuthedCatalogEscalationRoute
   AuthedCatalogRotationRoute: typeof AuthedCatalogRotationRoute
   AuthedCatalogServicesRoute: typeof AuthedCatalogServicesRoute
   AuthedCatalogStatusPagesRoute: typeof AuthedCatalogStatusPagesRoute
@@ -710,7 +690,6 @@ interface AuthedCatalogRouteChildren {
 
 const AuthedCatalogRouteChildren: AuthedCatalogRouteChildren = {
   AuthedCatalogEntryPointsRoute: AuthedCatalogEntryPointsRoute,
-  AuthedCatalogEscalationRoute: AuthedCatalogEscalationRoute,
   AuthedCatalogRotationRoute: AuthedCatalogRotationRoute,
   AuthedCatalogServicesRoute: AuthedCatalogServicesRoute,
   AuthedCatalogStatusPagesRoute: AuthedCatalogStatusPagesRoute,

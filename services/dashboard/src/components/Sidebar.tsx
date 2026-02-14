@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip
 import { authClient } from "~/lib/auth/auth-client";
 import { useAuth } from "~/lib/auth/auth-store";
 import { useClient } from "~/lib/client/client.hooks";
+import { isDemoMode } from "~/lib/demo/mode";
 import { useIncidents } from "~/lib/incidents/incidents.hooks";
 import { useRotations } from "~/lib/rotations/rotations.hooks";
 import { useTeams } from "~/lib/teams/teams.hooks";
@@ -25,7 +26,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
 	{ label: "Incidents", to: "/", icon: Flame, exact: true },
-	{ label: "Catalog", to: "/catalog/entry-points", icon: BookOpen, match: "/catalog" },
+	{ label: "Catalog", to: "/catalog/teams", icon: BookOpen, match: "/catalog" },
 	{ label: "Metrics", to: "/metrics", icon: BarChart3 },
 ];
 
@@ -94,6 +95,17 @@ export default function Sidebar() {
 							<Suspense fallback={<WorkspaceSelectorFallback collapsed={collapsed} />}>
 								<WorkspaceSelector collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
 							</Suspense>
+							<Show when={isDemoMode() && !collapsed()}>
+								<div class="px-2 mt-1.5">
+									<div class="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5">
+										<span class="h-2 w-2 rounded-full bg-amber-500 shrink-0" />
+										<div class="min-w-0">
+											<p class="text-[11px] font-semibold leading-4 text-amber-900">Demo mode</p>
+											<p class="text-[10px] leading-4 text-amber-700">Browser-only showcase</p>
+										</div>
+									</div>
+								</div>
+							</Show>
 
 							<Suspense fallback={<NavItemsSkeleton collapsed={collapsed} />}>
 								<SidebarNav collapsed={collapsed} />
@@ -209,26 +221,31 @@ function WorkspaceSelector(props: { collapsed: Accessor<boolean>; onToggleCollap
 	};
 
 	return (
-		<div class={cn("px-2 flex items-center justify-between", props.collapsed() && "group/workspace")}>
-			<div class={cn("relative", props.collapsed() && "flex-1")}>
+		<div class={cn("px-2 flex items-center gap-1", props.collapsed() && "group/workspace")}>
+			<div class="relative min-w-0 flex-1">
 				<Popover open={open()} onOpenChange={(isOpen) => !props.collapsed() && setOpen(isOpen)}>
 					<PopoverTrigger
 						type="button"
 						class={cn(
-							"flex items-center gap-2 px-2 py-2 rounded-lg text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 transition-colors overflow-hidden",
+							"flex w-full items-center gap-2 px-2 py-2 rounded-lg text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 transition-colors overflow-hidden",
 							props.collapsed() ? "w-full pointer-events-none" : "cursor-pointer",
 						)}
 					>
-						<Show
-							when={clientQuery.data?.image}
-							fallback={
-								<div class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 border border-blue-200 flex items-center justify-center shrink-0">
-									<Building2 class="w-4 h-4 text-blue-600" />
-								</div>
-							}
-						>
-							{(imageUrl) => <img src={imageUrl()} alt={clientQuery.data?.name} class="w-7 h-7 rounded-lg object-cover shrink-0" />}
-						</Show>
+						<div class="relative shrink-0">
+							<Show
+								when={clientQuery.data?.image}
+								fallback={
+									<div class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 border border-blue-200 flex items-center justify-center">
+										<Building2 class="w-4 h-4 text-blue-600" />
+									</div>
+								}
+							>
+								{(imageUrl) => <img src={imageUrl()} alt={clientQuery.data?.name} class="w-7 h-7 rounded-lg object-cover" />}
+							</Show>
+							<Show when={isDemoMode()}>
+								<span class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-zinc-50" />
+							</Show>
+						</div>
 						<span
 							class={cn(
 								"text-sm font-medium truncate text-left whitespace-nowrap transition-[opacity,width] duration-200",
@@ -278,7 +295,7 @@ function WorkspaceSelector(props: { collapsed: Accessor<boolean>; onToggleCollap
 				<button
 					type="button"
 					onClick={props.onToggleCollapse}
-					class="p-1.5 rounded-md text-zinc-400 bg-zinc-100 hover:text-zinc-600 hover:bg-zinc-200 transition-colors shrink-0 cursor-pointer"
+					class="p-1.5 rounded-md text-zinc-400 bg-zinc-100 hover:text-zinc-600 hover:bg-zinc-200 transition-colors shrink-0 cursor-pointer relative z-10"
 				>
 					<PanelLeftClose class="w-4 h-4" />
 				</button>

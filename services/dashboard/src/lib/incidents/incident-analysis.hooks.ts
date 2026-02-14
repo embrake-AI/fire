@@ -1,6 +1,15 @@
 import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
+import { runDemoAware } from "../demo/runtime";
+import {
+	createIncidentActionDemo,
+	deleteIncidentActionDemo,
+	updateAnalysisImpactDemo,
+	updateAnalysisRootCauseDemo,
+	updateAnalysisTimelineDemo,
+	updateIncidentActionDemo,
+} from "../demo/store";
 import { createIncidentAction, deleteIncidentAction, updateAnalysisImpact, updateAnalysisRootCause, updateAnalysisTimeline, updateIncidentAction } from "./incident-analysis";
 import type { IncidentAnalysis } from "./incidents";
 
@@ -11,7 +20,11 @@ export function useUpdateAnalysisImpact(incidentId: Accessor<string>) {
 	const updateFn = useServerFn(updateAnalysisImpact);
 
 	return useMutation(() => ({
-		mutationFn: async (impact: string) => updateFn({ data: { id: incidentId(), impact } }),
+		mutationFn: async (impact: string) =>
+			runDemoAware({
+				demo: () => updateAnalysisImpactDemo({ id: incidentId(), impact }),
+				remote: () => updateFn({ data: { id: incidentId(), impact } }),
+			}),
 
 		onMutate: async (impact) => {
 			await queryClient.cancelQueries({ queryKey: ["analysis", incidentId()] });
@@ -35,7 +48,11 @@ export function useUpdateAnalysisRootCause(incidentId: Accessor<string>) {
 	const updateFn = useServerFn(updateAnalysisRootCause);
 
 	return useMutation(() => ({
-		mutationFn: async (rootCause: string) => updateFn({ data: { id: incidentId(), rootCause } }),
+		mutationFn: async (rootCause: string) =>
+			runDemoAware({
+				demo: () => updateAnalysisRootCauseDemo({ id: incidentId(), rootCause }),
+				remote: () => updateFn({ data: { id: incidentId(), rootCause } }),
+			}),
 
 		onMutate: async (rootCause) => {
 			await queryClient.cancelQueries({ queryKey: ["analysis", incidentId()] });
@@ -59,7 +76,11 @@ export function useUpdateAnalysisTimeline(incidentId: Accessor<string>) {
 	const updateFn = useServerFn(updateAnalysisTimeline);
 
 	return useMutation(() => ({
-		mutationFn: async (timeline: { created_at: string; text: string }[]) => updateFn({ data: { id: incidentId(), timeline } }),
+		mutationFn: async (timeline: { created_at: string; text: string }[]) =>
+			runDemoAware({
+				demo: () => updateAnalysisTimelineDemo({ id: incidentId(), timeline }),
+				remote: () => updateFn({ data: { id: incidentId(), timeline } }),
+			}),
 
 		onMutate: async (timeline) => {
 			await queryClient.cancelQueries({ queryKey: ["analysis", incidentId()] });
@@ -83,7 +104,11 @@ export function useUpdateIncidentAction(incidentId: Accessor<string>) {
 	const updateFn = useServerFn(updateIncidentAction);
 
 	return useMutation(() => ({
-		mutationFn: async ({ id, description }: { id: string; description: string }) => updateFn({ data: { id, description } }),
+		mutationFn: async ({ id, description }: { id: string; description: string }) =>
+			runDemoAware({
+				demo: () => updateIncidentActionDemo({ id, description }),
+				remote: () => updateFn({ data: { id, description } }),
+			}),
 
 		onMutate: async ({ id, description }) => {
 			await queryClient.cancelQueries({ queryKey: ["analysis", incidentId()] });
@@ -112,7 +137,10 @@ export function useDeleteIncidentAction(incidentId: Accessor<string>) {
 			if (isOptimisticActionId(id)) {
 				return { id, skippedOptimisticDelete: true as const };
 			}
-			await deleteFn({ data: { id } });
+			await runDemoAware({
+				demo: () => deleteIncidentActionDemo({ id }),
+				remote: () => deleteFn({ data: { id } }),
+			});
 			return { id, skippedOptimisticDelete: false as const };
 		},
 
@@ -147,7 +175,11 @@ export function useCreateIncidentAction(incidentId: Accessor<string>) {
 	const deleteFn = useServerFn(deleteIncidentAction);
 
 	return useMutation(() => ({
-		mutationFn: async (description: string) => createFn({ data: { incidentId: incidentId(), description } }),
+		mutationFn: async (description: string) =>
+			runDemoAware({
+				demo: () => createIncidentActionDemo({ incidentId: incidentId(), description }),
+				remote: () => createFn({ data: { incidentId: incidentId(), description } }),
+			}),
 
 		onMutate: async (description) => {
 			await queryClient.cancelQueries({ queryKey: ["analysis", incidentId()] });
@@ -184,7 +216,10 @@ export function useCreateIncidentAction(incidentId: Accessor<string>) {
 
 			if (removedBeforePersist) {
 				try {
-					await deleteFn({ data: { id: created.id } });
+					await runDemoAware({
+						demo: () => deleteIncidentActionDemo({ id: created.id }),
+						remote: () => deleteFn({ data: { id: created.id } }),
+					});
 				} catch {
 					// Best-effort cleanup when a temporary action was deleted before persistence.
 				}

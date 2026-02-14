@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
+import { runDemoAware } from "../demo/runtime";
+import { addIncidentAffectionUpdateDemo, createIncidentAffectionDemo, getIncidentAffectionDemo, updateIncidentAffectionServicesDemo } from "../demo/store";
 import {
 	type AddIncidentAffectionUpdateInput,
 	addIncidentAffectionUpdate,
@@ -24,7 +26,11 @@ export function useIncidentAffection(incidentId: Accessor<string>) {
 	const getIncidentAffectionFn = useServerFn(getIncidentAffection);
 	return useQuery(() => ({
 		queryKey: ["incident-affection", incidentId()],
-		queryFn: () => getIncidentAffectionFn({ data: { incidentId: incidentId() } }),
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getIncidentAffectionDemo({ incidentId: incidentId() }),
+				remote: () => getIncidentAffectionFn({ data: { incidentId: incidentId() } }),
+			}),
 		staleTime: 10_000,
 		refetchInterval: 10_000,
 	}));
@@ -35,7 +41,11 @@ export function useCreateIncidentAffection(options?: { onSuccess?: () => void; o
 	const createIncidentAffectionFn = useServerFn(createIncidentAffection);
 
 	return useMutation(() => ({
-		mutationFn: (data: CreateIncidentAffectionMutationInput) => createIncidentAffectionFn({ data }),
+		mutationFn: (data: CreateIncidentAffectionMutationInput) =>
+			runDemoAware({
+				demo: () => createIncidentAffectionDemo(data),
+				remote: () => createIncidentAffectionFn({ data }),
+			}),
 
 		onMutate: (data) => {
 			const queryKey = ["incident-affection", data.incidentId];
@@ -85,7 +95,11 @@ export function useAddIncidentAffectionUpdate(incidentId: Accessor<string>, opti
 	const addIncidentAffectionUpdateFn = useServerFn(addIncidentAffectionUpdate);
 
 	return useMutation(() => ({
-		mutationFn: (data: AddIncidentAffectionUpdateInput) => addIncidentAffectionUpdateFn({ data }),
+		mutationFn: (data: AddIncidentAffectionUpdateInput) =>
+			runDemoAware({
+				demo: () => addIncidentAffectionUpdateDemo(data),
+				remote: () => addIncidentAffectionUpdateFn({ data }),
+			}),
 		onMutate: (data) => {
 			const queryKey = ["incident-affection", incidentId()];
 			const previous = queryClient.getQueryData<IncidentAffectionData | null>(queryKey);
@@ -128,7 +142,11 @@ export function useUpdateIncidentAffectionServices(incidentId: Accessor<string>,
 	const updateIncidentAffectionServicesFn = useServerFn(updateIncidentAffectionServices);
 
 	return useMutation(() => ({
-		mutationFn: (data: UpdateIncidentAffectionServicesInput) => updateIncidentAffectionServicesFn({ data }),
+		mutationFn: (data: UpdateIncidentAffectionServicesInput) =>
+			runDemoAware({
+				demo: () => updateIncidentAffectionServicesDemo(data),
+				remote: () => updateIncidentAffectionServicesFn({ data }),
+			}),
 
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["incident-affection", incidentId()] });

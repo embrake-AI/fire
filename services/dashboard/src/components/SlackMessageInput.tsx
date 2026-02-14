@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { Link } from "@tanstack/solid-router";
 import { ChevronDown, SendHorizontal } from "lucide-solid";
 import { createEffect, createMemo, createSignal, onMount, Show } from "solid-js";
+import { runDemoAware } from "~/lib/demo/runtime";
+import { sendSlackMessageDemo } from "~/lib/demo/store";
 import { loadEmojis, setCustomEmojis } from "~/lib/emoji/emoji";
 import { sendSlackMessage } from "~/lib/incidents/incidents";
 import { useIntegrations, useSlackEmojis } from "~/lib/integrations/integrations.hooks";
@@ -51,14 +53,24 @@ export function SlackMessageInput(props: SlackMessageInputProps) {
 
 	const sendMessageMutation = useMutation(() => ({
 		mutationFn: (payload: { message: string; messageId: string }) =>
-			sendSlackMessage({
-				data: {
-					id: props.incidentId,
-					message: payload.message,
-					messageId: payload.messageId,
-					sendAsBot: sendAsBot(),
-					dashboardOnly: !props.hasSlackContext,
-				},
+			runDemoAware({
+				demo: () =>
+					sendSlackMessageDemo({
+						id: props.incidentId,
+						message: payload.message,
+						messageId: payload.messageId,
+						sendAsBot: sendAsBot(),
+					}),
+				remote: () =>
+					sendSlackMessage({
+						data: {
+							id: props.incidentId,
+							message: payload.message,
+							messageId: payload.messageId,
+							sendAsBot: sendAsBot(),
+							dashboardOnly: !props.hasSlackContext,
+						},
+					}),
 			}),
 		onSuccess: () => {
 			setMessage("");

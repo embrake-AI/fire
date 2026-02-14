@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
+import { runDemoAware } from "../demo/runtime";
+import { disconnectUserIntegrationDemo, disconnectWorkspaceIntegrationDemo, getSlackEmojisDemo, getUserIntegrationsDemo, getWorkspaceIntegrationsDemo } from "../demo/store";
 import { disconnectUserIntegration, disconnectWorkspaceIntegration, getSlackEmojis, getUserIntegrations, getWorkspaceIntegrations } from "./integrations";
 
 export function useIntegrations(options?: { type?: "workspace" | "user"; enabled?: Accessor<boolean> }) {
@@ -10,7 +12,11 @@ export function useIntegrations(options?: { type?: "workspace" | "user"; enabled
 
 	return useQuery(() => ({
 		queryKey: type === "workspace" ? ["workspace_integrations"] : ["user_integrations"],
-		queryFn: () => (type === "workspace" ? getWorkspaceIntegrationsFn() : getUserIntegrationsFn()),
+		queryFn: () =>
+			runDemoAware({
+				demo: () => (type === "workspace" ? getWorkspaceIntegrationsDemo() : getUserIntegrationsDemo()),
+				remote: () => (type === "workspace" ? getWorkspaceIntegrationsFn() : getUserIntegrationsFn()),
+			}),
 		staleTime: 60_000,
 		enabled: options?.enabled?.() ?? true,
 	}));
@@ -21,7 +27,11 @@ export function useDisconnectWorkspaceIntegration() {
 	const disconnectWorkspaceIntegrationFn = useServerFn(disconnectWorkspaceIntegration);
 
 	return useMutation(() => ({
-		mutationFn: (platform: "slack") => disconnectWorkspaceIntegrationFn({ data: platform }),
+		mutationFn: (platform: "slack") =>
+			runDemoAware({
+				demo: () => disconnectWorkspaceIntegrationDemo(platform),
+				remote: () => disconnectWorkspaceIntegrationFn({ data: platform }),
+			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["workspace_integrations"] });
 			queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -34,7 +44,11 @@ export function useDisconnectUserIntegration() {
 	const disconnectUserIntegrationFn = useServerFn(disconnectUserIntegration);
 
 	return useMutation(() => ({
-		mutationFn: (platform: "slack") => disconnectUserIntegrationFn({ data: platform }),
+		mutationFn: (platform: "slack") =>
+			runDemoAware({
+				demo: () => disconnectUserIntegrationDemo(platform),
+				remote: () => disconnectUserIntegrationFn({ data: platform }),
+			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["user_integrations"] });
 			queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -47,7 +61,11 @@ export function useSlackEmojis() {
 
 	return useQuery(() => ({
 		queryKey: ["slack-emojis"],
-		queryFn: () => getSlackEmojisFn(),
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getSlackEmojisDemo(),
+				remote: () => getSlackEmojisFn(),
+			}),
 		staleTime: 1000 * 60 * 30, // 30 minutes
 		retry: false,
 	}));

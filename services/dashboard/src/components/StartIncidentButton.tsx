@@ -11,6 +11,8 @@ import { Label } from "~/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Switch, SwitchControl, SwitchLabel, SwitchThumb } from "~/components/ui/switch";
 import { Textarea } from "~/components/ui/textarea";
+import { runDemoAware } from "~/lib/demo/runtime";
+import { getSlackBotChannelsDemo, startIncidentDemo } from "~/lib/demo/store";
 import { useEntryPoints } from "~/lib/entry-points/entry-points.hooks";
 import { startIncident } from "~/lib/incidents/incidents";
 import { getSlackBotChannels } from "~/lib/integrations/integrations";
@@ -47,7 +49,11 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 
 	const startIncidentFn = useServerFn(startIncident);
 	const startIncidentMutation = useMutation(() => ({
-		mutationFn: async (data: { prompt: string; channel?: SlackChannel["id"] }) => startIncidentFn({ data }),
+		mutationFn: async (data: { prompt: string; channel?: SlackChannel["id"] }) =>
+			runDemoAware({
+				demo: () => startIncidentDemo(data),
+				remote: () => startIncidentFn({ data }),
+			}),
 		onSuccess: async (incident) => {
 			await queryClient.invalidateQueries({ queryKey: ["incidents"] });
 			navigate({ to: "/incidents/$incidentId", params: { incidentId: incident.id } });
@@ -64,7 +70,11 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 	const getSlackBotChannelsFn = useServerFn(getSlackBotChannels);
 	const slackChannelsQuery = useQuery(() => ({
 		queryKey: ["slack-bot-channels"],
-		queryFn: getSlackBotChannelsFn,
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getSlackBotChannelsDemo(),
+				remote: () => getSlackBotChannelsFn(),
+			}),
 		enabled: postToSlack(),
 		staleTime: Infinity,
 	}));
@@ -88,7 +98,7 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 			<Show when={someEntryPoint()}>
 				<DialogHeader>
 					<DialogTitle>Start Incident</DialogTitle>
-					<DialogDescription>This will trigger the most appropriate entry point and immediately notify its assignee according to the escalation path.</DialogDescription>
+					<DialogDescription>This will trigger the most appropriate entry point and immediately notify its assignee.</DialogDescription>
 				</DialogHeader>
 				<form onSubmit={handleSubmit} class="space-y-6 pt-4">
 					<div>

@@ -5,6 +5,8 @@ import { ChevronRight, ShieldAlert } from "lucide-solid";
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import { Card } from "~/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
+import { runDemoAware } from "~/lib/demo/runtime";
+import { getResolvedIncidentsDemo } from "~/lib/demo/store";
 import { getSeverity } from "~/lib/incident-config";
 import { getResolvedIncidents, type ResolvedIncident } from "~/lib/incidents/incidents";
 
@@ -14,7 +16,11 @@ export function ResolvedIncidents() {
 
 	const resolvedQuery = useQuery(() => ({
 		queryKey: ["resolved-incidents"],
-		queryFn: getResolvedIncidentsFn,
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getResolvedIncidentsDemo(),
+				remote: () => getResolvedIncidentsFn(),
+			}),
 		staleTime: 60_000,
 	}));
 

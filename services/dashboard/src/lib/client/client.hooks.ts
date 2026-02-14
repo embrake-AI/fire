@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
+import { runDemoAware } from "../demo/runtime";
+import { getClientDemo, updateClientDemo } from "../demo/store";
 import { getClient, updateClient } from "./client";
 
 type ClientResponse = Awaited<ReturnType<typeof getClient>>;
@@ -8,7 +10,11 @@ export function useClient() {
 	const getClientFn = useServerFn(getClient);
 	return useQuery(() => ({
 		queryKey: ["client"],
-		queryFn: getClientFn,
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getClientDemo(),
+				remote: () => getClientFn(),
+			}),
 		staleTime: Infinity,
 	}));
 }
@@ -17,7 +23,11 @@ export function useUpdateClient() {
 	const queryClient = useQueryClient();
 	const updateClientFn = useServerFn(updateClient);
 	return useMutation(() => ({
-		mutationFn: (data: { name?: string; image?: string | null }) => updateClientFn({ data }),
+		mutationFn: (data: { name?: string; image?: string | null }) =>
+			runDemoAware({
+				demo: () => updateClientDemo(data),
+				remote: () => updateClientFn({ data }),
+			}),
 		onMutate: async (newData) => {
 			await queryClient.cancelQueries({ queryKey: ["client"] });
 

@@ -7,7 +7,7 @@ export const Route = createFileRoute("/_authed/catalog")({
 	component: CatalogLayout,
 	beforeLoad: ({ location }) => {
 		if (location.pathname === "/catalog") {
-			throw redirect({ to: "/catalog/entry-points" });
+			throw redirect({ to: "/catalog/teams" });
 		}
 	},
 });
@@ -18,11 +18,11 @@ function CatalogLayout() {
 	const activeTab = createMemo(() => {
 		const path = location().pathname;
 		if (path.includes("teams")) return "teams";
+		if (path.includes("entry-points")) return "entry-points";
 		if (path.includes("rotation")) return "rotation";
 		if (path.includes("services")) return "services";
 		if (path.includes("status-pages")) return "status-pages";
-		if (path.includes("escalation")) return "escalation";
-		return "entry-points";
+		return "teams";
 	});
 
 	return (
@@ -37,23 +37,20 @@ function CatalogLayout() {
 
 				<Tabs value={activeTab()}>
 					<TabsList>
-						<TabsTrigger value="entry-points" as={Link} to="/catalog/entry-points">
-							Entry Points
-						</TabsTrigger>
 						<TabsTrigger value="teams" as={Link} to="/catalog/teams">
 							Teams
 						</TabsTrigger>
 						<TabsTrigger value="rotation" as={Link} to="/catalog/rotation">
 							Rotations
 						</TabsTrigger>
+						<TabsTrigger value="entry-points" as={Link} to="/catalog/entry-points">
+							Entry Points
+						</TabsTrigger>
 						<TabsTrigger value="services" as={Link} to="/catalog/services">
 							Services
 						</TabsTrigger>
 						<TabsTrigger value="status-pages" as={Link} to="/catalog/status-pages">
 							Status Pages
-						</TabsTrigger>
-						<TabsTrigger value="escalation" as={Link} to="/catalog/escalation">
-							Escalations
 						</TabsTrigger>
 						<TabsIndicator />
 					</TabsList>

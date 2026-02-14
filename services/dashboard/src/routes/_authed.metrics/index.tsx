@@ -11,6 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { DateRangePicker } from "~/components/ui/date-range-picker";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { runDemoAware } from "~/lib/demo/runtime";
+import { getMetricsDemo } from "~/lib/demo/store";
 import { getMetrics } from "~/lib/incidents/incidents";
 import { useUsers } from "~/lib/users/users.hooks";
 import { useSlackUsers } from "~/lib/useSlackUsers";
@@ -36,11 +38,19 @@ function AnalysisDashboard() {
 
 			const startDate = startOfDay(parse(fromStr, "yyyy-MM-dd", new Date()));
 			const endDate = endOfDay(parse(toStr, "yyyy-MM-dd", new Date()));
-			return getMetricsFn({
-				data: {
-					startDate: startDate.toISOString(),
-					endDate: endDate.toISOString(),
-				},
+			return runDemoAware({
+				demo: () =>
+					getMetricsDemo({
+						startDate: startDate.toISOString(),
+						endDate: endDate.toISOString(),
+					}),
+				remote: () =>
+					getMetricsFn({
+						data: {
+							startDate: startDate.toISOString(),
+							endDate: endDate.toISOString(),
+						},
+					}),
 			});
 		},
 		staleTime: 60_000,

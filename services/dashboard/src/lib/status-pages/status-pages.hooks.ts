@@ -1,6 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
+import { runDemoAware } from "../demo/runtime";
+import {
+	createStatusPageDemo,
+	deleteStatusPageDemo,
+	getStatusPagesDemo,
+	updateStatusPageDemo,
+	updateStatusPageServiceDescriptionDemo,
+	updateStatusPageServicesDemo,
+	verifyCustomDomainDemo,
+} from "../demo/store";
 import type { getServices } from "../services/services";
 import {
 	createStatusPage,
@@ -27,7 +37,11 @@ export function useStatusPages(options?: { enabled?: Accessor<boolean> }) {
 	const getStatusPagesFn = useServerFn(getStatusPages);
 	return useQuery(() => ({
 		queryKey: ["status-pages"],
-		queryFn: () => getStatusPagesFn(),
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getStatusPagesDemo(),
+				remote: () => getStatusPagesFn(),
+			}),
 		staleTime: 60_000,
 		enabled: options?.enabled?.() ?? true,
 	}));
@@ -38,7 +52,11 @@ export function useCreateStatusPage(options?: { onMutate?: (tempId: string) => v
 	const createStatusPageFn = useServerFn(createStatusPage);
 
 	return useMutation(() => ({
-		mutationFn: (data: { name: string; slug: string }) => createStatusPageFn({ data }),
+		mutationFn: (data: { name: string; slug: string }) =>
+			runDemoAware({
+				demo: () => createStatusPageDemo(data),
+				remote: () => createStatusPageFn({ data }),
+			}),
 
 		onMutate: async (newData) => {
 			await queryClient.cancelQueries({ queryKey: ["status-pages"] });
@@ -106,7 +124,11 @@ export function useUpdateStatusPage(options?: { onSuccess?: () => void; onError?
 			supportUrl?: string | null;
 			privacyPolicyUrl?: string | null;
 			termsOfServiceUrl?: string | null;
-		}) => updateStatusPageFn({ data }),
+		}) =>
+			runDemoAware({
+				demo: () => updateStatusPageDemo(data),
+				remote: () => updateStatusPageFn({ data }),
+			}),
 
 		onMutate: async (data) => {
 			await queryClient.cancelQueries({ queryKey: ["status-pages"] });
@@ -155,7 +177,11 @@ export function useDeleteStatusPage(options?: { onSuccess?: () => void; onError?
 	const deleteStatusPageFn = useServerFn(deleteStatusPage);
 
 	return useMutation(() => ({
-		mutationFn: (id: string) => deleteStatusPageFn({ data: { id } }),
+		mutationFn: (id: string) =>
+			runDemoAware({
+				demo: () => deleteStatusPageDemo({ id }),
+				remote: () => deleteStatusPageFn({ data: { id } }),
+			}),
 
 		onMutate: async (id) => {
 			await queryClient.cancelQueries({ queryKey: ["status-pages"] });
@@ -185,7 +211,11 @@ export function useUpdateStatusPageServices(options?: { onSuccess?: () => void; 
 	const updateStatusPageServicesFn = useServerFn(updateStatusPageServices);
 
 	return useMutation(() => ({
-		mutationFn: (data: { id: string; serviceIds: string[] }) => updateStatusPageServicesFn({ data }),
+		mutationFn: (data: { id: string; serviceIds: string[] }) =>
+			runDemoAware({
+				demo: () => updateStatusPageServicesDemo(data),
+				remote: () => updateStatusPageServicesFn({ data }),
+			}),
 
 		onMutate: async (data) => {
 			await queryClient.cancelQueries({ queryKey: ["status-pages"] });
@@ -260,7 +290,11 @@ export function useUpdateStatusPageServiceDescription(options?: { onSuccess?: ()
 	const updateStatusPageServiceDescriptionFn = useServerFn(updateStatusPageServiceDescription);
 
 	return useMutation(() => ({
-		mutationFn: (data: { statusPageId: string; serviceId: string; description: string | null }) => updateStatusPageServiceDescriptionFn({ data }),
+		mutationFn: (data: { statusPageId: string; serviceId: string; description: string | null }) =>
+			runDemoAware({
+				demo: () => updateStatusPageServiceDescriptionDemo(data),
+				remote: () => updateStatusPageServiceDescriptionFn({ data }),
+			}),
 
 		onMutate: async (data) => {
 			await queryClient.cancelQueries({ queryKey: ["status-pages"] });
@@ -306,6 +340,10 @@ export function useVerifyCustomDomain() {
 	const verifyCustomDomainFn = useServerFn(verifyCustomDomain);
 
 	return useMutation(() => ({
-		mutationFn: (id: string) => verifyCustomDomainFn({ data: { id } }),
+		mutationFn: (id: string) =>
+			runDemoAware({
+				demo: () => verifyCustomDomainDemo({ id }),
+				remote: () => verifyCustomDomainFn({ data: { id } }),
+			}),
 	}));
 }

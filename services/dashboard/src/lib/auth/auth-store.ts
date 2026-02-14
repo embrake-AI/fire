@@ -1,5 +1,6 @@
 import type { userRole } from "@fire/db/schema";
 import { createSignal } from "solid-js";
+import { isDemoMode } from "../demo/mode";
 import { getAuthContext } from "./auth-context";
 
 type UserRole = (typeof userRole.enumValues)[number];
@@ -22,6 +23,17 @@ let initialized = false;
 export function initializeAuth() {
 	if (initialized) return;
 	initialized = true;
+
+	if (isDemoMode()) {
+		setAuth({
+			clientId: "demo-client",
+			userId: "demo-user",
+			role: null,
+			impersonatedBy: null,
+		});
+		setReady(true);
+		return;
+	}
 
 	// Fetch auth context from server function (includes cookies automatically)
 	getAuthContext()

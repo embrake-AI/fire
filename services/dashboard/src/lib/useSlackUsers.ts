@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import { createMemo } from "solid-js";
+import { runDemoAware } from "./demo/runtime";
+import { getSlackUsersDemo } from "./demo/store";
 import { getSlackUsers } from "./entry-points/entry-points";
 import type { getWorkspaceIntegrations } from "./integrations/integrations";
 
@@ -20,7 +22,11 @@ export function useSlackUsers() {
 	const getSlackUsersFn = useServerFn(getSlackUsers);
 	const slackUsersQuery = useQuery(() => ({
 		queryKey: ["slack-users"],
-		queryFn: getSlackUsersFn,
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getSlackUsersDemo(),
+				remote: () => getSlackUsersFn(),
+			}),
 		staleTime: Infinity,
 		enabled: hasSlackIntegration(),
 	}));

@@ -2,6 +2,14 @@
 
 Fire is an incident response dashboard built for teams who believe that **clarity during chaos** is what makes the difference between a 5-minute fix and a 5-hour outage.
 
+## Demo Mode
+
+The dashboard also runs in browser-only demo mode at `demo.firedash.ai`.
+
+- Demo mode uses local browser storage (IndexedDB) instead of backend persistence.
+- Feature work should consider demo-mode support as part of implementation.
+- If a feature is not supported in demo mode, UI should communicate that explicitly instead of faking successful behavior.
+
 ## Philosophy
 
 ### Incidents should be visible, not hidden
@@ -18,7 +26,7 @@ Your team lives in Slack. Fire treats Slack as the communication backbone, pulli
 
 ### Configuration is documentation
 
-Who gets paged for what? What's the escalation path? These shouldn't be tribal knowledge buried in someone's head. Fire makes your incident response process explicit and editable, turning operational decisions into visible configuration that the whole team can understand and improve.
+Who gets paged for what? These decisions shouldn't be tribal knowledge buried in someone's head. Fire makes your incident response process explicit and editable, turning operational decisions into visible configuration that the whole team can understand and improve.
 
 ### Less is more during incidents
 

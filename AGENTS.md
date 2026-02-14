@@ -56,3 +56,5 @@ fire/
 - `services/dashboard/AGENTS.md`
 - `services/incidentd/AGENTS.md`
 - `services/status-page/AGENTS.md`
+
+Dashboard-specific requirements, including demo mode expectations, are documented in `services/dashboard/AGENTS.md`.

@@ -14,6 +14,8 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
+import { runDemoAware } from "~/lib/demo/runtime";
+import { getSlackSelectableChannelsDemo } from "~/lib/demo/store";
 import { getRotationSelectableSlackChannels, type getRotations } from "~/lib/rotations/rotations";
 import {
 	toAddAssigneeInput,
@@ -91,7 +93,11 @@ function RotationHeader(props: { rotation: Rotation }) {
 	const getSlackBotChannelsFn = useServerFn(getRotationSelectableSlackChannels);
 	const slackChannelsQuery = useQuery(() => ({
 		queryKey: ["rotation-slack-selectable-channels"],
-		queryFn: getSlackBotChannelsFn,
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getSlackSelectableChannelsDemo(),
+				remote: () => getSlackBotChannelsFn(),
+			}),
 		staleTime: Infinity,
 	}));
 

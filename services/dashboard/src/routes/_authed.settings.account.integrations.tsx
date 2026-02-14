@@ -8,6 +8,8 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { showToast } from "~/components/ui/toast";
+import { runDemoAware } from "~/lib/demo/runtime";
+import { connectUserIntegrationDemo, disconnectUserIntegrationDemo } from "~/lib/demo/store";
 import { disconnectUserIntegration, getInstallUrl } from "~/lib/integrations/integrations";
 import { useIntegrations } from "~/lib/integrations/integrations.hooks";
 
@@ -55,7 +57,14 @@ function IntegrationsContent() {
 	const handleConnect = async (platform: "slack") => {
 		setIsConnecting(true);
 		try {
-			const url = await getInstallUrlFn({ data: { platform, type: "user" } });
+			const url = await runDemoAware({
+				demo: async () => {
+					await connectUserIntegrationDemo(platform);
+					await queryClient.invalidateQueries({ queryKey: ["user_integrations"] });
+					return null;
+				},
+				remote: () => getInstallUrlFn({ data: { platform, type: "user" } }),
+			});
 			if (url) {
 				window.location.href = url;
 			}
@@ -66,7 +75,11 @@ function IntegrationsContent() {
 
 	const disconnectFn = useServerFn(disconnectUserIntegration);
 	const disconnectMutation = useMutation(() => ({
-		mutationFn: (platform: "slack") => disconnectFn({ data: platform }),
+		mutationFn: (platform: "slack") =>
+			runDemoAware({
+				demo: () => disconnectUserIntegrationDemo(platform),
+				remote: () => disconnectFn({ data: platform }),
+			}),
 		onSuccess: async (_, platform) => {
 			await queryClient.invalidateQueries({ queryKey: ["user_integrations"] });
 			await queryClient.invalidateQueries({ queryKey: ["users"] });

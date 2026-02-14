@@ -14,6 +14,10 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "~/components/ui/dialog";
 import { Skeleton } from "~/components/ui/skeleton";
+import { showToast } from "~/components/ui/toast";
+import { isDemoMode } from "~/lib/demo/mode";
+import { runDemoAware } from "~/lib/demo/runtime";
+import { getAnalysisByIdDemo, getIncidentsDemo, getNotionPagesDemo } from "~/lib/demo/store";
 import { errorToastMeta } from "~/lib/errors/user-facing-error";
 import { getSeverity, getStatus } from "~/lib/incident-config";
 import {
@@ -110,7 +114,11 @@ function AnalysisDetail() {
 
 	const analysisQuery = useQuery(() => ({
 		queryKey: ["analysis", params().incidentId],
-		queryFn: () => getAnalysisByIdFn({ data: { id: params().incidentId } }),
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getAnalysisByIdDemo({ id: params().incidentId }),
+				remote: () => getAnalysisByIdFn({ data: { id: params().incidentId } }),
+			}),
 		staleTime: 30_000,
 		refetchOnWindowFocus: true,
 	}));
@@ -125,7 +133,11 @@ function AnalysisDetail() {
 		}
 		void queryClient.prefetchQuery({
 			queryKey: ["incidents"],
-			queryFn: getIncidentsFn,
+			queryFn: () =>
+				runDemoAware({
+					demo: () => getIncidentsDemo(),
+					remote: () => getIncidentsFn(),
+				}),
 			staleTime: 10_000,
 		});
 	};
@@ -323,7 +335,11 @@ function ExportToNotionDialogContent(props: { incidentId: string; title: string;
 	const getNotionPagesFn = useServerFn(getNotionPages);
 	const notionPagesQuery = useQuery(() => ({
 		queryKey: ["notion-pages", debouncedSearchQuery()],
-		queryFn: () => getNotionPagesFn({ data: { query: debouncedSearchQuery() } }),
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getNotionPagesDemo({ query: debouncedSearchQuery() }),
+				remote: () => getNotionPagesFn({ data: { query: debouncedSearchQuery() } }),
+			}),
 		staleTime: 30_000,
 		placeholderData: (previous) => previous,
 	}));
@@ -345,6 +361,15 @@ function ExportToNotionDialogContent(props: { incidentId: string; title: string;
 	const handleExport = () => {
 		const pageId = selectedPageId();
 		if (!pageId) return;
+		if (isDemoMode()) {
+			showToast({
+				variant: "warning",
+				title: "Not supported in demo",
+				description: "Export to Notion is not supported in demo mode.",
+			});
+			props.onClose();
+			return;
+		}
 
 		exportMutation.mutate({
 			incidentId: props.incidentId,

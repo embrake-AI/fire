@@ -2,6 +2,8 @@ import type { IS, IS_Event } from "@fire/common";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
+import { runDemoAware } from "../demo/runtime";
+import { getIncidentsDemo, updateAssigneeDemo, updateSeverityDemo, updateStatusDemo } from "../demo/store";
 import { getIncidents, updateAssignee, updateSeverity, updateStatus } from "./incidents";
 
 type UseIncidentsOptions = {
@@ -14,7 +16,11 @@ export function useIncidents(options?: UseIncidentsOptions) {
 
 	return useQuery(() => ({
 		queryKey: ["incidents"],
-		queryFn: getIncidentsFn,
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getIncidentsDemo(),
+				remote: () => getIncidentsFn(),
+			}),
 		refetchInterval: 10_000,
 		staleTime: 10_000,
 		enabled: options?.enabled?.() ?? true,
@@ -30,7 +36,11 @@ export function useUpdateIncidentSeverity(incidentId: Accessor<string>, options?
 	const updateSeverityFn = useServerFn(updateSeverity);
 
 	return useMutation(() => ({
-		mutationFn: async (severity: IS["severity"]) => updateSeverityFn({ data: { id: incidentId(), severity } }),
+		mutationFn: async (severity: IS["severity"]) =>
+			runDemoAware({
+				demo: () => updateSeverityDemo({ id: incidentId(), severity }),
+				remote: () => updateSeverityFn({ data: { id: incidentId(), severity } }),
+			}),
 
 		onMutate: async (severity) => {
 			await queryClient.cancelQueries({ queryKey: ["incident", incidentId()] });
@@ -61,7 +71,11 @@ export function useUpdateIncidentAssignee(incidentId: Accessor<string>, options?
 	const updateAssigneeFn = useServerFn(updateAssignee);
 
 	return useMutation(() => ({
-		mutationFn: async (slackId: string) => updateAssigneeFn({ data: { id: incidentId(), slackId } }),
+		mutationFn: async (slackId: string) =>
+			runDemoAware({
+				demo: () => updateAssigneeDemo({ id: incidentId(), slackId }),
+				remote: () => updateAssigneeFn({ data: { id: incidentId(), slackId } }),
+			}),
 
 		onMutate: async (assignee) => {
 			await queryClient.cancelQueries({ queryKey: ["incident", incidentId()] });
@@ -92,7 +106,11 @@ export function useUpdateIncidentStatus(incidentId: Accessor<string>, options?: 
 	const updateStatusFn = useServerFn(updateStatus);
 
 	return useMutation(() => ({
-		mutationFn: async ({ status, message }: { status: "mitigating" | "resolved"; message: string }) => updateStatusFn({ data: { id: incidentId(), status, message } }),
+		mutationFn: async ({ status, message }: { status: "mitigating" | "resolved"; message: string }) =>
+			runDemoAware({
+				demo: () => updateStatusDemo({ id: incidentId(), status, message }),
+				remote: () => updateStatusFn({ data: { id: incidentId(), status, message } }),
+			}),
 
 		onMutate: async ({ status }) => {
 			await queryClient.cancelQueries({ queryKey: ["incident", incidentId()] });
