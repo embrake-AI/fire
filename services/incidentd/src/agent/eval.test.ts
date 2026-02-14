@@ -14,6 +14,7 @@ import {
 	buildEventMessages,
 	buildIncidentStateMessage,
 	buildStatusPageContextMessage,
+	buildSuggestionStateContextMessage,
 	buildSuggestionTools,
 	normalizeSuggestions,
 	SYSTEM_PROMPT,
@@ -31,6 +32,7 @@ function buildFullInput(context: AgentSuggestionContext, opts: { systemPrompt?: 
 	const systemPrompt = opts.systemPrompt ?? SYSTEM_PROMPT;
 	const userMessage = buildContextUserMessage(context);
 	const statusPageContextMessage = buildStatusPageContextMessage(context);
+	const suggestionStateContextMessage = buildSuggestionStateContextMessage(context);
 	const incidentStateMessage = buildIncidentStateMessage(context);
 	const eventMessages = buildEventMessages(context.events, context.processedThroughId ?? 0);
 
@@ -39,6 +41,7 @@ function buildFullInput(context: AgentSuggestionContext, opts: { systemPrompt?: 
 		{ role: "user", content: userMessage },
 		...eventMessages,
 		{ role: "user", content: statusPageContextMessage },
+		{ role: "user", content: suggestionStateContextMessage },
 		{ role: "user", content: incidentStateMessage },
 		{ role: "user", content: "Return suggestions." },
 	];
@@ -63,7 +66,9 @@ type ModelUsage = { inputTokens: number; outputTokens: number; cachedInputTokens
 type ModelToolCall = { name: string; args: Record<string, unknown> };
 type ModelCallResult = { responseId?: string; usage?: ModelUsage; toolCalls: ModelToolCall[]; suggestions: AgentSuggestion[] };
 
-async function callOpenAI(input: InputMessage[], tools: ResponsesToolDef[], apiKey: string, model: string): Promise<ModelCallResult> {
+type ReasoningEffort = "low" | "medium" | "high";
+
+async function callOpenAI(input: InputMessage[], tools: ResponsesToolDef[], apiKey: string, model: string, reasoningEffort: ReasoningEffort): Promise<ModelCallResult> {
 	const suggestions: AgentSuggestion[] = [];
 
 	const response = await fetch("https://api.openai.com/v1/responses", {
@@ -74,7 +79,7 @@ async function callOpenAI(input: InputMessage[], tools: ResponsesToolDef[], apiK
 			input,
 			tools,
 			tool_choice: "auto",
-			reasoning: { effort: "medium" },
+			reasoning: { effort: reasoningEffort },
 			text: { verbosity: "low" },
 		}),
 	});
@@ -2462,6 +2467,372 @@ function buildRealPerformanceIncidentScenario(): LifecycleScenario {
 }
 
 // ---------------------------------------------------------------------------
+// Scenario 12: Pending first status-page suggestion must not spam investigating
+// ---------------------------------------------------------------------------
+
+function buildPendingInvestigatingSpamScenario(): LifecycleScenario {
+	const SERVICES: AgentSuggestionContext["services"] = [{ id: "svc_enrich", name: "Enrich", prompt: "Enrichments are stuck, not processing, lost or failing" }];
+
+	const incidentBase = {
+		title: "Customers see 'Failed to start enrichment' error",
+		description: "Multiple customers report enrichment start failures in production.",
+		prompt: "Some customers reported `Failed to start enrichment`.",
+	};
+
+	resetIds();
+	const t1Events: AgentEvent[] = [
+		mkEvent(
+			{
+				event_type: "INCIDENT_CREATED",
+				event_data: {
+					status: "open",
+					severity: "medium",
+					createdBy: "U_ONCALL",
+					...incidentBase,
+					source: "slack",
+					assignee: "U_ONCALL",
+					entryPointId: "ep_enrich",
+					rotationId: "rot_enrich",
+				},
+			},
+			0,
+		),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Multiple customers report `Failed to start enrichment`.", userId: "U_REPORTER" } }, 2),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Reproduced in production account. Investigating.", userId: "U_ONCALL" } }, 4),
+	];
+
+	resetIds();
+	const t2Events: AgentEvent[] = [
+		...t1Events,
+		mkSuggestionEvent(
+			{
+				action: "add_status_page_update",
+				message: "We’re investigating reports of enrichments failing to start.",
+				affectionStatus: "investigating",
+				title: "Enrichments failing to start",
+				services: [{ id: "svc_enrich", impact: "partial" }],
+			},
+			6,
+			"sug_enrich_sp_1",
+		),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Could this be related to AI variables? Not confirmed yet.", userId: "U_ENG_A" } }, 8),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "No code changes found yet in this area.", userId: "U_ENG_B" } }, 9),
+	];
+	const t2ProcessedThrough = t1Events[t1Events.length - 1]!.id;
+
+	resetIds();
+	const t3Events: AgentEvent[] = [
+		...t2Events,
+		mkSuggestionEvent(
+			{
+				action: "add_status_page_update",
+				message: "We’re investigating reports of enrichments failing to start.",
+				affectionStatus: "investigating",
+				title: "Enrichments failing to start",
+				services: [{ id: "svc_enrich", impact: "partial" }],
+			},
+			10,
+			"sug_enrich_sp_2",
+		),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Still investigating root cause. No confirmed external change.", userId: "U_ONCALL" } }, 11),
+	];
+	const t3ProcessedThrough = t2Events[t2Events.length - 1]!.id;
+
+	resetIds();
+	const t4Events: AgentEvent[] = [
+		...t3Events,
+		mkSuggestionEvent(
+			{
+				action: "add_status_page_update",
+				message: "Investigating ongoing enrichment start failures.",
+				affectionStatus: "investigating",
+				title: "Enrichments failing to start",
+				services: [{ id: "svc_enrich", impact: "partial" }],
+			},
+			12,
+			"sug_enrich_sp_3",
+		),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Any new externally visible impact? not yet.", userId: "U_ENG_A" } }, 13),
+	];
+	const t4ProcessedThrough = t3Events[t3Events.length - 1]!.id;
+
+	return {
+		id: "pending-investigating-spam",
+		name: "Status Page: Pending Investigating Suggestion Should Not Spam",
+		description: "When first status-page suggestion is pending (no AFFECTION_UPDATE yet), later turns with no new external facts must not re-suggest add_status_page_update.",
+		turns: [
+			{
+				name: "Turn 1: Confirmed external impact — first investigating update is allowed",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t1Events,
+					processedThroughId: 0,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "investigating")],
+			},
+			{
+				name: "Turn 2: Pending first suggestion + internal chatter — do not re-suggest status page",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t2Events,
+					processedThroughId: t2ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotSuggest("add_status_page_update")],
+			},
+			{
+				name: "Turn 3: Second duplicate already exists + no new external fact — still no status page suggestion",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t3Events,
+					processedThroughId: t3ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotSuggest("add_status_page_update")],
+			},
+			{
+				name: "Turn 4: Third duplicate in history + no external delta — must stay silent",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t4Events,
+					processedThroughId: t4ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotSuggest("add_status_page_update")],
+			},
+		],
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 13: Many small turns should stay quiet unless external delta exists
+// ---------------------------------------------------------------------------
+
+function buildMicroTurnNoiseScenario(): LifecycleScenario {
+	const SERVICES: AgentSuggestionContext["services"] = [{ id: "svc_enrich", name: "Enrich", prompt: "Enrichments are stuck, not processing, lost or failing" }];
+
+	const incidentBase = {
+		title: "Enrichment start failures",
+		description: "Customers report `Failed to start enrichment` errors.",
+		prompt: "Investigate enrichment start failures affecting customers.",
+	};
+
+	resetIds();
+	const t1Events: AgentEvent[] = [
+		mkEvent(
+			{
+				event_type: "INCIDENT_CREATED",
+				event_data: {
+					status: "open",
+					severity: "medium",
+					createdBy: "U_ONCALL",
+					...incidentBase,
+					source: "slack",
+					assignee: "U_ONCALL",
+					entryPointId: "ep_enrich",
+					rotationId: "rot_enrich",
+				},
+			},
+			0,
+		),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Multiple customers report `Failed to start enrichment`.", userId: "U_REPORTER" } }, 2),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Confirmed in production accounts. External impact is real.", userId: "U_ONCALL" } }, 3),
+	];
+
+	const t2Events: AgentEvent[] = [
+		...t1Events,
+		mkSuggestionEvent(
+			{
+				action: "add_status_page_update",
+				message: "We are investigating reports of enrichments failing to start.",
+				affectionStatus: "investigating",
+				title: "Enrichments failing to start",
+				services: [{ id: "svc_enrich", impact: "partial" }],
+			},
+			5,
+			"sug_micro_1",
+		),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Testing locally to find exact stack trace.", userId: "U_ENG_A" } }, 6),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "No confirmed external change yet.", userId: "U_ENG_B" } }, 7),
+	];
+	const t2ProcessedThrough = t1Events[t1Events.length - 1]!.id;
+
+	const t3Events: AgentEvent[] = [
+		...t2Events,
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Datadog error candidate shared, still validating.", userId: "U_ONCALL" } }, 8),
+	];
+	const t3ProcessedThrough = t2Events[t2Events.length - 1]!.id;
+
+	const t4Events: AgentEvent[] = [
+		...t3Events,
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "Potential internal trigger: field-name conflict path in useEnrichmentsModal. Not externally confirmed yet.",
+					userId: "U_ENG_A",
+				},
+			},
+			9,
+		),
+	];
+	const t4ProcessedThrough = t3Events[t3Events.length - 1]!.id;
+
+	const t5Events: AgentEvent[] = [
+		...t4Events,
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Still debugging, no user-facing update beyond investigating.", userId: "U_ENG_B" } }, 10),
+	];
+	const t5ProcessedThrough = t4Events[t4Events.length - 1]!.id;
+
+	const t6Events: AgentEvent[] = [...t5Events, mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "No recent deploy in that code path.", userId: "U_ONCALL" } }, 11)];
+	const t6ProcessedThrough = t5Events[t5Events.length - 1]!.id;
+
+	const t7Events: AgentEvent[] = [
+		...t6Events,
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message:
+						"New external fact confirmed: failures occur when AI variable name conflicts with an existing field. Support workaround shared: rename the variable to continue enrichment while fix is prepared.",
+					userId: "U_ONCALL",
+				},
+			},
+			12,
+		),
+	];
+	const t7ProcessedThrough = t6Events[t6Events.length - 1]!.id;
+
+	const t8Events: AgentEvent[] = [
+		...t7Events,
+		mkSuggestionEvent(
+			{
+				action: "add_status_page_update",
+				message: "We identified a trigger and shared a workaround while we prepare a fix.",
+			},
+			13,
+			"sug_micro_2",
+		),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Engineering is implementing better validation copy.", userId: "U_ENG_A" } }, 14),
+	];
+	const t8ProcessedThrough = t7Events[t7Events.length - 1]!.id;
+
+	return {
+		id: "micro-turn-noise",
+		name: "Micro Turns: Avoid Noise Across Small Turns",
+		description:
+			"Simulates many small incident turns where most updates are internal chatter. Agent should avoid repeating status-page suggestions until there is a genuine new external-facing fact.",
+		turns: [
+			{
+				name: "Turn 1: Initial confirmed impact - first investigating status page update",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t1Events,
+					processedThroughId: 0,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "investigating")],
+			},
+			{
+				name: "Turn 2: Small internal chatter - no additional status-page suggestion",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t2Events,
+					processedThroughId: t2ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotSuggest("add_status_page_update")],
+			},
+			{
+				name: "Turn 3: Another tiny turn - still no status-page suggestion",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t3Events,
+					processedThroughId: t3ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotSuggest("add_status_page_update")],
+			},
+			{
+				name: "Turn 4: Internal hypothesis only - no status-page suggestion",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t4Events,
+					processedThroughId: t4ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotSuggest("add_status_page_update")],
+			},
+			{
+				name: "Turn 5: No external delta - no status-page suggestion",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t5Events,
+					processedThroughId: t5ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotSuggest("add_status_page_update")],
+			},
+			{
+				name: "Turn 6: Still internal debugging - no status-page suggestion",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t6Events,
+					processedThroughId: t6ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotSuggest("add_status_page_update")],
+			},
+			{
+				name: "Turn 7: New external-facing fact + workaround - suggest status-page update",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t7Events,
+					processedThroughId: t7ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldSuggest("add_status_page_update")],
+			},
+			{
+				name: "Turn 8: After follow-up suggestion with no new delta - stay quiet",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "medium" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t8Events,
+					processedThroughId: t8ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotSuggest("add_status_page_update")],
+			},
+		],
+	};
+}
+
+// ---------------------------------------------------------------------------
 // All scenarios
 // ---------------------------------------------------------------------------
 
@@ -2477,6 +2848,8 @@ export const SCENARIOS: LifecycleScenario[] = [
 	buildRepeatWithDeltaScenario(),
 	buildFirstStatusPageInvestigatingScenario(),
 	buildRealPerformanceIncidentScenario(),
+	buildPendingInvestigatingSpamScenario(),
+	buildMicroTurnNoiseScenario(),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2492,6 +2865,7 @@ export type EvalOptions = {
 	verbose?: boolean;
 	out?: string;
 	skipJudge?: boolean;
+	reasoningEffort?: ReasoningEffort;
 };
 
 type TurnRunCapture = {
@@ -2920,7 +3294,7 @@ async function runTurn(turn: Turn, opts: EvalOptions): Promise<TurnCapture> {
 	const runCaptures: TurnRunCapture[] = [];
 	for (let runIndex = 1; runIndex <= runs; runIndex += 1) {
 		const start = Date.now();
-		const result = await callOpenAI(input, tools, apiKey, model);
+		const result = await callOpenAI(input, tools, apiKey, model, opts.reasoningEffort ?? "medium");
 		const durationMs = Date.now() - start;
 		const normalizedSuggestions = normalizeSuggestions(result.suggestions, turn.context);
 		runCaptures.push({
@@ -3071,8 +3445,15 @@ async function main() {
 	const scenarioFilter = scenarioArg ? scenarioArg.split("=")[1]! : undefined;
 	const promptFileArg = process.argv.find((a) => a.startsWith("--prompt-file="));
 	const outArg = process.argv.find((a) => a.startsWith("--out="));
+	const reasoningEffortArg = process.argv.find((a) => a.startsWith("--reasoning-effort="));
 	const outputPath = resolve(outArg ? outArg.split("=")[1]! : buildDefaultOutputPath());
 	const skipJudge = process.argv.includes("--skip-judge");
+	const reasoningEffortRaw = reasoningEffortArg ? reasoningEffortArg.split("=")[1]! : "medium";
+	if (!["low", "medium", "high"].includes(reasoningEffortRaw)) {
+		console.error(`Invalid --reasoning-effort value "${reasoningEffortRaw}". Use low|medium|high.`);
+		process.exit(1);
+	}
+	const reasoningEffort = reasoningEffortRaw as ReasoningEffort;
 
 	const scenarios = scenarioFilter ? SCENARIOS.filter((s) => s.id === scenarioFilter) : SCENARIOS;
 
@@ -3085,6 +3466,7 @@ async function main() {
 	if (model) console.log(`Model: ${model}`);
 	if (judgeModel) console.log(`Judge model: ${judgeModel}`);
 	if (promptFileArg) console.log(`Prompt file: ${promptFileArg.split("=")[1]}`);
+	if (reasoningEffortArg) console.log(`Reasoning effort: ${reasoningEffort}`);
 	console.log();
 
 	const modelName = model ?? "gpt-5.2";
@@ -3093,7 +3475,7 @@ async function main() {
 	for (const scenario of scenarios) {
 		console.log(`>> ${scenario.name}`);
 		console.log(`   ${scenario.description}\n`);
-		const result = await runLifecycleScenario(scenario, { verbose, runs, model: modelName, systemPrompt });
+		const result = await runLifecycleScenario(scenario, { verbose, runs, model: modelName, systemPrompt, reasoningEffort });
 		results.push(result);
 	}
 

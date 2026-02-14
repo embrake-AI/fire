@@ -12,13 +12,25 @@ Priority:
 Hard rules:
 - Use only concrete evidence from the event log. If ambiguous, suggest nothing.
 - Every tool call MUST include evidence citing specific supporting events.
-- NEVER repeat a prior update_status or update_severity target already present in AGENT_SUGGESTION events.
+- NEVER repeat the same action+target once it appears in AGENT_SUGGESTION events, unless that target has already been applied by a real incident event and a new target is now warranted.
+- Treat repeated suggestions as harmful noise. New evidence alone does NOT justify repeating the same action+target.
+- Mapping for "same action+target":
+  - update_status: same status
+  - update_severity: same severity
+  - add_status_page_update: same affectionStatus (or same no-affectionStatus/update case) for the same external state
+- For add_status_page_update, do not re-suggest the same external-state update while it is still pending (no matching AFFECTION_UPDATE yet).
+- You will receive a "Suggestion target state" summary. Treat any target listed as pending as blocked by default.
+- Exception: you may re-suggest the same action+target only when decisive new evidence appears after [TURN BOUNDARY] that makes that exact target newly correct (not just more discussion or rewording).
+- If you use this exception, your evidence MUST cite the post-boundary event(s) and explain why the earlier pending suggestion was premature or not yet actionable.
 - NEVER suggest a status transition that is not in validStatusTransitions.
+- Treat prior AGENT_SUGGESTION add_status_page_update as pending public-update intent until an AFFECTION_UPDATE is logged.
+- If a pending add_status_page_update exists and no new external-facing fact appears after it, suggest NO additional status-page update.
+- Never suggest affectionStatus=investigating more than once before the first AFFECTION_UPDATE.
 - Do not speculate about hypothetical/future actions.
 
 Lifecycle guidance:
 - Suggest update_status=mitigating when there is clear ongoing user impact and incident is not resolved.
-- Do NOT suggest update_status=mitigating if AGENT_SUGGESTION already includes update_status=mitigating.
+- Do NOT suggest update_status=mitigating if AGENT_SUGGESTION already includes update_status=mitigating and it has not been applied yet.
 - Suggest update_severity only when evidence supports an actual severity change.
 - Suggest update_status=resolved only when BOTH are true:
   1) remediation happened, and
@@ -27,16 +39,19 @@ Lifecycle guidance:
 
 Severity guidance:
 - Prefer high for confirmed broad external impact (for example widespread errors, major degradation, critical service affected).
-- Do not re-suggest the same severity target once already suggested/applied unless target changes.
+- Do not re-suggest the same severity target while that target is already pending in AGENT_SUGGESTION.
 
 Status-page guidance:
 - Suggest status-page updates only for confirmed external-user impact.
-- If hasAffection=false, the first status-page update MUST use affectionStatus=investigating and include title + services.
-- If hasAffection=true, use this decision table for affectionStatus:
+- Compute effectiveHasAffection:
+  - true if hasAffection=true, OR
+  - true if any prior AGENT_SUGGESTION already includes add_status_page_update (pending intent).
+- If effectiveHasAffection=false, the first status-page update MUST use affectionStatus=investigating and include title + services.
+- If effectiveHasAffection=true, use this decision table for affectionStatus:
   1) If you suggest update_status in this turn, set affectionStatus to that same lifecycle status (mitigating or resolved).
   2) If you do NOT suggest update_status in this turn, set affectionStatus=update for follow-up public communication.
-- If hasAffection=true and no status change, suggest a status-page update only when there is materially new external information (new impact/scope, renewed errors, mitigation progress, root-cause insight, recovery milestone, or clear next-step/update commitment).
-- New-information gate (strict): for hasAffection=true with no lifecycle status change, require at least one new external-facing fact that was NOT already communicated in recent AFFECTION_UPDATE or prior add_status_page_update AGENT_SUGGESTION events. Rewording the same state, internal debate, or repeated/ambiguous signals is NOT enough.
+- If effectiveHasAffection=true and no status change, suggest a status-page update only when there is materially new external information (new impact/scope, renewed errors, mitigation progress, root-cause insight, recovery milestone, or clear next-step/update commitment).
+- New-information gate (strict): for effectiveHasAffection=true with no lifecycle status change, require at least one new external-facing fact that was NOT already communicated in recent AFFECTION_UPDATE or prior add_status_page_update AGENT_SUGGESTION events. Rewording the same state, internal debate, or repeated/ambiguous signals is NOT enough.
 - Anti-spam: do not post near-duplicate public updates that add no new external value.
 
 Output constraints:
@@ -260,6 +275,99 @@ function parseAffectionStatus(value: unknown): AgentAffectionStatus | undefined 
 	return AFFECTION_STATUSES.includes(value as AgentAffectionStatus) ? (value as AgentAffectionStatus) : undefined;
 }
 
+type SuggestionTargetState = {
+	pendingStatus: Set<string>;
+	pendingSeverity: Set<string>;
+	pendingStatusPage: Set<string>;
+	appliedStatus: Set<string>;
+	appliedSeverity: Set<string>;
+	appliedStatusPage: Set<string>;
+};
+
+function createEmptySuggestionTargetState(): SuggestionTargetState {
+	return {
+		pendingStatus: new Set(),
+		pendingSeverity: new Set(),
+		pendingStatusPage: new Set(),
+		appliedStatus: new Set(),
+		appliedSeverity: new Set(),
+		appliedStatusPage: new Set(),
+	};
+}
+
+function parseStatusPageTarget(value: unknown): "investigating" | "mitigating" | "resolved" | "update" {
+	if (value === "investigating" || value === "mitigating" || value === "resolved" || value === "update") {
+		return value;
+	}
+	return "update";
+}
+
+function deriveSuggestionTargetState(events: AgentEvent[]): SuggestionTargetState {
+	const state = createEmptySuggestionTargetState();
+	for (const event of events) {
+		const data = event.event_data as Record<string, unknown>;
+		const suggestion =
+			event.event_type === "MESSAGE_ADDED" && event.event_metadata?.kind === "suggestion" && data?.suggestion && typeof data.suggestion === "object"
+				? (data.suggestion as Record<string, unknown>)
+				: null;
+
+		if (suggestion) {
+			const action = suggestion.action;
+			if (action === "update_status" && typeof suggestion.status === "string") {
+				state.pendingStatus.add(suggestion.status);
+			} else if (action === "update_severity" && typeof suggestion.severity === "string") {
+				state.pendingSeverity.add(suggestion.severity);
+			} else if (action === "add_status_page_update") {
+				state.pendingStatusPage.add(parseStatusPageTarget(suggestion.affectionStatus));
+			}
+		}
+
+		if (event.event_type === "STATUS_UPDATE") {
+			const status = (data.status as string | undefined) ?? "";
+			if (status) {
+				state.appliedStatus.add(status);
+				state.pendingStatus.delete(status);
+			}
+			continue;
+		}
+
+		if (event.event_type === "SEVERITY_UPDATE") {
+			const severity = (data.severity as string | undefined) ?? "";
+			if (severity) {
+				state.appliedSeverity.add(severity);
+				state.pendingSeverity.delete(severity);
+			}
+			continue;
+		}
+
+		if (event.event_type === "AFFECTION_UPDATE") {
+			const target = parseStatusPageTarget(data.status);
+			state.appliedStatusPage.add(target);
+			state.pendingStatusPage.delete(target);
+		}
+	}
+
+	return state;
+}
+
+function formatTargetSet(values: Set<string>): string {
+	if (!values.size) {
+		return "none";
+	}
+	return Array.from(values).sort().join(", ");
+}
+
+export function buildSuggestionStateContextMessage(context: AgentSuggestionContext): string {
+	const state = deriveSuggestionTargetState(context.events);
+	return `Suggestion target state:
+- pending update_status targets: ${formatTargetSet(state.pendingStatus)}
+- pending update_severity targets: ${formatTargetSet(state.pendingSeverity)}
+- pending add_status_page_update targets: ${formatTargetSet(state.pendingStatusPage)}
+- applied update_status targets: ${formatTargetSet(state.appliedStatus)}
+- applied update_severity targets: ${formatTargetSet(state.appliedSeverity)}
+- applied add_status_page_update targets: ${formatTargetSet(state.appliedStatusPage)}`;
+}
+
 function formatRelativeTime(value?: string): string {
 	if (!value) {
 		return "none";
@@ -411,6 +519,7 @@ export async function generateIncidentSuggestions(
 ): Promise<AgentSuggestion[]> {
 	const userMessage = buildContextUserMessage(context);
 	const statusPageContextMessage = buildStatusPageContextMessage(context);
+	const suggestionStateContextMessage = buildSuggestionStateContextMessage(context);
 	const incidentStateMessage = buildIncidentStateMessage(context);
 
 	const eventMessages = buildEventMessages(context.events, context.processedThroughId ?? 0);
@@ -422,6 +531,7 @@ export async function generateIncidentSuggestions(
 		{ role: "user", content: userMessage },
 		...eventMessages,
 		{ role: "user", content: statusPageContextMessage },
+		{ role: "user", content: suggestionStateContextMessage },
 		{ role: "user", content: incidentStateMessage },
 		{ role: "user", content: "Return suggestions." },
 	];
