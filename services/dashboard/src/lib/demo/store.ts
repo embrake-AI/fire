@@ -226,6 +226,11 @@ function makeInitialState(): DemoState {
 	const serviceApiId = "service-api";
 	const serviceJobsId = "service-jobs";
 	const statusPageId = "status-page-main";
+	const ongoingIncidentId = "incident-demo-ongoing";
+	const ongoingIncidentCreatedAt = new Date(now.getTime() - 45 * 60 * 1000);
+	const ongoingIncidentAckAt = new Date(now.getTime() - 38 * 60 * 1000);
+	const ongoingIncidentMitigatingAt = new Date(now.getTime() - 27 * 60 * 1000);
+	const ongoingIncidentUpdateAt = new Date(now.getTime() - 12 * 60 * 1000);
 
 	return {
 		version: 1,
@@ -474,10 +479,159 @@ function makeInitialState(): DemoState {
 			{ id: "notion-demo-root", title: "Incident Postmortems", icon: "\ud83d\udcc4" },
 			{ id: "notion-demo-eng", title: "Engineering", icon: "\ud83d\udee0\ufe0f" },
 		],
-		incidents: [],
-		analyses: [],
+		incidents: [
+			{
+				id: ongoingIncidentId,
+				state: {
+					id: ongoingIncidentId,
+					createdAt: ongoingIncidentCreatedAt,
+					status: "mitigating",
+					prompt: "Users report intermittent 502 errors during checkout in the web app.",
+					severity: "high",
+					createdBy: "UDEMO002",
+					assignee: { slackId: "UDEMO001" },
+					source: "slack",
+					title: "Checkout 502 errors on web",
+					description: "Checkout requests are intermittently failing with 502 for web users in production.",
+					entryPointId: "entry-point-web",
+					rotationId: rotationWebId,
+					teamId: teamWebId,
+				},
+				context: {
+					channel: "CDEMO001",
+					thread: "1700000000.000100",
+				},
+				events: [
+					{
+						id: 1,
+						event_type: "INCIDENT_CREATED",
+						event_data: {
+							status: "open",
+							severity: "high",
+							createdBy: "UDEMO002",
+							title: "Checkout 502 errors on web",
+							description: "Checkout requests are intermittently failing with 502 for web users in production.",
+							prompt: "Users report intermittent 502 errors during checkout in the web app.",
+							source: "slack",
+							entryPointId: "entry-point-web",
+							rotationId: rotationWebId,
+							assignee: "UDEMO001",
+						},
+						created_at: ongoingIncidentCreatedAt.toISOString(),
+						adapter: "slack",
+					},
+					{
+						id: 2,
+						event_type: "MESSAGE_ADDED",
+						event_data: {
+							message: "Acknowledged. Investigating API gateway logs and checkout traces now.",
+							userId: "UDEMO001",
+							messageId: "1700000000.000200",
+						},
+						created_at: ongoingIncidentAckAt.toISOString(),
+						adapter: "slack",
+					},
+					{
+						id: 3,
+						event_type: "STATUS_UPDATE",
+						event_data: {
+							status: "mitigating",
+							message: "Mitigating: routing a portion of traffic away from the degraded API shard.",
+						},
+						created_at: ongoingIncidentMitigatingAt.toISOString(),
+						adapter: "dashboard",
+					},
+					{
+						id: 4,
+						event_type: "MESSAGE_ADDED",
+						event_data: {
+							message: "Traffic shift is live. Error rate is dropping but we are monitoring.",
+							userId: "UDEMO001",
+							messageId: "1700000000.000300",
+						},
+						created_at: ongoingIncidentUpdateAt.toISOString(),
+						adapter: "dashboard",
+					},
+				],
+			},
+		],
+		analyses: [
+			{
+				id: ongoingIncidentId,
+				clientId: "demo-client",
+				title: "Checkout 502 errors on web",
+				description: "Checkout requests are intermittently failing with 502 for web users in production.",
+				severity: "high",
+				assignee: "UDEMO001",
+				createdBy: "UDEMO002",
+				source: "slack",
+				prompt: "Users report intermittent 502 errors during checkout in the web app.",
+				createdAt: ongoingIncidentCreatedAt,
+				resolvedAt: null,
+				events: [
+					{
+						id: 1,
+						event_type: "INCIDENT_CREATED",
+						event_data: {
+							status: "open",
+							severity: "high",
+							createdBy: "UDEMO002",
+							title: "Checkout 502 errors on web",
+							description: "Checkout requests are intermittently failing with 502 for web users in production.",
+							prompt: "Users report intermittent 502 errors during checkout in the web app.",
+							source: "slack",
+							entryPointId: "entry-point-web",
+							rotationId: rotationWebId,
+							assignee: "UDEMO001",
+						},
+						created_at: ongoingIncidentCreatedAt.toISOString(),
+						adapter: "slack",
+					},
+					{
+						id: 2,
+						event_type: "MESSAGE_ADDED",
+						event_data: {
+							message: "Acknowledged. Investigating API gateway logs and checkout traces now.",
+							userId: "UDEMO001",
+							messageId: "1700000000.000200",
+						},
+						created_at: ongoingIncidentAckAt.toISOString(),
+						adapter: "slack",
+					},
+					{
+						id: 3,
+						event_type: "STATUS_UPDATE",
+						event_data: {
+							status: "mitigating",
+							message: "Mitigating: routing a portion of traffic away from the degraded API shard.",
+						},
+						created_at: ongoingIncidentMitigatingAt.toISOString(),
+						adapter: "dashboard",
+					},
+					{
+						id: 4,
+						event_type: "MESSAGE_ADDED",
+						event_data: {
+							message: "Traffic shift is live. Error rate is dropping but we are monitoring.",
+							userId: "UDEMO001",
+							messageId: "1700000000.000300",
+						},
+						created_at: ongoingIncidentUpdateAt.toISOString(),
+						adapter: "dashboard",
+					},
+				],
+				timeline: null,
+				impact: null,
+				rootCause: null,
+				actions: [],
+				entryPointId: "entry-point-web",
+				rotationId: rotationWebId,
+				teamId: teamWebId,
+				notionPageId: null,
+			},
+		],
 		affections: [],
-		eventSeq: 1,
+		eventSeq: 5,
 	};
 }
 
