@@ -614,9 +614,6 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 	await maybeUpdateSuggestionMessage(stepDo, botToken, eventMetadata);
 
 	if (incidentChannelId && status === "resolved") {
-		if (!isSuggestionAppliedEvent(eventMetadata)) {
-			await postToChannel(stepDo, botToken, incidentChannelId, "This channel will now be archived.", "slack.post-archive-notice");
-		}
 		await archiveChannel(stepDo, botToken, incidentChannelId).catch((err) => {
 			console.warn("Failed to archive incident channel", err);
 		});
