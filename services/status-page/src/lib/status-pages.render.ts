@@ -585,7 +585,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 		}
 
 		const uptime = ((totalMs - downtimeMs) / totalMs) * 100;
-		return Math.round(Math.max(0, Math.min(100, uptime)) * 10) / 10;
+		return Math.round(Math.max(0, Math.min(100, uptime)) * 100) / 100;
 	};
 
 	const servicesHtml = services
@@ -613,7 +613,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 								}
 							</div>
 							<div class="flex items-center gap-2">
-								${showPercentage ? `<span class="text-xs text-slate-400">${uptime}% uptime</span>` : ""}
+									${showPercentage ? `<span class="text-xs text-slate-400">${uptime}% uptime</span>` : ""}
 								<div class="flex items-center gap-1.5">
 									<div class="w-2 h-2 rounded-full ${colors.dot}"></div>
 									<span class="text-xs ${colors.text}">${label}</span>
