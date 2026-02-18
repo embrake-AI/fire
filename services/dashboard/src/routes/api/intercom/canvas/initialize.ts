@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/solid-router";
-import { buildIntercomCanvasResponse, verifyIntercomSignature } from "~/lib/intercom/intercom";
+import { buildIntercomCanvasResponse, verifyIntercomSignature } from "~/lib/intercom/intercom.server";
 
 export const Route = createFileRoute("/api/intercom/canvas/initialize")({
 	server: {
