@@ -39,9 +39,12 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 					return new Response("Missing code or state", { status: 400 });
 				}
 
-				const stateData = extractSigned<{ clientId: string; userId: string }>(state);
+				const stateData = extractSigned<{ clientId: string; userId: string; platform?: string; type?: string }>(state);
 				if (!stateData) {
 					return new Response("Invalid or expired state parameter", { status: 400 });
+				}
+				if (stateData.platform && stateData.platform !== "slack") {
+					return new Response("Invalid state platform", { status: 400 });
 				}
 
 				const { clientId: tenantClientId, userId } = stateData;
@@ -90,6 +93,7 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 							clientId: tenantClientId,
 							platform: "slack",
 							data: {
+								type: "slack",
 								teamId,
 								teamName,
 								enterpriseId: tokenJson.enterprise?.id ?? null,
@@ -104,6 +108,7 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 							target: [integration.clientId, integration.platform],
 							set: {
 								data: {
+									type: "slack",
 									teamId,
 									teamName,
 									enterpriseId: tokenJson.enterprise?.id ?? null,
@@ -123,6 +128,7 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 							userId: userId,
 							platform: "slack",
 							data: {
+								type: "slack",
 								teamId,
 								teamName,
 								enterpriseId: tokenJson.enterprise?.id ?? null,
@@ -136,6 +142,7 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 							target: [userIntegration.userId, userIntegration.platform],
 							set: {
 								data: {
+									type: "slack",
 									teamId,
 									teamName,
 									enterpriseId: tokenJson.enterprise?.id ?? null,

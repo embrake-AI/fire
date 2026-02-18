@@ -27,7 +27,7 @@ export function useDisconnectWorkspaceIntegration() {
 	const disconnectWorkspaceIntegrationFn = useServerFn(disconnectWorkspaceIntegration);
 
 	return useMutation(() => ({
-		mutationFn: (platform: "slack") =>
+		mutationFn: (platform: "slack" | "notion" | "intercom") =>
 			runDemoAware({
 				demo: () => disconnectWorkspaceIntegrationDemo(platform),
 				remote: () => disconnectWorkspaceIntegrationFn({ data: platform }),

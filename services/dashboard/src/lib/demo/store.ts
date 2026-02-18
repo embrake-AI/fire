@@ -17,7 +17,7 @@ type VerifyCustomDomainResponse = Awaited<ReturnType<typeof verifyCustomDomain>>
 type GetAnalysisByIdResponse = Awaited<ReturnType<typeof getAnalysisById>>;
 type GetMetricsResponse = Awaited<ReturnType<typeof getMetrics>>;
 
-type WorkspacePlatform = "slack" | "notion";
+type WorkspacePlatform = "slack" | "notion" | "intercom";
 type UserPlatform = "slack";
 
 type DemoClient = {
@@ -198,6 +198,7 @@ type DemoState = {
 	statusPages: DemoStatusPage[];
 	apiKeys: DemoApiKey[];
 	workspaceIntegrations: DemoIntegrationRow<WorkspacePlatform>[];
+	intercomStatusPageId: string | null;
 	userIntegrations: DemoIntegrationRow<UserPlatform>[];
 	slackUsers: SlackUser[];
 	slackChannels: SlackSelectableChannel[];
@@ -447,6 +448,7 @@ function makeInitialState(): DemoState {
 			{ platform: "slack", installedAt: now },
 			{ platform: "notion", installedAt: now },
 		],
+		intercomStatusPageId: null,
 		userIntegrations: [{ platform: "slack", installedAt: now }],
 		slackUsers: [
 			{ id: "UDEMO001", name: "Demo User", email: "demo@firedash.ai", avatar: undefined },
@@ -638,6 +640,9 @@ function makeInitialState(): DemoState {
 async function loadState(): Promise<DemoState> {
 	const state = await readKV<DemoState>(STATE_KEY);
 	if (state) {
+		if (state.intercomStatusPageId === undefined) {
+			state.intercomStatusPageId = null;
+		}
 		return state;
 	}
 	const initialState = makeInitialState();
@@ -1231,6 +1236,17 @@ export async function getWorkspaceIntegrationsDemo() {
 	return state.workspaceIntegrations.map((integration) => ({ ...integration }));
 }
 
+export async function getIntercomWorkspaceConfigDemo() {
+	const state = await loadState();
+	const connected = state.workspaceIntegrations.some((integration) => integration.platform === "intercom");
+	return {
+		connected,
+		workspaceId: connected ? "demo-intercom-workspace" : null,
+		workspaceName: connected ? "Demo Intercom Workspace" : null,
+		statusPageId: state.intercomStatusPageId,
+	};
+}
+
 export async function getUserIntegrationsDemo() {
 	const state = await loadState();
 	return state.userIntegrations.map((integration) => ({ ...integration }));
@@ -1263,6 +1279,31 @@ export async function connectUserIntegrationDemo(platform: UserPlatform) {
 export async function disconnectWorkspaceIntegrationDemo(platform: WorkspacePlatform) {
 	return withState(async (state) => {
 		state.workspaceIntegrations = state.workspaceIntegrations.filter((integration) => integration.platform !== platform);
+		if (platform === "intercom") {
+			state.intercomStatusPageId = null;
+		}
+		return { success: true };
+	});
+}
+
+export async function setIntercomStatusPageDemo(data: { statusPageId: string }) {
+	return withState(async (state) => {
+		const connected = state.workspaceIntegrations.some((integration) => integration.platform === "intercom");
+		if (!connected) {
+			throw new Error("Connect Intercom before selecting a status page");
+		}
+
+		const statusPageId = data.statusPageId.trim();
+		if (!statusPageId) {
+			throw new Error("Status page is required");
+		}
+
+		const exists = state.statusPages.some((page) => page.id === statusPageId);
+		if (!exists) {
+			throw new Error("Status page not found");
+		}
+
+		state.intercomStatusPageId = statusPageId;
 		return { success: true };
 	});
 }

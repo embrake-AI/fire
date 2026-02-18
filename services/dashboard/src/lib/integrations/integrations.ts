@@ -1,5 +1,5 @@
 import type { SlackIntegrationData } from "@fire/db/schema";
-import { integration, userIntegration } from "@fire/db/schema";
+import { integration, isSlackIntegrationData, userIntegration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, eq } from "drizzle-orm";
 import { authMiddleware } from "~/lib/auth/auth-middleware";
@@ -51,7 +51,7 @@ export const getUserIntegrations = createServerFn({ method: "GET" })
  */
 export const getInstallUrl = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
-	.inputValidator((data: { platform: "slack" | "notion"; type: "workspace" | "user" }) => data)
+	.inputValidator((data: { platform: "slack" | "notion" | "intercom"; type: "workspace" | "user" }) => data)
 	.handler(async ({ context, data }) => {
 		const { userId, clientId } = context;
 
@@ -81,6 +81,21 @@ export const getInstallUrl = createServerFn({ method: "POST" })
 
 			return authorize.toString();
 		}
+
+		if (data.platform === "intercom") {
+			if (data.type !== "workspace") {
+				throw new Error("Intercom supports workspace installation only");
+			}
+
+			const authorize = new URL("https://app.intercom.com/oauth");
+			authorize.searchParams.set("client_id", mustGetEnv("INTERCOM_CLIENT_ID"));
+			authorize.searchParams.set("redirect_uri", `${mustGetEnv("VITE_APP_URL")}/intercom/oauth/callback`);
+			authorize.searchParams.set("state", state);
+
+			return authorize.toString();
+		}
+
+		throw new Error("Unsupported integration platform");
 	});
 
 /**
@@ -92,7 +107,7 @@ export const getInstallUrl = createServerFn({ method: "POST" })
  */
 export const disconnectWorkspaceIntegration = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
-	.inputValidator((data: "slack" | "notion") => data)
+	.inputValidator((data: "slack" | "notion" | "intercom") => data)
 	.handler(async ({ context, data }) => {
 		const { clientId } = context;
 
@@ -107,6 +122,9 @@ export const disconnectWorkspaceIntegration = createServerFn({ method: "POST" })
 
 		if (data === "slack" && result?.data) {
 			const slackData = result.data as SlackIntegrationData;
+			if (!isSlackIntegrationData(slackData)) {
+				return { success: true };
+			}
 			if (slackData.botToken) {
 				const revoke = new URL("https://slack.com/api/auth.revoke");
 				revoke.searchParams.set("client_id", mustGetEnv("SLACK_CLIENT_ID"));
@@ -114,7 +132,7 @@ export const disconnectWorkspaceIntegration = createServerFn({ method: "POST" })
 				await fetch(revoke.toString());
 			}
 		}
-		// Note: Notion doesn't have a token revocation endpoint
+		// Note: Notion and Intercom do not currently use a token revocation endpoint here.
 
 		return { success: true };
 	});
@@ -163,7 +181,7 @@ export const getSlackBotChannels = createServerFn({ method: "GET" })
 		}
 
 		const slackData = slackIntegration.data as SlackIntegrationData;
-		if (!slackData.botToken) {
+		if (!isSlackIntegrationData(slackData) || !slackData.botToken) {
 			return [];
 		}
 
@@ -190,7 +208,7 @@ export const getSlackEmojis = createServerFn({ method: "GET" })
 		}
 
 		const slackData = slackIntegration.data as SlackIntegrationData;
-		if (!slackData.botToken) {
+		if (!isSlackIntegrationData(slackData) || !slackData.botToken) {
 			return {};
 		}
 

@@ -39,9 +39,12 @@ export const Route = createFileRoute("/notion/oauth/callback")({
 					return new Response("Missing code or state", { status: 400 });
 				}
 
-				const stateData = extractSigned<{ clientId: string; userId: string }>(state);
+				const stateData = extractSigned<{ clientId: string; userId: string; platform?: string; type?: string }>(state);
 				if (!stateData) {
 					return new Response("Invalid or expired state parameter", { status: 400 });
+				}
+				if (stateData.platform && stateData.platform !== "notion") {
+					return new Response("Invalid state platform", { status: 400 });
 				}
 
 				const { clientId: tenantClientId, userId } = stateData;
@@ -70,6 +73,7 @@ export const Route = createFileRoute("/notion/oauth/callback")({
 				const tokenJson = (await tokenRes.json()) as NotionOAuthTokenResponse;
 
 				const notionData: NotionIntegrationData = {
+					type: "notion",
 					workspaceId: tokenJson.workspace_id,
 					workspaceName: tokenJson.workspace_name,
 					workspaceIcon: tokenJson.workspace_icon,

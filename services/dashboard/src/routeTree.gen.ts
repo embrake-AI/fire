@@ -20,6 +20,7 @@ import { Route as ApiMetricsIndexRouteImport } from './routes/api/metrics/index'
 import { Route as AuthedMetricsIndexRouteImport } from './routes/_authed.metrics/index'
 import { Route as SlackOauthCallbackRouteImport } from './routes/slack/oauth/callback'
 import { Route as NotionOauthCallbackRouteImport } from './routes/notion/oauth/callback'
+import { Route as IntercomOauthCallbackRouteImport } from './routes/intercom/oauth/callback'
 import { Route as ApiRotationsStartWorkflowRouteImport } from './routes/api/rotations/start-workflow'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedTeamsTeamIdRouteImport } from './routes/_authed.teams/$teamId'
@@ -33,6 +34,7 @@ import { Route as AuthedCatalogStatusPagesRouteImport } from './routes/_authed.c
 import { Route as AuthedCatalogServicesRouteImport } from './routes/_authed.catalog.services'
 import { Route as AuthedCatalogRotationRouteImport } from './routes/_authed.catalog.rotation'
 import { Route as AuthedCatalogEntryPointsRouteImport } from './routes/_authed.catalog.entry-points'
+import { Route as ApiIntercomCanvasInitializeRouteImport } from './routes/api/intercom/canvas/initialize'
 import { Route as AuthedTeamsTeamIdUsersRouteImport } from './routes/_authed.teams/$teamId.users'
 import { Route as AuthedTeamsTeamIdServicesRouteImport } from './routes/_authed.teams/$teamId.services'
 import { Route as AuthedTeamsTeamIdRotationsRouteImport } from './routes/_authed.teams/$teamId.rotations'
@@ -95,6 +97,11 @@ const SlackOauthCallbackRoute = SlackOauthCallbackRouteImport.update({
 const NotionOauthCallbackRoute = NotionOauthCallbackRouteImport.update({
   id: '/notion/oauth/callback',
   path: '/notion/oauth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntercomOauthCallbackRoute = IntercomOauthCallbackRouteImport.update({
+  id: '/intercom/oauth/callback',
+  path: '/intercom/oauth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiRotationsStartWorkflowRoute =
@@ -167,6 +174,12 @@ const AuthedCatalogEntryPointsRoute =
     id: '/entry-points',
     path: '/entry-points',
     getParentRoute: () => AuthedCatalogRoute,
+  } as any)
+const ApiIntercomCanvasInitializeRoute =
+  ApiIntercomCanvasInitializeRouteImport.update({
+    id: '/api/intercom/canvas/initialize',
+    path: '/api/intercom/canvas/initialize',
+    getParentRoute: () => rootRouteImport,
   } as any)
 const AuthedTeamsTeamIdUsersRoute = AuthedTeamsTeamIdUsersRouteImport.update({
   id: '/users',
@@ -242,6 +255,7 @@ export interface FileRoutesByFullPath {
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/rotations/start-workflow': typeof ApiRotationsStartWorkflowRoute
+  '/intercom/oauth/callback': typeof IntercomOauthCallbackRoute
   '/notion/oauth/callback': typeof NotionOauthCallbackRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/metrics': typeof AuthedMetricsIndexRoute
@@ -255,6 +269,7 @@ export interface FileRoutesByFullPath {
   '/teams/$teamId/rotations': typeof AuthedTeamsTeamIdRotationsRoute
   '/teams/$teamId/services': typeof AuthedTeamsTeamIdServicesRoute
   '/teams/$teamId/users': typeof AuthedTeamsTeamIdUsersRoute
+  '/api/intercom/canvas/initialize': typeof ApiIntercomCanvasInitializeRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -276,6 +291,7 @@ export interface FileRoutesByTo {
   '/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/rotations/start-workflow': typeof ApiRotationsStartWorkflowRoute
+  '/intercom/oauth/callback': typeof IntercomOauthCallbackRoute
   '/notion/oauth/callback': typeof NotionOauthCallbackRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/metrics': typeof AuthedMetricsIndexRoute
@@ -289,6 +305,7 @@ export interface FileRoutesByTo {
   '/teams/$teamId/rotations': typeof AuthedTeamsTeamIdRotationsRoute
   '/teams/$teamId/services': typeof AuthedTeamsTeamIdServicesRoute
   '/teams/$teamId/users': typeof AuthedTeamsTeamIdUsersRoute
+  '/api/intercom/canvas/initialize': typeof ApiIntercomCanvasInitializeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -312,6 +329,7 @@ export interface FileRoutesById {
   '/_authed/teams/$teamId': typeof AuthedTeamsTeamIdRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/rotations/start-workflow': typeof ApiRotationsStartWorkflowRoute
+  '/intercom/oauth/callback': typeof IntercomOauthCallbackRoute
   '/notion/oauth/callback': typeof NotionOauthCallbackRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
   '/_authed/metrics/': typeof AuthedMetricsIndexRoute
@@ -325,6 +343,7 @@ export interface FileRoutesById {
   '/_authed/teams/$teamId/rotations': typeof AuthedTeamsTeamIdRotationsRoute
   '/_authed/teams/$teamId/services': typeof AuthedTeamsTeamIdServicesRoute
   '/_authed/teams/$teamId/users': typeof AuthedTeamsTeamIdUsersRoute
+  '/api/intercom/canvas/initialize': typeof ApiIntercomCanvasInitializeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -348,6 +367,7 @@ export interface FileRouteTypes {
     | '/teams/$teamId'
     | '/api/auth/$'
     | '/api/rotations/start-workflow'
+    | '/intercom/oauth/callback'
     | '/notion/oauth/callback'
     | '/slack/oauth/callback'
     | '/metrics'
@@ -361,6 +381,7 @@ export interface FileRouteTypes {
     | '/teams/$teamId/rotations'
     | '/teams/$teamId/services'
     | '/teams/$teamId/users'
+    | '/api/intercom/canvas/initialize'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -382,6 +403,7 @@ export interface FileRouteTypes {
     | '/teams/$teamId'
     | '/api/auth/$'
     | '/api/rotations/start-workflow'
+    | '/intercom/oauth/callback'
     | '/notion/oauth/callback'
     | '/slack/oauth/callback'
     | '/metrics'
@@ -395,6 +417,7 @@ export interface FileRouteTypes {
     | '/teams/$teamId/rotations'
     | '/teams/$teamId/services'
     | '/teams/$teamId/users'
+    | '/api/intercom/canvas/initialize'
   id:
     | '__root__'
     | '/_authed'
@@ -417,6 +440,7 @@ export interface FileRouteTypes {
     | '/_authed/teams/$teamId'
     | '/api/auth/$'
     | '/api/rotations/start-workflow'
+    | '/intercom/oauth/callback'
     | '/notion/oauth/callback'
     | '/slack/oauth/callback'
     | '/_authed/metrics/'
@@ -430,6 +454,7 @@ export interface FileRouteTypes {
     | '/_authed/teams/$teamId/rotations'
     | '/_authed/teams/$teamId/services'
     | '/_authed/teams/$teamId/users'
+    | '/api/intercom/canvas/initialize'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -439,9 +464,11 @@ export interface RootRouteChildren {
   AuthErrorRoute: typeof AuthErrorRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiRotationsStartWorkflowRoute: typeof ApiRotationsStartWorkflowRoute
+  IntercomOauthCallbackRoute: typeof IntercomOauthCallbackRoute
   NotionOauthCallbackRoute: typeof NotionOauthCallbackRoute
   SlackOauthCallbackRoute: typeof SlackOauthCallbackRoute
   ApiMetricsIndexRoute: typeof ApiMetricsIndexRoute
+  ApiIntercomCanvasInitializeRoute: typeof ApiIntercomCanvasInitializeRoute
 }
 
 declare module '@tanstack/solid-router' {
@@ -521,6 +548,13 @@ declare module '@tanstack/solid-router' {
       path: '/notion/oauth/callback'
       fullPath: '/notion/oauth/callback'
       preLoaderRoute: typeof NotionOauthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/intercom/oauth/callback': {
+      id: '/intercom/oauth/callback'
+      path: '/intercom/oauth/callback'
+      fullPath: '/intercom/oauth/callback'
+      preLoaderRoute: typeof IntercomOauthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/rotations/start-workflow': {
@@ -613,6 +647,13 @@ declare module '@tanstack/solid-router' {
       fullPath: '/catalog/entry-points'
       preLoaderRoute: typeof AuthedCatalogEntryPointsRouteImport
       parentRoute: typeof AuthedCatalogRoute
+    }
+    '/api/intercom/canvas/initialize': {
+      id: '/api/intercom/canvas/initialize'
+      path: '/api/intercom/canvas/initialize'
+      fullPath: '/api/intercom/canvas/initialize'
+      preLoaderRoute: typeof ApiIntercomCanvasInitializeRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authed/teams/$teamId/users': {
       id: '/_authed/teams/$teamId/users'
@@ -775,9 +816,11 @@ const rootRouteChildren: RootRouteChildren = {
   AuthErrorRoute: AuthErrorRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiRotationsStartWorkflowRoute: ApiRotationsStartWorkflowRoute,
+  IntercomOauthCallbackRoute: IntercomOauthCallbackRoute,
   NotionOauthCallbackRoute: NotionOauthCallbackRoute,
   SlackOauthCallbackRoute: SlackOauthCallbackRoute,
   ApiMetricsIndexRoute: ApiMetricsIndexRoute,
+  ApiIntercomCanvasInitializeRoute: ApiIntercomCanvasInitializeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
