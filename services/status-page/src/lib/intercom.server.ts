@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IntegrationData, IntercomIntegrationData } from "@fire/db/schema";
-import { incidentAffection, incidentAffectionService, incidentAffectionUpdate, integration, isIntercomIntegrationData, statusPage, statusPageService } from "@fire/db/schema";
+import { incidentAffection, incidentAffectionService, integration, isIntercomIntegrationData, statusPage, statusPageService } from "@fire/db/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { normalizeDomain } from "@/lib/status-pages.utils";
@@ -139,7 +139,7 @@ function buildAllSystemsOperationalResponse(statusPageUrl: string): IntercomCanv
 	};
 }
 
-function buildActiveAffectionResponse(affectionTitle: string, subtitle: string, incidentUrl: string): IntercomCanvasContentResponse {
+function buildActiveAffectionResponse(affectionTitle: string, incidentUrl: string): IntercomCanvasContentResponse {
 	return {
 		content: {
 			components: [
@@ -148,13 +148,6 @@ function buildActiveAffectionResponse(affectionTitle: string, subtitle: string, 
 					id: "incident-title",
 					text: affectionTitle,
 					style: "header",
-					align: "center",
-				},
-				{
-					type: "text",
-					id: "incident-subtitle",
-					text: subtitle,
-					style: "muted",
 					align: "center",
 				},
 				{
@@ -219,16 +212,6 @@ async function buildIssueCanvasResponse(statusPageId: string): Promise<IntercomC
 		.select({
 			id: incidentAffection.id,
 			title: incidentAffection.title,
-			latestMessage: sql<string | null>`
-				(
-					select iau.message
-					from ${incidentAffectionUpdate} iau
-					where iau.affection_id = ${incidentAffection.id}
-						and nullif(trim(iau.message), '') is not null
-					order by iau.created_at desc
-					limit 1
-				)
-			`,
 		})
 		.from(incidentAffection)
 		.where(
@@ -255,7 +238,7 @@ async function buildIssueCanvasResponse(statusPageId: string): Promise<IntercomC
 
 	return {
 		status: 200,
-		response: buildActiveAffectionResponse(latestAffection.title, latestAffection.latestMessage?.trim() || "Ongoing incident", buildIncidentUrl(statusPageUrl, latestAffection.id)),
+		response: buildActiveAffectionResponse(latestAffection.title, buildIncidentUrl(statusPageUrl, latestAffection.id)),
 	};
 }
 
