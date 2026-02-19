@@ -27,15 +27,7 @@ type IntercomCanvasResponse = {
 	};
 };
 
-function emptyCanvasResponse(): IntercomCanvasResponse {
-	return {
-		canvas: {
-			content: {
-				components: [],
-			},
-		},
-	};
-}
+export type IntercomCanvasBuildResult = { status: 200; response: IntercomCanvasResponse } | { status: 404 };
 
 function getIntercomData(data: IntegrationData): IntercomIntegrationData {
 	if (!isIntercomIntegrationData(data)) {
@@ -95,14 +87,51 @@ function buildStatusPageBaseUrl(page: { slug: string; customDomain: string | nul
 	}
 }
 
-function buildIncidentUrl(page: { slug: string; customDomain: string | null }, incidentId: string, fallbackOrigin: string | null): string | null {
-	const statusPageBaseUrl = buildStatusPageBaseUrl(page, fallbackOrigin);
-	if (!statusPageBaseUrl) {
-		return null;
-	}
-
+function buildIncidentUrl(statusPageBaseUrl: string, incidentId: string): string {
 	const normalizedBase = statusPageBaseUrl.endsWith("/") ? statusPageBaseUrl.slice(0, -1) : statusPageBaseUrl;
 	return `${normalizedBase}/history/${incidentId}`;
+}
+
+function buildAllSystemsOperationalResponse(statusPageUrl: string): IntercomCanvasResponse {
+	return {
+		canvas: {
+			content: {
+				components: [
+					{
+						type: "text",
+						id: "status-summary",
+						text: "All systems operational",
+					},
+					{
+						type: "text",
+						id: "status-url",
+						text: statusPageUrl,
+					},
+				],
+			},
+		},
+	};
+}
+
+function buildActiveAffectionResponse(affectionTitle: string, incidentUrl: string): IntercomCanvasResponse {
+	return {
+		canvas: {
+			content: {
+				components: [
+					{
+						type: "text",
+						id: "incident-title",
+						text: `Active incident: ${affectionTitle}`,
+					},
+					{
+						type: "text",
+						id: "incident-url",
+						text: incidentUrl,
+					},
+				],
+			},
+		},
+	};
 }
 
 async function findIntercomInstallationByWorkspaceId(workspaceId: string): Promise<{ clientId: string; data: IntercomIntegrationData } | null> {
@@ -128,10 +157,10 @@ async function findIntercomInstallationByWorkspaceId(workspaceId: string): Promi
 	return { clientId: row.clientId, data };
 }
 
-async function buildIssueCanvasResponse(workspaceId: string, fallbackOrigin: string | null): Promise<IntercomCanvasResponse> {
+async function buildIssueCanvasResponse(workspaceId: string, fallbackOrigin: string | null): Promise<IntercomCanvasBuildResult> {
 	const installation = await findIntercomInstallationByWorkspaceId(workspaceId);
 	if (!installation?.data.statusPageId) {
-		return emptyCanvasResponse();
+		return { status: 404 };
 	}
 
 	const [page] = await db
@@ -145,7 +174,12 @@ async function buildIssueCanvasResponse(workspaceId: string, fallbackOrigin: str
 		.limit(1);
 
 	if (!page) {
-		return emptyCanvasResponse();
+		return { status: 404 };
+	}
+
+	const statusPageUrl = buildStatusPageBaseUrl(page, fallbackOrigin);
+	if (!statusPageUrl) {
+		return { status: 404 };
 	}
 
 	const [latestAffection] = await db
@@ -170,31 +204,15 @@ async function buildIssueCanvasResponse(workspaceId: string, fallbackOrigin: str
 		.limit(1);
 
 	if (!latestAffection) {
-		return emptyCanvasResponse();
-	}
-
-	const incidentUrl = buildIncidentUrl(page, latestAffection.id, fallbackOrigin);
-	if (!incidentUrl) {
-		return emptyCanvasResponse();
+		return {
+			status: 200,
+			response: buildAllSystemsOperationalResponse(statusPageUrl),
+		};
 	}
 
 	return {
-		canvas: {
-			content: {
-				components: [
-					{
-						type: "text",
-						id: "incident-title",
-						text: latestAffection.title,
-					},
-					{
-						type: "text",
-						id: "incident-url",
-						text: incidentUrl,
-					},
-				],
-			},
-		},
+		status: 200,
+		response: buildActiveAffectionResponse(latestAffection.title, buildIncidentUrl(statusPageUrl, latestAffection.id)),
 	};
 }
 
@@ -223,19 +241,19 @@ export function verifyIntercomSignature(rawBody: string, signatureHeader: string
 	}
 }
 
-export async function buildIntercomCanvasResponse(rawBody: string, fallbackOrigin: string | null): Promise<IntercomCanvasResponse> {
+export async function buildIntercomCanvasResponse(rawBody: string, fallbackOrigin: string | null): Promise<IntercomCanvasBuildResult> {
 	const payload = parseIntercomCanvasRequest(rawBody);
 	if (!payload) {
-		return emptyCanvasResponse();
+		return { status: 404 };
 	}
 
 	if (!isCustomerFacingLocation(payload)) {
-		return emptyCanvasResponse();
+		return { status: 404 };
 	}
 
 	const workspaceId = extractWorkspaceId(payload);
 	if (!workspaceId) {
-		return emptyCanvasResponse();
+		return { status: 404 };
 	}
 
 	return buildIssueCanvasResponse(workspaceId, fallbackOrigin);

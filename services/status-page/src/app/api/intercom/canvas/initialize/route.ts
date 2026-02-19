@@ -9,8 +9,11 @@ export async function POST(request: Request) {
 	}
 
 	const response = await buildIntercomCanvasResponse(rawBody, new URL(request.url).origin);
+	if (response.status !== 200) {
+		return new Response("Not found", { status: response.status });
+	}
 
-	return new Response(JSON.stringify(response), {
+	return new Response(JSON.stringify(response.response), {
 		status: 200,
 		headers: {
 			"Content-Type": "application/json",
