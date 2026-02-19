@@ -3,8 +3,6 @@ import { buildHistoryFeedResponse, type FeedFormat } from "@/lib/status-pages.fe
 import { fetchIncidentHistoryBySlug } from "@/lib/status-pages.server";
 import { normalizeDomain } from "@/lib/status-pages.utils";
 
-export const revalidate = 30;
-
 function getRequestHost(request: NextRequest): string | null {
 	const forwardedHost = request.headers.get("x-forwarded-host");
 	const rawHost = (forwardedHost ?? request.headers.get("host") ?? "").split(",")[0]?.trim();

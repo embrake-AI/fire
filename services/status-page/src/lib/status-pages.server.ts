@@ -1,5 +1,6 @@
 import type { incidentAffection, incidentAffectionService, incidentAffectionUpdate, service, statusPage } from "@fire/db/schema";
 import { type InferSelectModel, sql } from "drizzle-orm";
+import { cacheLife } from "next/cache";
 import { db } from "./db";
 import { normalizeDomain } from "./status-pages.utils";
 
@@ -189,6 +190,9 @@ async function buildStatusPagePublicData(pageRow: StatusPageRow): Promise<Status
 }
 
 export async function fetchPublicStatusPageBySlug(slug: string): Promise<StatusPagePublicData | null> {
+	"use cache";
+	cacheLife({ revalidate: 30, expire: 60 });
+
 	const pageRow = await db.query.statusPage.findFirst({
 		where: { slug },
 		columns: PUBLIC_PAGE_COLUMNS,
@@ -202,6 +206,9 @@ export async function fetchPublicStatusPageBySlug(slug: string): Promise<StatusP
 }
 
 export async function fetchPublicStatusPageByDomain(domain: string): Promise<StatusPagePublicData | null> {
+	"use cache";
+	cacheLife({ revalidate: 30, expire: 60 });
+
 	const normalizedDomain = normalizeDomain(domain);
 	if (!normalizedDomain) {
 		return null;
@@ -265,6 +272,9 @@ function buildIncidentHistoryData(data: StatusPagePublicData): IncidentHistoryDa
 }
 
 export async function fetchIncidentHistoryByDomain(domain: string): Promise<IncidentHistoryData | null> {
+	"use cache";
+	cacheLife({ revalidate: 30, expire: 60 });
+
 	const data = await fetchPublicStatusPageByDomain(domain);
 	if (!data) {
 		return null;
@@ -274,6 +284,9 @@ export async function fetchIncidentHistoryByDomain(domain: string): Promise<Inci
 }
 
 export async function fetchIncidentHistoryBySlug(slug: string): Promise<IncidentHistoryData | null> {
+	"use cache";
+	cacheLife({ revalidate: 30, expire: 60 });
+
 	const data = await fetchPublicStatusPageBySlug(slug);
 	if (!data) {
 		return null;
@@ -399,6 +412,9 @@ async function fetchIncidentDetailDirect(
 }
 
 export async function fetchIncidentDetailByDomain(domain: string, incidentId: string): Promise<IncidentDetailData | null> {
+	"use cache";
+	cacheLife({ revalidate: 30, expire: 60 });
+
 	const normalizedDomain = normalizeDomain(domain);
 	if (!normalizedDomain) {
 		return null;
@@ -416,6 +432,9 @@ export async function fetchIncidentDetailByDomain(domain: string, incidentId: st
 }
 
 export async function fetchIncidentDetailBySlug(slug: string, incidentId: string): Promise<IncidentDetailData | null> {
+	"use cache";
+	cacheLife({ revalidate: 30, expire: 60 });
+
 	const pageRow = await db.query.statusPage.findFirst({
 		where: { slug },
 		columns: INCIDENT_DETAIL_PAGE_COLUMNS,
@@ -550,6 +569,9 @@ async function fetchStatusSnapshotDirect(pageRow: Pick<StatusPageRow, "id" | "na
 }
 
 export async function fetchStatusSnapshotByDomain(domain: string): Promise<StatusSnapshotData | null> {
+	"use cache";
+	cacheLife({ revalidate: 10, expire: 30 });
+
 	const normalizedDomain = normalizeDomain(domain);
 	if (!normalizedDomain) {
 		return null;
@@ -567,6 +589,9 @@ export async function fetchStatusSnapshotByDomain(domain: string): Promise<Statu
 }
 
 export async function fetchStatusSnapshotBySlug(slug: string): Promise<StatusSnapshotData | null> {
+	"use cache";
+	cacheLife({ revalidate: 10, expire: 30 });
+
 	const pageRow = await db.query.statusPage.findFirst({
 		where: { slug },
 		columns: SNAPSHOT_PAGE_COLUMNS,

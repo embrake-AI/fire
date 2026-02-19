@@ -3,8 +3,6 @@ import { buildStatusSnapshotResponse } from "@/lib/status-pages.api";
 import { fetchStatusSnapshotByDomain } from "@/lib/status-pages.server";
 import { normalizeDomain } from "@/lib/status-pages.utils";
 
-export const revalidate = 10;
-
 function getRequestHost(request: NextRequest): string | null {
 	const forwardedHost = request.headers.get("x-forwarded-host");
 	const rawHost = (forwardedHost ?? request.headers.get("host") ?? "").split(",")[0]?.trim();
