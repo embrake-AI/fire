@@ -15,12 +15,15 @@ type IntercomCanvasRequest = {
 	location?: string;
 };
 
-type IntercomCanvasResponse = {
+type IntercomCanvasInitializeResponse = {
 	canvas: {
-		content?: {
-			components: IntercomCanvasComponent[];
-		};
 		content_url?: string;
+	};
+};
+
+type IntercomCanvasContentResponse = {
+	content: {
+		components: IntercomCanvasComponent[];
 	};
 };
 
@@ -57,7 +60,8 @@ type IntercomCanvasComponent =
 			}>;
 	  };
 
-export type IntercomCanvasBuildResult = { status: 200; response: IntercomCanvasResponse } | { status: 404 };
+export type IntercomCanvasInitializeBuildResult = { status: 200; response: IntercomCanvasInitializeResponse } | { status: 404 };
+export type IntercomCanvasContentBuildResult = { status: 200; response: IntercomCanvasContentResponse } | { status: 404 };
 
 function getIntercomData(data: IntegrationData): IntercomIntegrationData {
 	if (!isIntercomIntegrationData(data)) {
@@ -127,55 +131,51 @@ function buildIncidentUrl(statusPageBaseUrl: string, incidentId: string): string
 	return `${normalizedBase}/history/${incidentId}`;
 }
 
-function buildAllSystemsOperationalResponse(statusPageUrl: string): IntercomCanvasResponse {
+function buildAllSystemsOperationalResponse(statusPageUrl: string): IntercomCanvasContentResponse {
 	return {
-		canvas: {
-			content: {
-				components: [
-					{
-						type: "text",
-						id: "status-page-link",
-						text: `[All systems operational](${statusPageUrl})`,
-						style: "header",
-						align: "center",
-					},
-				],
-			},
+		content: {
+			components: [
+				{
+					type: "text",
+					id: "status-page-link",
+					text: `[All systems operational](${statusPageUrl})`,
+					style: "header",
+					align: "center",
+				},
+			],
 		},
 	};
 }
 
-function buildActiveAffectionResponse(affectionTitle: string, subtitle: string, incidentUrl: string): IntercomCanvasResponse {
+function buildActiveAffectionResponse(affectionTitle: string, subtitle: string, incidentUrl: string): IntercomCanvasContentResponse {
 	return {
-		canvas: {
-			content: {
-				components: [
-					{
-						type: "text",
-						id: "incident-title",
-						text: affectionTitle,
-						style: "header",
-						align: "center",
+		content: {
+			components: [
+				{
+					type: "text",
+					id: "incident-title",
+					text: affectionTitle,
+					style: "header",
+					align: "center",
+				},
+				{
+					type: "text",
+					id: "incident-subtitle",
+					text: subtitle,
+					style: "muted",
+					align: "center",
+				},
+				{
+					type: "button",
+					id: "incident-link",
+					label: "View incident updates",
+					style: "primary",
+					action: {
+						type: "url",
+						url: incidentUrl,
 					},
-					{
-						type: "text",
-						id: "incident-subtitle",
-						text: subtitle,
-						style: "muted",
-						align: "center",
-					},
-					{
-						type: "button",
-						id: "incident-link",
-						label: "View incident updates",
-						style: "primary",
-						action: {
-							type: "url",
-							url: incidentUrl,
-						},
-					},
-				],
-			},
+				},
+			],
 		},
 	};
 }
@@ -203,7 +203,7 @@ async function findIntercomInstallationByWorkspaceId(workspaceId: string): Promi
 	return { clientId: row.clientId, data };
 }
 
-async function buildIssueCanvasResponse(statusPageId: string, fallbackOrigin: string | null): Promise<IntercomCanvasBuildResult> {
+async function buildIssueCanvasResponse(statusPageId: string, fallbackOrigin: string | null): Promise<IntercomCanvasContentBuildResult> {
 	const [page] = await db
 		.select({
 			id: statusPage.id,
@@ -315,7 +315,7 @@ export async function resolveIntercomStatusPageId(rawBody: string): Promise<stri
 	return normalizeStatusPageId(installation.data.statusPageId);
 }
 
-export async function buildIntercomLiveCanvasInitializeResponse(rawBody: string, requestOrigin: string | null): Promise<IntercomCanvasBuildResult> {
+export async function buildIntercomLiveCanvasInitializeResponse(rawBody: string, requestOrigin: string | null): Promise<IntercomCanvasInitializeBuildResult> {
 	const statusPageId = await resolveIntercomStatusPageId(rawBody);
 	if (!statusPageId || !requestOrigin) {
 		return { status: 404 };
@@ -332,7 +332,7 @@ export async function buildIntercomLiveCanvasInitializeResponse(rawBody: string,
 	};
 }
 
-export async function buildIntercomCanvasContentResponseByStatusPageId(statusPageId: string, fallbackOrigin: string | null): Promise<IntercomCanvasBuildResult> {
+export async function buildIntercomCanvasContentResponseByStatusPageId(statusPageId: string, fallbackOrigin: string | null): Promise<IntercomCanvasContentBuildResult> {
 	const normalizedStatusPageId = normalizeStatusPageId(statusPageId);
 	if (!normalizedStatusPageId) {
 		return { status: 404 };
