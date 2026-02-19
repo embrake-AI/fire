@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IntegrationData, IntercomIntegrationData } from "@fire/db/schema";
-import { incidentAffection, incidentAffectionService, integration, isIntercomIntegrationData, statusPage, statusPageService } from "@fire/db/schema";
+import { incidentAffection, incidentAffectionService, incidentAffectionUpdate, integration, isIntercomIntegrationData, statusPage, statusPageService } from "@fire/db/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { normalizeDomain } from "@/lib/status-pages.utils";
@@ -18,14 +18,43 @@ type IntercomCanvasRequest = {
 type IntercomCanvasResponse = {
 	canvas: {
 		content: {
-			components: Array<{
-				type: "text";
-				id: string;
-				text: string;
-			}>;
+			components: IntercomCanvasComponent[];
 		};
 	};
 };
+
+type IntercomCanvasComponent =
+	| {
+			type: "text";
+			id: string;
+			text: string;
+			style?: "header" | "paragraph" | "muted" | "error";
+			align?: "left" | "center" | "right";
+			bottom_margin?: "none";
+	  }
+	| {
+			type: "button";
+			id: string;
+			label: string;
+			style?: "primary" | "secondary" | "link";
+			action: {
+				type: "url";
+				url: string;
+			};
+	  }
+	| {
+			type: "list";
+			items: Array<{
+				type: "item";
+				id: string;
+				title: string;
+				subtitle?: string;
+				action?: {
+					type: "url";
+					url: string;
+				};
+			}>;
+	  };
 
 export type IntercomCanvasBuildResult = { status: 200; response: IntercomCanvasResponse } | { status: 404 };
 
@@ -99,13 +128,10 @@ function buildAllSystemsOperationalResponse(statusPageUrl: string): IntercomCanv
 				components: [
 					{
 						type: "text",
-						id: "status-summary",
-						text: "All systems operational",
-					},
-					{
-						type: "text",
-						id: "status-url",
-						text: statusPageUrl,
+						id: "status-page-link",
+						text: `[All systems operational](${statusPageUrl})`,
+						style: "header",
+						align: "center",
 					},
 				],
 			},
@@ -113,7 +139,7 @@ function buildAllSystemsOperationalResponse(statusPageUrl: string): IntercomCanv
 	};
 }
 
-function buildActiveAffectionResponse(affectionTitle: string, incidentUrl: string): IntercomCanvasResponse {
+function buildActiveAffectionResponse(affectionTitle: string, subtitle: string, incidentUrl: string): IntercomCanvasResponse {
 	return {
 		canvas: {
 			content: {
@@ -121,12 +147,26 @@ function buildActiveAffectionResponse(affectionTitle: string, incidentUrl: strin
 					{
 						type: "text",
 						id: "incident-title",
-						text: `Active incident: ${affectionTitle}`,
+						text: affectionTitle,
+						style: "header",
+						align: "center",
 					},
 					{
 						type: "text",
-						id: "incident-url",
-						text: incidentUrl,
+						id: "incident-subtitle",
+						text: subtitle,
+						style: "muted",
+						align: "center",
+					},
+					{
+						type: "button",
+						id: "incident-link",
+						label: "View incident updates",
+						style: "primary",
+						action: {
+							type: "url",
+							url: incidentUrl,
+						},
 					},
 				],
 			},
@@ -186,6 +226,16 @@ async function buildIssueCanvasResponse(workspaceId: string, fallbackOrigin: str
 		.select({
 			id: incidentAffection.id,
 			title: incidentAffection.title,
+			latestMessage: sql<string | null>`
+				(
+					select iau.message
+					from ${incidentAffectionUpdate} iau
+					where iau.affection_id = ${incidentAffection.id}
+						and nullif(trim(iau.message), '') is not null
+					order by iau.created_at desc
+					limit 1
+				)
+			`,
 		})
 		.from(incidentAffection)
 		.where(
@@ -212,7 +262,7 @@ async function buildIssueCanvasResponse(workspaceId: string, fallbackOrigin: str
 
 	return {
 		status: 200,
-		response: buildActiveAffectionResponse(latestAffection.title, buildIncidentUrl(statusPageUrl, latestAffection.id)),
+		response: buildActiveAffectionResponse(latestAffection.title, latestAffection.latestMessage?.trim() || "Ongoing incident", buildIncidentUrl(statusPageUrl, latestAffection.id)),
 	};
 }
 
