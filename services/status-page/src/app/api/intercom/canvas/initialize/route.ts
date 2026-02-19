@@ -1,4 +1,4 @@
-import { buildIntercomCanvasResponse, verifyIntercomSignature } from "@/lib/intercom.server";
+import { buildIntercomLiveCanvasInitializeResponse, verifyIntercomSignature } from "@/lib/intercom.server";
 
 export async function POST(request: Request) {
 	const rawBody = await request.text();
@@ -8,7 +8,7 @@ export async function POST(request: Request) {
 		return new Response("Invalid signature", { status: 401 });
 	}
 
-	const response = await buildIntercomCanvasResponse(rawBody, new URL(request.url).origin);
+	const response = await buildIntercomLiveCanvasInitializeResponse(rawBody, new URL(request.url).origin);
 	if (response.status !== 200) {
 		return new Response("Not found", { status: response.status });
 	}

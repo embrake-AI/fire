@@ -20,6 +20,7 @@ type IntercomCanvasResponse = {
 		content: {
 			components: IntercomCanvasComponent[];
 		};
+		content_url?: string;
 	};
 };
 
@@ -63,6 +64,11 @@ function getIntercomData(data: IntegrationData): IntercomIntegrationData {
 		throw new Error("Intercom integration has invalid data shape");
 	}
 	return data;
+}
+
+function normalizeStatusPageId(value: string | null | undefined): string | null {
+	const trimmed = value?.trim();
+	return trimmed ? trimmed : null;
 }
 
 function extractWorkspaceId(payload: IntercomCanvasRequest): string | null {
@@ -197,12 +203,7 @@ async function findIntercomInstallationByWorkspaceId(workspaceId: string): Promi
 	return { clientId: row.clientId, data };
 }
 
-async function buildIssueCanvasResponse(workspaceId: string, fallbackOrigin: string | null): Promise<IntercomCanvasBuildResult> {
-	const installation = await findIntercomInstallationByWorkspaceId(workspaceId);
-	if (!installation?.data.statusPageId) {
-		return { status: 404 };
-	}
-
+async function buildIssueCanvasResponse(statusPageId: string, fallbackOrigin: string | null): Promise<IntercomCanvasBuildResult> {
 	const [page] = await db
 		.select({
 			id: statusPage.id,
@@ -210,7 +211,7 @@ async function buildIssueCanvasResponse(workspaceId: string, fallbackOrigin: str
 			customDomain: statusPage.customDomain,
 		})
 		.from(statusPage)
-		.where(and(eq(statusPage.id, installation.data.statusPageId), eq(statusPage.clientId, installation.clientId)))
+		.where(eq(statusPage.id, statusPageId))
 		.limit(1);
 
 	if (!page) {
@@ -291,20 +292,62 @@ export function verifyIntercomSignature(rawBody: string, signatureHeader: string
 	}
 }
 
-export async function buildIntercomCanvasResponse(rawBody: string, fallbackOrigin: string | null): Promise<IntercomCanvasBuildResult> {
+export async function resolveIntercomStatusPageId(rawBody: string): Promise<string | null> {
 	const payload = parseIntercomCanvasRequest(rawBody);
 	if (!payload) {
-		return { status: 404 };
+		return null;
 	}
 
 	if (!isCustomerFacingLocation(payload)) {
-		return { status: 404 };
+		return null;
 	}
 
 	const workspaceId = extractWorkspaceId(payload);
 	if (!workspaceId) {
+		return null;
+	}
+
+	const installation = await findIntercomInstallationByWorkspaceId(workspaceId);
+	if (!installation) {
+		return null;
+	}
+
+	return normalizeStatusPageId(installation.data.statusPageId);
+}
+
+export async function buildIntercomLiveCanvasInitializeResponse(rawBody: string, requestOrigin: string | null): Promise<IntercomCanvasBuildResult> {
+	const statusPageId = await resolveIntercomStatusPageId(rawBody);
+	if (!statusPageId || !requestOrigin) {
 		return { status: 404 };
 	}
 
-	return buildIssueCanvasResponse(workspaceId, fallbackOrigin);
+	const contentUrl = new URL(`/intercom/${encodeURIComponent(statusPageId)}`, requestOrigin).toString();
+	return {
+		status: 200,
+		response: {
+			canvas: {
+				content: {
+					components: [
+						{
+							type: "text",
+							id: "loading",
+							text: "Loading status...",
+							style: "muted",
+							align: "center",
+						},
+					],
+				},
+				content_url: contentUrl,
+			},
+		},
+	};
+}
+
+export async function buildIntercomCanvasContentResponseByStatusPageId(statusPageId: string, fallbackOrigin: string | null): Promise<IntercomCanvasBuildResult> {
+	const normalizedStatusPageId = normalizeStatusPageId(statusPageId);
+	if (!normalizedStatusPageId) {
+		return { status: 404 };
+	}
+
+	return buildIssueCanvasResponse(normalizedStatusPageId, fallbackOrigin);
 }
