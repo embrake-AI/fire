@@ -147,8 +147,7 @@ export const Route = createFileRoute("/intercom/oauth/callback")({
 						},
 					});
 
-				const redirectTo = new URL("/settings/workspace/integrations?installed=intercom", url.origin);
-				return Response.redirect(redirectTo.toString(), 302);
+				return Response.redirect("https://app.intercom.com/appstore/redirect?install_success=true", 302);
 			},
 		},
 	},
