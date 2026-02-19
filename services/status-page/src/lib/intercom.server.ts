@@ -104,7 +104,7 @@ function isCustomerFacingLocation(payload: IntercomCanvasRequest): boolean {
 	return location === "home" || location === "conversation" || location === "message";
 }
 
-function buildStatusPageBaseUrl(page: { slug: string; customDomain: string | null }, fallbackOrigin: string | null): string | null {
+function buildStatusPageBaseUrl(page: { slug: string; customDomain: string | null }): string | null {
 	const customDomain = normalizeDomain(page.customDomain);
 	if (customDomain) {
 		return `https://${customDomain}`;
@@ -115,15 +115,7 @@ function buildStatusPageBaseUrl(page: { slug: string; customDomain: string | nul
 		return `https://${statusDomain}/${page.slug}`;
 	}
 
-	if (!fallbackOrigin) {
-		return null;
-	}
-
-	try {
-		return new URL(`/${page.slug}`, fallbackOrigin).toString().replace(/\/$/, "");
-	} catch {
-		return null;
-	}
+	return null;
 }
 
 function buildIncidentUrl(statusPageBaseUrl: string, incidentId: string): string {
@@ -203,7 +195,7 @@ async function findIntercomInstallationByWorkspaceId(workspaceId: string): Promi
 	return { clientId: row.clientId, data };
 }
 
-async function buildIssueCanvasResponse(statusPageId: string, fallbackOrigin: string | null): Promise<IntercomCanvasContentBuildResult> {
+async function buildIssueCanvasResponse(statusPageId: string): Promise<IntercomCanvasContentBuildResult> {
 	const [page] = await db
 		.select({
 			id: statusPage.id,
@@ -218,7 +210,7 @@ async function buildIssueCanvasResponse(statusPageId: string, fallbackOrigin: st
 		return { status: 404 };
 	}
 
-	const statusPageUrl = buildStatusPageBaseUrl(page, fallbackOrigin);
+	const statusPageUrl = buildStatusPageBaseUrl(page);
 	if (!statusPageUrl) {
 		return { status: 404 };
 	}
@@ -315,13 +307,18 @@ export async function resolveIntercomStatusPageId(rawBody: string): Promise<stri
 	return normalizeStatusPageId(installation.data.statusPageId);
 }
 
-export async function buildIntercomLiveCanvasInitializeResponse(rawBody: string, requestOrigin: string | null): Promise<IntercomCanvasInitializeBuildResult> {
+export async function buildIntercomLiveCanvasInitializeResponse(rawBody: string): Promise<IntercomCanvasInitializeBuildResult> {
 	const statusPageId = await resolveIntercomStatusPageId(rawBody);
-	if (!statusPageId || !requestOrigin) {
+	if (!statusPageId) {
 		return { status: 404 };
 	}
 
-	const contentUrl = new URL(`/intercom/${encodeURIComponent(statusPageId)}`, requestOrigin).toString();
+	const statusDomain = normalizeDomain(process.env.VITE_STATUS_PAGE_DOMAIN ?? null);
+	if (!statusDomain) {
+		return { status: 404 };
+	}
+
+	const contentUrl = `https://${statusDomain}/intercom/${encodeURIComponent(statusPageId)}`;
 	return {
 		status: 200,
 		response: {
@@ -332,11 +329,11 @@ export async function buildIntercomLiveCanvasInitializeResponse(rawBody: string,
 	};
 }
 
-export async function buildIntercomCanvasContentResponseByStatusPageId(statusPageId: string, fallbackOrigin: string | null): Promise<IntercomCanvasContentBuildResult> {
+export async function buildIntercomCanvasContentResponseByStatusPageId(statusPageId: string): Promise<IntercomCanvasContentBuildResult> {
 	const normalizedStatusPageId = normalizeStatusPageId(statusPageId);
 	if (!normalizedStatusPageId) {
 		return { status: 404 };
 	}
 
-	return buildIssueCanvasResponse(normalizedStatusPageId, fallbackOrigin);
+	return buildIssueCanvasResponse(normalizedStatusPageId);
 }

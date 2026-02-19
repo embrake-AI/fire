@@ -8,7 +8,7 @@ export async function POST(request: Request) {
 		return new Response("Invalid signature", { status: 401 });
 	}
 
-	const response = await buildIntercomLiveCanvasInitializeResponse(rawBody, new URL(request.url).origin);
+	const response = await buildIntercomLiveCanvasInitializeResponse(rawBody);
 	if (response.status !== 200) {
 		return new Response("Not found", { status: response.status });
 	}
