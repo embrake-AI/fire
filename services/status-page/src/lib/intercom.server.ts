@@ -17,7 +17,7 @@ type IntercomCanvasRequest = {
 
 type IntercomCanvasResponse = {
 	canvas: {
-		content: {
+		content?: {
 			components: IntercomCanvasComponent[];
 		};
 		content_url?: string;
@@ -326,17 +326,6 @@ export async function buildIntercomLiveCanvasInitializeResponse(rawBody: string,
 		status: 200,
 		response: {
 			canvas: {
-				content: {
-					components: [
-						{
-							type: "text",
-							id: "loading",
-							text: "Loading status...",
-							style: "muted",
-							align: "center",
-						},
-					],
-				},
 				content_url: contentUrl,
 			},
 		},
