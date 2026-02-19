@@ -33,3 +33,4 @@ Note: service `lint` is a placeholder; lint/check run from monorepo root.
 ## Optional Environment Variables
 
 - `VITE_APP_URL`: used for rendered "powered by" links
+- `INTERCOM_CLIENT_SECRET`: validates Intercom canvas request signatures for `/api/intercom/canvas/initialize`

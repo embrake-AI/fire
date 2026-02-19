@@ -263,38 +263,33 @@ function IntegrationsContent() {
 					</div>
 
 					<Show when={isConnected("intercom")}>
-						<div class="rounded-lg border border-border bg-background/70 p-3 space-y-3">
-							<div>
-								<p class="text-sm font-medium text-foreground">Status page mapping</p>
-								<p class="text-xs text-muted-foreground mt-1">Choose which status page appears in Intercom Messenger. Selection is required.</p>
-							</div>
-							<div class="flex items-center gap-2">
-								<Select
-									value={selectedStatusPageId()}
-									onChange={(value) => setSelectedStatusPageId((value as string) ?? "")}
-									options={statusPageOptions().map((page) => page.id)}
-									itemComponent={(props) => {
-										const page = statusPageOptions().find((item) => item.id === props.item.rawValue);
-										return <SelectItem item={props.item}>{page?.name ?? "Unknown status page"}</SelectItem>;
-									}}
-								>
-									<SelectTrigger class="flex-1">
-										<SelectValue<string>>
-											{(state) => {
-												const page = statusPageOptions().find((item) => item.id === state.selectedOption());
-												return page?.name ?? "Select a status page";
-											}}
-										</SelectValue>
-									</SelectTrigger>
-									<SelectContent />
-								</Select>
-								<Button onClick={() => setStatusPageMutation.mutate(selectedStatusPageId())} disabled={isSaveDisabled()}>
-									<Show when={setStatusPageMutation.isPending}>
-										<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-									</Show>
-									Save
-								</Button>
-							</div>
+						<div class="flex items-center gap-2">
+							<span class="text-xs text-muted-foreground min-w-24">Status page</span>
+							<Select
+								value={selectedStatusPageId()}
+								onChange={(value) => setSelectedStatusPageId((value as string) ?? "")}
+								options={statusPageOptions().map((page) => page.id)}
+								itemComponent={(props) => {
+									const page = statusPageOptions().find((item) => item.id === props.item.rawValue);
+									return <SelectItem item={props.item}>{page?.name ?? "Unknown status page"}</SelectItem>;
+								}}
+							>
+								<SelectTrigger class="flex-1">
+									<SelectValue<string>>
+										{(state) => {
+											const page = statusPageOptions().find((item) => item.id === state.selectedOption());
+											return page?.name ?? "Select a status page";
+										}}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent />
+							</Select>
+							<Button onClick={() => setStatusPageMutation.mutate(selectedStatusPageId())} disabled={isSaveDisabled()}>
+								<Show when={setStatusPageMutation.isPending}>
+									<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+								</Show>
+								Save
+							</Button>
 						</div>
 					</Show>
 				</div>

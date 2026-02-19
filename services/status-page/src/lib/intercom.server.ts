@@ -1,9 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IntegrationData, IntercomIntegrationData } from "@fire/db/schema";
-import { incidentAffection, incidentAffectionService, incidentAffectionUpdate, integration, isIntercomIntegrationData, statusPage, statusPageService } from "@fire/db/schema";
+import { incidentAffection, incidentAffectionService, integration, isIntercomIntegrationData, statusPage, statusPageService } from "@fire/db/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { db } from "~/lib/db";
-import { normalizeDomain } from "~/lib/status-pages/status-pages.utils";
+import { db } from "@/lib/db";
+import { normalizeDomain } from "@/lib/status-pages.utils";
 
 type IntercomCanvasRequest = {
 	workspace_id?: string;
@@ -15,36 +15,17 @@ type IntercomCanvasRequest = {
 	location?: string;
 };
 
-type IntercomCanvasComponent =
-	| {
-			type: "text";
-			id: string;
-			text: string;
-	  }
-	| {
-			type: "button";
-			id: string;
-			label: string;
-			action: {
-				type: "url";
-				url: string;
-			};
-	  };
-
-export type IntercomCanvasResponse = {
+type IntercomCanvasResponse = {
 	canvas: {
 		content: {
-			components: IntercomCanvasComponent[];
+			components: Array<{
+				type: "text";
+				id: string;
+				text: string;
+			}>;
 		};
 	};
 };
-
-function getIntercomData(data: IntegrationData): IntercomIntegrationData {
-	if (!isIntercomIntegrationData(data)) {
-		throw new Error("Intercom integration has invalid data shape");
-	}
-	return data;
-}
 
 function emptyCanvasResponse(): IntercomCanvasResponse {
 	return {
@@ -56,6 +37,13 @@ function emptyCanvasResponse(): IntercomCanvasResponse {
 	};
 }
 
+function getIntercomData(data: IntegrationData): IntercomIntegrationData {
+	if (!isIntercomIntegrationData(data)) {
+		throw new Error("Intercom integration has invalid data shape");
+	}
+	return data;
+}
+
 function extractWorkspaceId(payload: IntercomCanvasRequest): string | null {
 	const workspaceId = payload.workspace_id ?? payload.context?.workspace_id;
 	if (!workspaceId) {
@@ -65,7 +53,27 @@ function extractWorkspaceId(payload: IntercomCanvasRequest): string | null {
 	return trimmed.length > 0 ? trimmed : null;
 }
 
-function buildStatusPageUrl(page: { slug: string; customDomain: string | null }): string | null {
+function parseIntercomCanvasRequest(rawBody: string): IntercomCanvasRequest | null {
+	try {
+		const payload = JSON.parse(rawBody) as IntercomCanvasRequest;
+		if (typeof payload.intercom_data === "string" && payload.intercom_data.trim().length > 0) {
+			return JSON.parse(payload.intercom_data) as IntercomCanvasRequest;
+		}
+		return payload;
+	} catch {
+		return null;
+	}
+}
+
+function isCustomerFacingLocation(payload: IntercomCanvasRequest): boolean {
+	const location = payload.context?.location ?? payload.location;
+	if (!location) {
+		return true;
+	}
+	return location === "home" || location === "conversation" || location === "message";
+}
+
+function buildStatusPageBaseUrl(page: { slug: string; customDomain: string | null }, fallbackOrigin: string | null): string | null {
 	const customDomain = normalizeDomain(page.customDomain);
 	if (customDomain) {
 		return `https://${customDomain}`;
@@ -76,13 +84,25 @@ function buildStatusPageUrl(page: { slug: string; customDomain: string | null })
 		return `https://${statusDomain}/${page.slug}`;
 	}
 
-	const appUrl = process.env.VITE_APP_URL?.trim();
-	if (appUrl) {
-		const baseUrl = appUrl.endsWith("/") ? appUrl.slice(0, -1) : appUrl;
-		return `${baseUrl}/status/${page.slug}`;
+	if (!fallbackOrigin) {
+		return null;
 	}
 
-	return null;
+	try {
+		return new URL(`/${page.slug}`, fallbackOrigin).toString().replace(/\/$/, "");
+	} catch {
+		return null;
+	}
+}
+
+function buildIncidentUrl(page: { slug: string; customDomain: string | null }, incidentId: string, fallbackOrigin: string | null): string | null {
+	const statusPageBaseUrl = buildStatusPageBaseUrl(page, fallbackOrigin);
+	if (!statusPageBaseUrl) {
+		return null;
+	}
+
+	const normalizedBase = statusPageBaseUrl.endsWith("/") ? statusPageBaseUrl.slice(0, -1) : statusPageBaseUrl;
+	return `${normalizedBase}/history/${incidentId}`;
 }
 
 async function findIntercomInstallationByWorkspaceId(workspaceId: string): Promise<{ clientId: string; data: IntercomIntegrationData } | null> {
@@ -108,7 +128,7 @@ async function findIntercomInstallationByWorkspaceId(workspaceId: string): Promi
 	return { clientId: row.clientId, data };
 }
 
-async function buildIssueCanvasResponse(workspaceId: string): Promise<IntercomCanvasResponse> {
+async function buildIssueCanvasResponse(workspaceId: string, fallbackOrigin: string | null): Promise<IntercomCanvasResponse> {
 	const installation = await findIntercomInstallationByWorkspaceId(workspaceId);
 	if (!installation?.data.statusPageId) {
 		return emptyCanvasResponse();
@@ -130,17 +150,8 @@ async function buildIssueCanvasResponse(workspaceId: string): Promise<IntercomCa
 
 	const [latestAffection] = await db
 		.select({
+			id: incidentAffection.id,
 			title: incidentAffection.title,
-			latestMessage: sql<string | null>`
-				(
-					select iau.message
-					from ${incidentAffectionUpdate} iau
-					where iau.affection_id = ${incidentAffection.id}
-						and nullif(trim(iau.message), '') is not null
-					order by iau.created_at desc
-					limit 1
-				)
-			`,
 		})
 		.from(incidentAffection)
 		.where(
@@ -162,40 +173,26 @@ async function buildIssueCanvasResponse(workspaceId: string): Promise<IntercomCa
 		return emptyCanvasResponse();
 	}
 
-	const statusPageUrl = buildStatusPageUrl(page);
-
-	const components: IntercomCanvasComponent[] = [
-		{
-			type: "text",
-			id: "status-summary",
-			text: `Active incident: ${latestAffection.title}`,
-		},
-	];
-
-	if (latestAffection.latestMessage?.trim()) {
-		components.push({
-			type: "text",
-			id: "status-latest-message",
-			text: latestAffection.latestMessage.trim(),
-		});
-	}
-
-	if (statusPageUrl) {
-		components.push({
-			type: "button",
-			id: "view-status-page",
-			label: "View status page",
-			action: {
-				type: "url",
-				url: statusPageUrl,
-			},
-		});
+	const incidentUrl = buildIncidentUrl(page, latestAffection.id, fallbackOrigin);
+	if (!incidentUrl) {
+		return emptyCanvasResponse();
 	}
 
 	return {
 		canvas: {
 			content: {
-				components,
+				components: [
+					{
+						type: "text",
+						id: "incident-title",
+						text: latestAffection.title,
+					},
+					{
+						type: "text",
+						id: "incident-url",
+						text: incidentUrl,
+					},
+				],
 			},
 		},
 	};
@@ -226,27 +223,7 @@ export function verifyIntercomSignature(rawBody: string, signatureHeader: string
 	}
 }
 
-function parseIntercomCanvasRequest(rawBody: string): IntercomCanvasRequest | null {
-	try {
-		const payload = JSON.parse(rawBody) as IntercomCanvasRequest;
-		if (typeof payload.intercom_data === "string" && payload.intercom_data.trim().length > 0) {
-			return JSON.parse(payload.intercom_data) as IntercomCanvasRequest;
-		}
-		return payload;
-	} catch {
-		return null;
-	}
-}
-
-function isCustomerFacingLocation(payload: IntercomCanvasRequest): boolean {
-	const location = payload.context?.location ?? payload.location;
-	if (!location) {
-		return true;
-	}
-	return location === "home" || location === "conversation" || location === "message";
-}
-
-export async function buildIntercomCanvasResponse(rawBody: string): Promise<IntercomCanvasResponse> {
+export async function buildIntercomCanvasResponse(rawBody: string, fallbackOrigin: string | null): Promise<IntercomCanvasResponse> {
 	const payload = parseIntercomCanvasRequest(rawBody);
 	if (!payload) {
 		return emptyCanvasResponse();
@@ -261,5 +238,5 @@ export async function buildIntercomCanvasResponse(rawBody: string): Promise<Inte
 		return emptyCanvasResponse();
 	}
 
-	return buildIssueCanvasResponse(workspaceId);
+	return buildIssueCanvasResponse(workspaceId, fallbackOrigin);
 }
