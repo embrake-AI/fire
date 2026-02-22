@@ -111,6 +111,12 @@ function BillingSection() {
 	const billingSummary = () => billingSummaryQuery.data;
 	const hasSubscription = () => billingSummary()?.hasSubscription ?? false;
 	const isActionPending = () => checkoutSessionMutation.isPending || portalSessionMutation.isPending;
+	const startupDiscountStatus = () =>
+		formatStartupDiscountStatus({
+			hasActiveStartupDiscount: billingSummary()?.hasActiveStartupDiscount ?? false,
+			startupDiscountConsumedAt: billingSummary()?.startupDiscountConsumedAt ?? null,
+			isStartupEligible: billingSummary()?.isStartupEligible ?? false,
+		});
 
 	const handleAddCard = async () => {
 		const result = await checkoutSessionMutation.mutateAsync();
@@ -182,16 +188,12 @@ function BillingSection() {
 							)}
 						</p>
 					</div>
-					<div class="flex items-center justify-between py-3">
-						<p class="text-sm text-muted-foreground">Startup discount</p>
-						<p class="text-sm font-medium text-foreground">
-							{formatStartupDiscountStatus({
-								hasActiveStartupDiscount: billingSummary()?.hasActiveStartupDiscount ?? false,
-								startupDiscountConsumedAt: billingSummary()?.startupDiscountConsumedAt ?? null,
-								isStartupEligible: billingSummary()?.isStartupEligible ?? false,
-							})}
-						</p>
-					</div>
+					<Show when={startupDiscountStatus()}>
+						<div class="flex items-center justify-between py-3">
+							<p class="text-sm text-muted-foreground">Startup discount</p>
+							<p class="text-sm font-medium text-foreground">{startupDiscountStatus()}</p>
+						</div>
+					</Show>
 				</div>
 			</div>
 		</div>
@@ -245,7 +247,7 @@ function formatEstimatedTotal(cents: number | null, seats: number | null, curren
 	return interval ? `${amount}/${interval}` : amount;
 }
 
-function formatStartupDiscountStatus(params: { hasActiveStartupDiscount: boolean; startupDiscountConsumedAt: string | null; isStartupEligible: boolean }): string {
+function formatStartupDiscountStatus(params: { hasActiveStartupDiscount: boolean; startupDiscountConsumedAt: string | null; isStartupEligible: boolean }) {
 	if (params.hasActiveStartupDiscount) {
 		return "Applied";
 	}
@@ -258,5 +260,5 @@ function formatStartupDiscountStatus(params: { hasActiveStartupDiscount: boolean
 		return "Eligible";
 	}
 
-	return "Not eligible";
+	return null;
 }
