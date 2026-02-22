@@ -421,6 +421,27 @@ async function hasActiveConfiguredStartupDiscount(subscriptionId: string, startu
 	return discountCouponIds.includes(startupCouponId);
 }
 
+async function markStartupDiscountConsumedIfApplicable(clientId: string, subscription: Stripe.Subscription): Promise<void> {
+	const startupCouponId = process.env.STRIPE_STARTUP_COUPON_ID?.trim() ?? "";
+	if (!startupCouponId) {
+		return;
+	}
+
+	const discountCouponIds = getSubscriptionDiscountCouponIds(subscription);
+	if (!discountCouponIds.includes(startupCouponId)) {
+		return;
+	}
+
+	const now = new Date();
+	await db
+		.update(clientTable)
+		.set({
+			startupDiscountConsumedAt: now,
+			updatedAt: now,
+		})
+		.where(and(eq(clientTable.id, clientId), isNull(clientTable.startupDiscountConsumedAt)));
+}
+
 export async function getWorkspaceBillingSummaryForClient(clientId: string): Promise<WorkspaceBillingSummary> {
 	const seatPriceId = process.env.STRIPE_SEAT_PRICE_ID;
 	const startupCouponId = process.env.STRIPE_STARTUP_COUPON_ID?.trim() ?? null;
@@ -549,22 +570,6 @@ export async function createBillingCheckoutSessionForClient(clientId: string): P
 		lastSeatSyncAttemptAt: new Date(),
 	});
 
-	if (shouldApplyStartupDiscount) {
-		const now = new Date();
-		await db
-			.update(clientTable)
-			.set({
-				startupDiscountConsumedAt: now,
-				updatedAt: now,
-			})
-			.where(and(eq(clientTable.id, clientId), isNull(clientTable.startupDiscountConsumedAt)));
-
-		console.info("Applied startup discount at billing checkout", {
-			clientId,
-			startupCouponId,
-		});
-	}
-
 	if (!checkoutSession.url) {
 		throw new Error("Stripe checkout session did not return a redirect URL");
 	}
@@ -622,10 +627,11 @@ export async function handleStripeWebhookEvent(event: Stripe.Event): Promise<voi
 
 			const subscription = await runWithStripeRetries("retrieve-subscription-after-checkout", () =>
 				stripe.subscriptions.retrieve(subscriptionId, {
-					expand: ["items.data.price"],
+					expand: ["items.data.price", "discounts"],
 				}),
 			);
 			await upsertFromStripeSubscription(clientId, subscription);
+			await markStartupDiscountConsumedIfApplicable(clientId, subscription);
 			return;
 		}
 		case "customer.subscription.created":
@@ -644,6 +650,7 @@ export async function handleStripeWebhookEvent(event: Stripe.Event): Promise<voi
 			}
 
 			await upsertFromStripeSubscription(clientId, subscription);
+			await markStartupDiscountConsumedIfApplicable(clientId, subscription);
 			return;
 		}
 		default:
