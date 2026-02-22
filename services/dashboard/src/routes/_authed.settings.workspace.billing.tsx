@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/solid-router";
 import { CreditCard, LoaderCircle } from "lucide-solid";
 import { onMount, Show, Suspense } from "solid-js";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { showToast } from "~/components/ui/toast";
@@ -31,23 +32,35 @@ function WorkspaceBillingPage() {
 
 function BillingSkeleton() {
 	return (
-		<div class="rounded-xl bg-muted/20 px-4 py-2">
-			<div class="py-3 space-y-4">
-				<div class="flex items-center justify-between">
-					<div class="flex items-center gap-3">
-						<Skeleton class="size-10 rounded-lg" />
-						<div class="space-y-1">
-							<Skeleton class="h-4 w-28" />
-							<Skeleton class="h-3 w-48" />
+		<div class="space-y-6">
+			<div class="rounded-xl bg-muted/20 px-4 py-2">
+				<div class="py-3">
+					<div class="flex items-center justify-between gap-3">
+						<div class="flex items-center gap-3">
+							<Skeleton class="size-10 rounded-lg" />
+							<div class="space-y-1.5">
+								<Skeleton class="h-4 w-32" />
+								<Skeleton class="h-3 w-44" />
+							</div>
 						</div>
+						<Skeleton class="h-9 w-28 rounded-md" />
 					</div>
-					<Skeleton class="h-9 w-28 rounded-md" />
 				</div>
-				<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-					<Skeleton class="h-16 rounded-lg" />
-					<Skeleton class="h-16 rounded-lg" />
-					<Skeleton class="h-16 rounded-lg" />
-					<Skeleton class="h-16 rounded-lg" />
+			</div>
+			<div class="rounded-xl bg-muted/20 px-4 py-2">
+				<div class="divide-y divide-border/40">
+					<div class="flex items-center justify-between py-3">
+						<Skeleton class="h-4 w-24" />
+						<Skeleton class="h-4 w-16" />
+					</div>
+					<div class="flex items-center justify-between py-3">
+						<Skeleton class="h-4 w-28" />
+						<Skeleton class="h-4 w-20" />
+					</div>
+					<div class="flex items-center justify-between py-3">
+						<Skeleton class="h-4 w-32" />
+						<Skeleton class="h-4 w-24" />
+					</div>
 				</div>
 			</div>
 		</div>
@@ -114,40 +127,60 @@ function BillingSection() {
 	};
 
 	return (
-		<div class="rounded-xl bg-muted/20 px-4 py-2">
-			<div class="py-3 space-y-4">
-				<div class="flex items-center justify-between gap-3">
-					<div class="flex items-center gap-3">
-						<div class="flex items-center justify-center size-10 rounded-lg bg-muted">
-							<CreditCard class="size-5" />
+		<div class="space-y-6">
+			{/* Payment method */}
+			<div class="rounded-xl bg-muted/20 px-4 py-2">
+				<div class="py-3">
+					<div class="flex items-center justify-between gap-3">
+						<div class="flex items-center gap-3">
+							<div class="flex items-center justify-center size-10 rounded-lg bg-muted">
+								<CreditCard class="size-5" />
+							</div>
+							<div>
+								<div class="flex items-center gap-2">
+									<p class="text-sm font-medium text-foreground">Payment method</p>
+									<Badge variant={hasSubscription() ? "success" : "secondary"}>{hasSubscription() ? "Active" : "Not configured"}</Badge>
+								</div>
+								<Show when={billingSummary()?.cardBrand && billingSummary()?.cardLast4} fallback={<p class="text-xs text-muted-foreground mt-0.5">No payment method on file</p>}>
+									<p class="text-xs text-muted-foreground mt-0.5">
+										{billingSummary()!.cardBrand!.toUpperCase()} &bull;&bull;&bull;&bull; {billingSummary()!.cardLast4}
+									</p>
+								</Show>
+							</div>
 						</div>
-						<div>
-							<p class="text-sm font-medium text-foreground">Stripe billing</p>
-							<p class="text-xs text-muted-foreground">Per-seat monthly billing based on unique rotation members</p>
-						</div>
+						<Button onClick={() => (hasSubscription() ? handleManageBilling() : handleAddCard())} disabled={isActionPending() || billingSummaryQuery.isPending}>
+							<Show when={isActionPending()}>
+								<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+							</Show>
+							{hasSubscription() ? "Manage billing" : "Add card"}
+						</Button>
 					</div>
-					<Button onClick={() => (hasSubscription() ? handleManageBilling() : handleAddCard())} disabled={isActionPending() || billingSummaryQuery.isPending}>
-						<Show when={isActionPending()}>
-							<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-						</Show>
-						{hasSubscription() ? "Manage billing" : "Add card"}
-					</Button>
 				</div>
+			</div>
 
-				<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-					<div class="rounded-lg border border-border/70 bg-background px-3 py-2">
-						<p class="text-xs text-muted-foreground">Price / seat</p>
+			{/* Usage & pricing */}
+			<div class="rounded-xl bg-muted/20 px-4 py-2">
+				<div class="divide-y divide-border/40">
+					<div class="flex items-center justify-between py-3">
+						<p class="text-sm text-muted-foreground">Billed seats</p>
+						<p class="text-sm font-medium text-foreground">{billingSummary()?.billedSeatCount ?? "-"}</p>
+					</div>
+					<div class="flex items-center justify-between py-3">
+						<p class="text-sm text-muted-foreground">Price per seat</p>
 						<p class="text-sm font-medium text-foreground">
 							{formatPricePerSeat(billingSummary()?.pricePerSeatCents ?? null, billingSummary()?.currency ?? null, billingSummary()?.billingInterval ?? null)}
 						</p>
 					</div>
-					<div class="rounded-lg border border-border/70 bg-background px-3 py-2">
-						<p class="text-xs text-muted-foreground">Billed seats</p>
-						<p class="text-sm font-medium text-foreground">{billingSummary()?.billedSeatCount ?? "-"}</p>
-					</div>
-					<div class="rounded-lg border border-border/70 bg-background px-3 py-2">
-						<p class="text-xs text-muted-foreground">Status</p>
-						<p class="text-sm font-medium text-foreground">{formatSubscriptionStatus(billingSummary()?.subscriptionStatus ?? null)}</p>
+					<div class="flex items-center justify-between py-3">
+						<p class="text-sm text-muted-foreground">Estimated total</p>
+						<p class="text-sm font-medium text-foreground">
+							{formatEstimatedTotal(
+								billingSummary()?.pricePerSeatCents ?? null,
+								billingSummary()?.billedSeatCount ?? null,
+								billingSummary()?.currency ?? null,
+								billingSummary()?.billingInterval ?? null,
+							)}
+						</p>
 					</div>
 				</div>
 			</div>
@@ -187,13 +220,17 @@ function formatPricePerSeat(cents: number | null, currency: string | null, inter
 	return interval ? `${amount}/${interval}` : amount;
 }
 
-function formatSubscriptionStatus(status: string | null): string {
-	if (!status) {
-		return "Not configured";
+function formatEstimatedTotal(cents: number | null, seats: number | null, currency: string | null, interval: string | null): string {
+	if (cents === null || seats === null || !currency) {
+		return "-";
 	}
 
-	return status
-		.split("_")
-		.map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-		.join(" ");
+	const total = (cents * seats) / 100;
+	const amount = new Intl.NumberFormat(undefined, {
+		style: "currency",
+		currency: currency.toUpperCase(),
+		maximumFractionDigits: 2,
+	}).format(total);
+
+	return interval ? `${amount}/${interval}` : amount;
 }

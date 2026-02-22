@@ -18,6 +18,8 @@ export type WorkspaceBillingSummary = {
 	billedSeatCount: number;
 	subscriptionStatus: string | null;
 	hasSubscription: boolean;
+	cardBrand: string | null;
+	cardLast4: string | null;
 };
 
 type ClientBillingPatch = {
@@ -300,6 +302,56 @@ function hasActiveSubscription(record: ClientBillingRow | null): boolean {
 	return ACTIVE_SUBSCRIPTION_STATUSES.has(record.subscriptionStatus as Stripe.Subscription.Status);
 }
 
+function getCardSummaryFromPaymentMethod(paymentMethod: Stripe.PaymentMethod | null | undefined): { cardBrand: string | null; cardLast4: string | null } {
+	if (!paymentMethod || paymentMethod.type !== "card" || !paymentMethod.card) {
+		return {
+			cardBrand: null,
+			cardLast4: null,
+		};
+	}
+
+	return {
+		cardBrand: paymentMethod.card.brand ?? null,
+		cardLast4: paymentMethod.card.last4 ?? null,
+	};
+}
+
+async function getCustomerCardSummary(stripeCustomerId: string): Promise<{ cardBrand: string | null; cardLast4: string | null }> {
+	const stripe = getStripeClient();
+	const customer = await runWithStripeRetries("retrieve-customer-with-default-payment-method", () =>
+		stripe.customers.retrieve(stripeCustomerId, {
+			expand: ["invoice_settings.default_payment_method"],
+		}),
+	);
+
+	if ("deleted" in customer && customer.deleted) {
+		return {
+			cardBrand: null,
+			cardLast4: null,
+		};
+	}
+
+	const defaultPaymentMethod = customer.invoice_settings.default_payment_method;
+	if (defaultPaymentMethod && typeof defaultPaymentMethod !== "string") {
+		return getCardSummaryFromPaymentMethod(defaultPaymentMethod);
+	}
+
+	if (typeof defaultPaymentMethod === "string") {
+		const paymentMethod = await runWithStripeRetries("retrieve-default-payment-method", () => stripe.paymentMethods.retrieve(defaultPaymentMethod));
+		return getCardSummaryFromPaymentMethod(paymentMethod);
+	}
+
+	const cardPaymentMethods = await runWithStripeRetries("list-customer-card-payment-methods", () =>
+		stripe.paymentMethods.list({
+			customer: stripeCustomerId,
+			type: "card",
+			limit: 1,
+		}),
+	);
+
+	return getCardSummaryFromPaymentMethod(cardPaymentMethods.data[0] ?? null);
+}
+
 export async function getWorkspaceBillingSummaryForClient(clientId: string): Promise<WorkspaceBillingSummary> {
 	const seatPriceId = process.env.STRIPE_SEAT_PRICE_ID;
 	if (!seatPriceId) {
@@ -311,6 +363,8 @@ export async function getWorkspaceBillingSummaryForClient(clientId: string): Pro
 	let pricePerSeatCents: number | null = null;
 	let currency: string | null = null;
 	let billingInterval: Stripe.Price.Recurring.Interval | null = null;
+	let cardBrand: string | null = null;
+	let cardLast4: string | null = null;
 	try {
 		const stripe = getStripeClient();
 		const price = await runWithStripeRetries("retrieve-seat-price", () => stripe.prices.retrieve(seatPriceId));
@@ -325,6 +379,20 @@ export async function getWorkspaceBillingSummaryForClient(clientId: string): Pro
 		});
 	}
 
+	if (billing?.stripeCustomerId) {
+		try {
+			const cardSummary = await getCustomerCardSummary(billing.stripeCustomerId);
+			cardBrand = cardSummary.cardBrand;
+			cardLast4 = cardSummary.cardLast4;
+		} catch (error) {
+			console.error("Failed to retrieve Stripe customer card summary", {
+				clientId,
+				stripeCustomerId: billing.stripeCustomerId,
+				error: getStripeErrorDetails(error),
+			});
+		}
+	}
+
 	return {
 		pricePerSeatCents,
 		currency,
@@ -333,6 +401,8 @@ export async function getWorkspaceBillingSummaryForClient(clientId: string): Pro
 		billedSeatCount: seatCounts.billedSeatCount,
 		subscriptionStatus: billing?.subscriptionStatus ?? null,
 		hasSubscription: hasActiveSubscription(billing),
+		cardBrand,
+		cardLast4,
 	};
 }
 
