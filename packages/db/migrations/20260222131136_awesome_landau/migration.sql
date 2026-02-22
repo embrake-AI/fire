@@ -1,0 +1,1 @@
+ALTER TABLE "client" ALTER COLUMN "is_startup_eligible" DROP DEFAULT;

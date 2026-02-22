@@ -1,6 +1,6 @@
 import { clientBilling, client as clientTable, rotation, rotationMember } from "@fire/db/schema";
 import { waitUntil } from "@vercel/functions";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type Stripe from "stripe";
 import { db } from "../db";
 import { createUserFacingError } from "../errors/user-facing-error";
@@ -20,6 +20,9 @@ export type WorkspaceBillingSummary = {
 	hasSubscription: boolean;
 	cardBrand: string | null;
 	cardLast4: string | null;
+	isStartupEligible: boolean;
+	startupDiscountConsumedAt: string | null;
+	hasActiveStartupDiscount: boolean;
 };
 
 type ClientBillingPatch = {
@@ -32,7 +35,24 @@ type ClientBillingPatch = {
 	lastSeatSyncedAt?: Date | null;
 };
 
+type ClientStartupDiscountState = {
+	isStartupEligible: boolean;
+	startupDiscountConsumedAt: Date | null;
+};
+
 function parseStripeId(value: string | { id: string } | null | undefined): string | null {
+	if (!value) {
+		return null;
+	}
+
+	if (typeof value === "string") {
+		return value;
+	}
+
+	return value.id;
+}
+
+function parseStripeCouponId(value: string | { id: string } | null | undefined): string | null {
 	if (!value) {
 		return null;
 	}
@@ -101,6 +121,26 @@ async function runWithStripeRetries<T>(label: string, operation: () => Promise<T
 async function getClientBilling(clientId: string): Promise<ClientBillingRow | null> {
 	const [record] = await db.select().from(clientBilling).where(eq(clientBilling.clientId, clientId)).limit(1);
 	return record ?? null;
+}
+
+async function getClientStartupDiscountState(clientId: string): Promise<ClientStartupDiscountState> {
+	const [clientRecord] = await db
+		.select({
+			isStartupEligible: clientTable.isStartupEligible,
+			startupDiscountConsumedAt: clientTable.startupDiscountConsumedAt,
+		})
+		.from(clientTable)
+		.where(eq(clientTable.id, clientId))
+		.limit(1);
+
+	if (!clientRecord) {
+		throw new Error("Could not resolve workspace for billing");
+	}
+
+	return {
+		isStartupEligible: clientRecord.isStartupEligible,
+		startupDiscountConsumedAt: clientRecord.startupDiscountConsumedAt,
+	};
 }
 
 async function upsertClientBilling(clientId: string, patch: ClientBillingPatch): Promise<ClientBillingRow> {
@@ -352,19 +392,50 @@ async function getCustomerCardSummary(stripeCustomerId: string): Promise<{ cardB
 	return getCardSummaryFromPaymentMethod(cardPaymentMethods.data[0] ?? null);
 }
 
+function getSubscriptionDiscountCouponIds(subscription: Stripe.Subscription): string[] {
+	const couponIds: string[] = [];
+
+	for (const discountEntry of subscription.discounts ?? []) {
+		if (typeof discountEntry === "string") {
+			continue;
+		}
+
+		const couponId = parseStripeCouponId(discountEntry.coupon as string | { id: string } | null | undefined);
+		if (couponId) {
+			couponIds.push(couponId);
+		}
+	}
+
+	return couponIds;
+}
+
+async function hasActiveConfiguredStartupDiscount(subscriptionId: string, startupCouponId: string): Promise<boolean> {
+	const stripe = getStripeClient();
+	const subscription = await runWithStripeRetries("retrieve-subscription-for-startup-discount", () =>
+		stripe.subscriptions.retrieve(subscriptionId, {
+			expand: ["discounts"],
+		}),
+	);
+
+	const discountCouponIds = getSubscriptionDiscountCouponIds(subscription);
+	return discountCouponIds.includes(startupCouponId);
+}
+
 export async function getWorkspaceBillingSummaryForClient(clientId: string): Promise<WorkspaceBillingSummary> {
 	const seatPriceId = process.env.STRIPE_SEAT_PRICE_ID;
+	const startupCouponId = process.env.STRIPE_STARTUP_COUPON_ID?.trim() ?? null;
 	if (!seatPriceId) {
 		throw new Error("Missing env var: STRIPE_SEAT_PRICE_ID");
 	}
 
-	const [billing, seatCounts] = await Promise.all([getClientBilling(clientId), getSeatCounts(clientId)]);
+	const [billing, seatCounts, startupState] = await Promise.all([getClientBilling(clientId), getSeatCounts(clientId), getClientStartupDiscountState(clientId)]);
 
 	let pricePerSeatCents: number | null = null;
 	let currency: string | null = null;
 	let billingInterval: Stripe.Price.Recurring.Interval | null = null;
 	let cardBrand: string | null = null;
 	let cardLast4: string | null = null;
+	let hasActiveStartupDiscount = false;
 	try {
 		const stripe = getStripeClient();
 		const price = await runWithStripeRetries("retrieve-seat-price", () => stripe.prices.retrieve(seatPriceId));
@@ -393,6 +464,19 @@ export async function getWorkspaceBillingSummaryForClient(clientId: string): Pro
 		}
 	}
 
+	if (startupCouponId && billing?.stripeSubscriptionId) {
+		try {
+			hasActiveStartupDiscount = await hasActiveConfiguredStartupDiscount(billing.stripeSubscriptionId, startupCouponId);
+		} catch (error) {
+			console.error("Failed to resolve startup discount status", {
+				clientId,
+				stripeSubscriptionId: billing.stripeSubscriptionId,
+				startupCouponId,
+				error: getStripeErrorDetails(error),
+			});
+		}
+	}
+
 	return {
 		pricePerSeatCents,
 		currency,
@@ -403,12 +487,16 @@ export async function getWorkspaceBillingSummaryForClient(clientId: string): Pro
 		hasSubscription: hasActiveSubscription(billing),
 		cardBrand,
 		cardLast4,
+		isStartupEligible: startupState.isStartupEligible,
+		startupDiscountConsumedAt: startupState.startupDiscountConsumedAt ? startupState.startupDiscountConsumedAt.toISOString() : null,
+		hasActiveStartupDiscount,
 	};
 }
 
 export async function createBillingCheckoutSessionForClient(clientId: string): Promise<{ url: string }> {
 	const seatPriceId = process.env.STRIPE_SEAT_PRICE_ID;
 	const appUrl = process.env.VITE_APP_URL;
+	const startupCouponId = process.env.STRIPE_STARTUP_COUPON_ID?.trim() ?? "";
 	if (!seatPriceId) {
 		throw new Error("Missing env var: STRIPE_SEAT_PRICE_ID");
 	}
@@ -419,6 +507,17 @@ export async function createBillingCheckoutSessionForClient(clientId: string): P
 	const existingBilling = await getClientBilling(clientId);
 	if (hasActiveSubscription(existingBilling)) {
 		throw createUserFacingError("Billing is already configured for this workspace. Use Manage billing.");
+	}
+
+	const startupState = await getClientStartupDiscountState(clientId);
+	const shouldApplyStartupDiscount = startupState.isStartupEligible && !startupState.startupDiscountConsumedAt;
+	if (shouldApplyStartupDiscount && !startupCouponId) {
+		console.error("Missing startup coupon configuration for eligible workspace", {
+			clientId,
+			isStartupEligible: startupState.isStartupEligible,
+			startupDiscountConsumedAt: startupState.startupDiscountConsumedAt?.toISOString() ?? null,
+		});
+		throw createUserFacingError("Billing setup is temporarily unavailable. Please contact support.");
 	}
 
 	const customerId = await ensureStripeCustomer(clientId);
@@ -438,6 +537,7 @@ export async function createBillingCheckoutSessionForClient(clientId: string): P
 					clientId,
 				},
 			},
+			...(shouldApplyStartupDiscount ? { discounts: [{ coupon: startupCouponId }] } : {}),
 			metadata: {
 				clientId,
 			},
@@ -448,6 +548,22 @@ export async function createBillingCheckoutSessionForClient(clientId: string): P
 		stripeCustomerId: customerId,
 		lastSeatSyncAttemptAt: new Date(),
 	});
+
+	if (shouldApplyStartupDiscount) {
+		const now = new Date();
+		await db
+			.update(clientTable)
+			.set({
+				startupDiscountConsumedAt: now,
+				updatedAt: now,
+			})
+			.where(and(eq(clientTable.id, clientId), isNull(clientTable.startupDiscountConsumedAt)));
+
+		console.info("Applied startup discount at billing checkout", {
+			clientId,
+			startupCouponId,
+		});
+	}
 
 	if (!checkoutSession.url) {
 		throw new Error("Stripe checkout session did not return a redirect URL");

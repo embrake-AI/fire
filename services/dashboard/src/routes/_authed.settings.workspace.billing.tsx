@@ -182,6 +182,16 @@ function BillingSection() {
 							)}
 						</p>
 					</div>
+					<div class="flex items-center justify-between py-3">
+						<p class="text-sm text-muted-foreground">Startup discount</p>
+						<p class="text-sm font-medium text-foreground">
+							{formatStartupDiscountStatus({
+								hasActiveStartupDiscount: billingSummary()?.hasActiveStartupDiscount ?? false,
+								startupDiscountConsumedAt: billingSummary()?.startupDiscountConsumedAt ?? null,
+								isStartupEligible: billingSummary()?.isStartupEligible ?? false,
+							})}
+						</p>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -233,4 +243,20 @@ function formatEstimatedTotal(cents: number | null, seats: number | null, curren
 	}).format(total);
 
 	return interval ? `${amount}/${interval}` : amount;
+}
+
+function formatStartupDiscountStatus(params: { hasActiveStartupDiscount: boolean; startupDiscountConsumedAt: string | null; isStartupEligible: boolean }): string {
+	if (params.hasActiveStartupDiscount) {
+		return "Applied";
+	}
+
+	if (params.startupDiscountConsumedAt) {
+		return "Consumed";
+	}
+
+	if (params.isStartupEligible) {
+		return "Eligible";
+	}
+
+	return "Not eligible";
 }

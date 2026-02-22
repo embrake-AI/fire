@@ -72,6 +72,8 @@ export const client = pgTable("client", {
 	name: text("name").notNull(),
 	image: text("image"),
 	domains: text("domains").array().default([]),
+	isStartupEligible: boolean("is_startup_eligible").notNull(),
+	startupDiscountConsumedAt: timestamp("startup_discount_consumed_at"),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 	updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

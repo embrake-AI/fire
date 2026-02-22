@@ -46,6 +46,12 @@ Set these env vars for workspace billing:
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_SEAT_PRICE_ID`
+- `STRIPE_STARTUP_COUPON_ID`
+
+## Client Provisioning Requirement
+
+Workspace records (`client` table) must set `isStartupEligible` explicitly on creation.
+The column is required and has no default in schema, so client provisioning flows must always choose `true` or `false`.
 
 ## License
 
