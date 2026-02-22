@@ -7,7 +7,8 @@ import { and, desc, eq, exists, gt, inArray, lt, lte, type SQL, sql } from "driz
 import { resumeHook, start } from "workflow/api";
 import { getRotationScheduleWakeToken, type RotationScheduleWakeAction, rotationScheduleWorkflow } from "~/workflows/rotation/schedule";
 import { authMiddleware } from "../auth/auth-middleware";
-import { assertTeamAdminOrWorkspaceCatalogWriter, isWorkspaceCatalogWriter, requirePermission } from "../auth/authorization";
+import { isWorkspaceCatalogWriter, requirePermission } from "../auth/authorization";
+import { assertTeamAdminOrWorkspaceCatalogWriter } from "../auth/authorization.server";
 import { queueBillingSeatSync } from "../billing/billing.server";
 import { uploadImageFromUrl } from "../blob";
 import { db } from "../db";

@@ -4,7 +4,8 @@ import { client, entryPoint, integration, rotation, user } from "@fire/db/schema
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq } from "drizzle-orm";
 import { authMiddleware } from "../auth/auth-middleware";
-import { assertRolePermission, assertTeamAdminOrWorkspaceCatalogWriter, requirePermission } from "../auth/authorization";
+import { assertRolePermission, requirePermission } from "../auth/authorization";
+import { assertTeamAdminOrWorkspaceCatalogWriter } from "../auth/authorization.server";
 import { uploadImageFromUrl } from "../blob";
 import { db } from "../db";
 import { createUserFacingError } from "../errors/user-facing-error";
