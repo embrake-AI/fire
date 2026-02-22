@@ -1,0 +1,2 @@
+ALTER TABLE "client" ADD COLUMN "default_user_role" "user_role" DEFAULT 'VIEWER'::"user_role" NOT NULL;--> statement-breakpoint
+ALTER TABLE "client" ADD COLUMN "auto_create_users_with_sso" boolean DEFAULT true NOT NULL;

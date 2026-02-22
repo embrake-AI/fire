@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { authMiddleware } from "../auth/auth-middleware";
+import { requirePermission } from "../auth/authorization";
 import { db } from "../db";
 import { sha256 } from "../utils/server";
 
@@ -12,7 +13,7 @@ function generateApiKey(): string {
 }
 
 export const getApiKeys = createServerFn({ method: "GET" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("apiKeys.read")])
 	.handler(async ({ context }) => {
 		const keys = await db
 			.select({
@@ -31,7 +32,7 @@ export const getApiKeys = createServerFn({ method: "GET" })
 
 export const createApiKey = createServerFn({ method: "POST" })
 	.inputValidator((data: { name: string }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("apiKeys.write")])
 	.handler(async ({ data, context }) => {
 		const plainKey = generateApiKey();
 		const keyHash = await sha256(plainKey);
@@ -58,7 +59,7 @@ export const createApiKey = createServerFn({ method: "POST" })
 
 export const revokeApiKey = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("apiKeys.write")])
 	.handler(async ({ data, context }) => {
 		await db.delete(apiKey).where(and(eq(apiKey.id, data.id), eq(apiKey.clientId, context.clientId)));
 		return { success: true };

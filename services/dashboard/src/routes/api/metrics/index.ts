@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/solid-router";
 import { subMonths } from "date-fns";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { auth } from "~/lib/auth/auth";
+import { forbiddenJsonResponse, isAllowed } from "~/lib/auth/authorization";
 import { db } from "~/lib/db";
 import { computeIncidentMetrics } from "~/lib/incidents/incidents";
 import { sha256 } from "~/lib/utils/server";
@@ -46,6 +47,10 @@ export const Route = createFileRoute("/api/metrics/")({
 							status: 401,
 							headers: { "Content-Type": "application/json" },
 						});
+					}
+					const role = session.user.role;
+					if (!isAllowed(role, "metricsApi.read")) {
+						return forbiddenJsonResponse();
 					}
 					clientId = session.user.clientId;
 				}

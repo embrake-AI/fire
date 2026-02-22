@@ -3,6 +3,7 @@ import { integration, isIntercomIntegrationData, statusPage } from "@fire/db/sch
 import { createServerFn } from "@tanstack/solid-start";
 import { and, eq } from "drizzle-orm";
 import { authMiddleware } from "~/lib/auth/auth-middleware";
+import { requirePermission } from "~/lib/auth/authorization";
 import { db } from "~/lib/db";
 import { createUserFacingError } from "~/lib/errors/user-facing-error";
 
@@ -21,7 +22,7 @@ function getIntercomData(data: IntegrationData): IntercomIntegrationData {
 }
 
 export const getIntercomWorkspaceConfig = createServerFn({ method: "GET" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("settings.workspace.read")])
 	.handler(async ({ context }) => {
 		const [record] = await db
 			.select({ data: integration.data })
@@ -48,7 +49,7 @@ export const getIntercomWorkspaceConfig = createServerFn({ method: "GET" })
 	});
 
 export const setIntercomStatusPage = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("settings.workspace.write")])
 	.inputValidator((data: { statusPageId: string }) => data)
 	.handler(async ({ context, data }) => {
 		const statusPageId = data.statusPageId?.trim();

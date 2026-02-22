@@ -1,11 +1,13 @@
 import type { SlackIntegrationData } from "@fire/db/schema";
-import { client, integration, user as userTable } from "@fire/db/schema";
+import { client, integration, userRole, user as userTable } from "@fire/db/schema";
 import { APIError, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { and, arrayContains, count, eq } from "drizzle-orm";
 import { uploadImageFromUrl } from "~/lib/blob";
 import { db } from "~/lib/db";
 import { lookupSlackUserIdByEmail } from "../slack";
+
+const AUTH_USER_ROLE_VALUES = [...userRole.enumValues];
 
 export const auth = betterAuth({
 	baseURL: process.env.VITE_APP_URL,
@@ -37,7 +39,7 @@ export const auth = betterAuth({
 				input: false,
 			},
 			role: {
-				type: "string",
+				type: AUTH_USER_ROLE_VALUES,
 				required: true,
 				fieldName: "role",
 			},
@@ -169,6 +171,14 @@ export const auth = betterAuth({
 
 					const userCountResult = await db.select({ count: count() }).from(userTable).where(eq(userTable.clientId, foundClient.id));
 					const isFirstUser = userCountResult[0].count === 0;
+					const defaultUserRole = foundClient.defaultUserRole === "SUPER_ADMIN" ? "ADMIN" : foundClient.defaultUserRole;
+					const initialRole = isFirstUser ? "ADMIN" : defaultUserRole;
+
+					if (!isFirstUser && !foundClient.autoCreateUsersWithSso) {
+						throw new APIError("BAD_REQUEST", {
+							message: "This workspace requires an admin to add your account before you can sign in.",
+						});
+					}
 
 					const userKey = user.id ?? user.email?.replace(/[^a-z0-9_-]/gi, "_") ?? "unknown";
 					const uploadedImageUrl = user.image ? await uploadImageFromUrl(user.image, `users/${foundClient.id}/${userKey}`) : null;
@@ -178,7 +188,7 @@ export const auth = betterAuth({
 							...user,
 							image: uploadedImageUrl ?? user.image,
 							clientId: foundClient.id,
-							...(isFirstUser && { role: "ADMIN" }),
+							role: initialRole,
 						},
 					};
 				},

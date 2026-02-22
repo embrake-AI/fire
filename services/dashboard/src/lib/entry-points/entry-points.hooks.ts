@@ -99,7 +99,7 @@ export function useCreateEntryPoint(options?: {
 							name: newData.name ?? "Slack user",
 							email: "",
 							image: newData.avatar ?? null,
-							teamIds: [],
+							teams: [],
 							slackId: newData.slackUserId,
 						},
 					];

@@ -4,6 +4,7 @@ import { entryPoint, incidentAnalysis, integration, rotation, user, userIntegrat
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { authMiddleware } from "../auth/auth-middleware";
+import { requirePermission } from "../auth/authorization";
 import { db } from "../db";
 import type { SlackChannel } from "../slack";
 import { signedFetch } from "../utils/server";
@@ -11,7 +12,7 @@ import { signedFetch } from "../utils/server";
 export const getIncidents = createServerFn({
 	method: "GET",
 })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.read")])
 	.handler(async ({ context }) => {
 		const response = await signedFetch(process.env.INCIDENTS_URL!, { clientId: context.clientId, userId: context.userId });
 		if (!response.ok) {
@@ -27,7 +28,7 @@ export type IncidentAction = { id: string; description: string };
 
 export const getIncidentById = createServerFn({ method: "GET" })
 	.inputValidator((data: { id: string }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.read")])
 	.handler(async ({ data, context }) => {
 		const response = await signedFetch(`${process.env.INCIDENTS_URL}/${data.id}`, { clientId: context.clientId, userId: context.userId });
 		if (!response.ok) {
@@ -61,7 +62,7 @@ export const getIncidentById = createServerFn({ method: "GET" })
 
 export const updateAssignee = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; slackId: string }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const response = await signedFetch(
 			`${process.env.INCIDENTS_URL}/${data.id}/assignee`,
@@ -79,7 +80,7 @@ export const updateAssignee = createServerFn({ method: "POST" })
 
 export const updateSeverity = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; severity: IS["severity"] }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const response = await signedFetch(
 			`${process.env.INCIDENTS_URL}/${data.id}/severity`,
@@ -97,7 +98,7 @@ export const updateSeverity = createServerFn({ method: "POST" })
 
 export const updateStatus = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; status: "mitigating" | "resolved"; message: string }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const response = await signedFetch(
 			`${process.env.INCIDENTS_URL}/${data.id}/status`,
@@ -115,7 +116,7 @@ export const updateStatus = createServerFn({ method: "POST" })
 
 export const sendSlackMessage = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; message: string; messageId: string; sendAsBot?: boolean; dashboardOnly?: boolean }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		let slackUserToken: string | undefined;
 		let slackUserId: string;
@@ -175,7 +176,7 @@ export const sendSlackMessage = createServerFn({ method: "POST" })
 
 export const startIncident = createServerFn({ method: "POST" })
 	.inputValidator((data: { prompt: string; channel?: SlackChannel["id"] }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const client = await db.query.client.findFirst({
 			where: {
@@ -305,7 +306,7 @@ export type ResolvedIncident = {
 };
 
 export const getResolvedIncidents = createServerFn({ method: "GET" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("metrics.read")])
 	.handler(async ({ context }) => {
 		const resolved = await db
 			.select({
@@ -326,7 +327,7 @@ export const getResolvedIncidents = createServerFn({ method: "GET" })
 
 export const getAnalysisById = createServerFn({ method: "GET" })
 	.inputValidator((data: { id: string }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.read")])
 	.handler(async ({ data, context }) => {
 		const analysis = await db.query.incidentAnalysis.findFirst({
 			where: {
@@ -410,7 +411,7 @@ export function computeIncidentMetrics(analysis: IncidentAnalysisRow) {
 
 export const getMetrics = createServerFn({ method: "GET" })
 	.inputValidator((data: { startDate?: string; endDate?: string; teamId?: string }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("metrics.read")])
 	.handler(async ({ data, context }) => {
 		const startDate = data.startDate ? new Date(data.startDate) : null;
 		const endDate = data.endDate ? new Date(data.endDate) : null;

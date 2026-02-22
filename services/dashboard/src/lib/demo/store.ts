@@ -19,12 +19,17 @@ type GetMetricsResponse = Awaited<ReturnType<typeof getMetrics>>;
 
 type WorkspacePlatform = "slack" | "notion" | "intercom";
 type UserPlatform = "slack";
+type DemoUserRole = "VIEWER" | "MEMBER" | "ADMIN" | "SUPER_ADMIN";
+type ManageableUserRole = Exclude<DemoUserRole, "SUPER_ADMIN">;
+type DemoTeamMembershipRole = "MEMBER" | "ADMIN";
 
 type DemoClient = {
 	id: string;
 	name: string;
 	image: string | null;
 	domains: string[];
+	defaultUserRole: ManageableUserRole;
+	autoCreateUsersWithSso: boolean;
 };
 
 type DemoUser = {
@@ -32,8 +37,9 @@ type DemoUser = {
 	name: string;
 	email: string;
 	image: string | null;
-	teamIds: string[];
+	teams: { id: string; role: DemoTeamMembershipRole }[];
 	slackId: string | null;
+	role: DemoUserRole;
 };
 
 type DemoTeam = {
@@ -240,6 +246,8 @@ function makeInitialState(): DemoState {
 			name: "Fire Demo",
 			image: null,
 			domains: ["firedash.ai"],
+			defaultUserRole: "VIEWER",
+			autoCreateUsersWithSso: true,
 		},
 		currentUserId: demoUserId,
 		users: [
@@ -248,64 +256,72 @@ function makeInitialState(): DemoState {
 				name: "Demo User",
 				email: "demo@firedash.ai",
 				image: null,
-				teamIds: [teamWebId],
+				teams: [{ id: teamWebId, role: "ADMIN" }],
 				slackId: "UDEMO001",
+				role: "ADMIN",
 			},
 			{
 				id: "user-ana",
 				name: "Ana Rivera",
 				email: "ana@firedash.ai",
 				image: null,
-				teamIds: [teamWebId],
+				teams: [{ id: teamWebId, role: "ADMIN" }],
 				slackId: "UDEMO002",
+				role: "MEMBER",
 			},
 			{
 				id: "user-leo",
 				name: "Leo Martin",
 				email: "leo@firedash.ai",
 				image: null,
-				teamIds: [teamWebId],
+				teams: [{ id: teamWebId, role: "ADMIN" }],
 				slackId: "UDEMO003",
+				role: "MEMBER",
 			},
 			{
 				id: "user-mia",
 				name: "Mia Chen",
 				email: "mia@firedash.ai",
 				image: null,
-				teamIds: [teamWebId],
+				teams: [{ id: teamWebId, role: "ADMIN" }],
 				slackId: "UDEMO004",
+				role: "MEMBER",
 			},
 			{
 				id: "user-noah",
 				name: "Noah Patel",
 				email: "noah@firedash.ai",
 				image: null,
-				teamIds: [teamPlatformId],
+				teams: [{ id: teamPlatformId, role: "ADMIN" }],
 				slackId: "UDEMO005",
+				role: "MEMBER",
 			},
 			{
 				id: "user-priya",
 				name: "Priya Nair",
 				email: "priya@firedash.ai",
 				image: null,
-				teamIds: [teamPlatformId],
+				teams: [{ id: teamPlatformId, role: "ADMIN" }],
 				slackId: "UDEMO006",
+				role: "MEMBER",
 			},
 			{
 				id: "user-jules",
 				name: "Jules Kim",
 				email: "jules@firedash.ai",
 				image: null,
-				teamIds: [teamPlatformId],
+				teams: [{ id: teamPlatformId, role: "ADMIN" }],
 				slackId: "UDEMO007",
+				role: "MEMBER",
 			},
 			{
 				id: "user-emma",
 				name: "Emma Brooks",
 				email: "emma@firedash.ai",
 				image: null,
-				teamIds: [teamPlatformId],
+				teams: [{ id: teamPlatformId, role: "ADMIN" }],
 				slackId: "UDEMO008",
+				role: "MEMBER",
 			},
 		],
 		teams: [
@@ -643,6 +659,20 @@ async function loadState(): Promise<DemoState> {
 		if (state.intercomStatusPageId === undefined) {
 			state.intercomStatusPageId = null;
 		}
+		if (state.client.defaultUserRole === undefined) {
+			state.client.defaultUserRole = "VIEWER";
+		}
+		if (state.client.autoCreateUsersWithSso === undefined) {
+			state.client.autoCreateUsersWithSso = true;
+		}
+		for (const user of state.users) {
+			if (!user.role) {
+				user.role = user.id === state.currentUserId ? "ADMIN" : "MEMBER";
+			}
+			if (!user.teams) {
+				user.teams = [];
+			}
+		}
 		return state;
 	}
 	const initialState = makeInitialState();
@@ -671,8 +701,9 @@ function getCurrentUser(state: DemoState): DemoUser {
 		name: "Demo User",
 		email: "demo@firedash.ai",
 		image: null,
-		teamIds: [],
+		teams: [],
 		slackId: "UDEMO001",
+		role: "ADMIN" as DemoUserRole,
 	};
 	state.users.push(fallback);
 	return fallback;
@@ -710,8 +741,9 @@ function upsertUserFromSlack(state: DemoState, slackUserId: string): DemoUser {
 		name: slackUser.name,
 		email: slackUser.email,
 		image: slackUser.avatar ?? null,
-		teamIds: [],
+		teams: [],
 		slackId: slackUser.id,
+		role: state.client.defaultUserRole,
 	};
 	state.users.push(created);
 	return created;
@@ -903,6 +935,14 @@ function ensureUniqueStrings(values: string[]): string[] {
 	return Array.from(new Set(values));
 }
 
+function toManageableRole(role: DemoUserRole): ManageableUserRole {
+	return role === "SUPER_ADMIN" ? "ADMIN" : role;
+}
+
+function isRoleEditable(role: DemoUserRole): boolean {
+	return role === "VIEWER" || role === "MEMBER";
+}
+
 export async function resetDemoState(): Promise<void> {
 	await saveState(makeInitialState());
 }
@@ -937,7 +977,7 @@ export async function getUsersDemo() {
 			name: user.name,
 			email: user.email,
 			image: user.image,
-			teamIds: user.teamIds,
+			teams: user.teams,
 			slackId: user.slackId,
 		}));
 }
@@ -966,6 +1006,156 @@ export async function updateUserDemo(data: { name?: string; image?: string | nul
 	});
 }
 
+export async function getWorkspaceUsersForManagementDemo() {
+	const state = await loadState();
+	return [...state.users]
+		.sort((a, b) => a.name.localeCompare(b.name))
+		.map((workspaceUser) => ({
+			id: workspaceUser.id,
+			name: workspaceUser.name,
+			email: workspaceUser.email,
+			image: workspaceUser.image,
+			slackId: workspaceUser.slackId,
+			role: toManageableRole(workspaceUser.role),
+			isRoleEditable: isRoleEditable(workspaceUser.role),
+		}));
+}
+
+export async function updateWorkspaceUserRoleDemo(data: { userId: string; role: ManageableUserRole }) {
+	return withState(async (state) => {
+		const workspaceUser = state.users.find((candidate) => candidate.id === data.userId);
+		if (!workspaceUser) {
+			throw new Error("User not found");
+		}
+
+		if (!isRoleEditable(workspaceUser.role)) {
+			throw new Error("You don't have permission to modify this user.");
+		}
+
+		workspaceUser.role = data.role;
+		return {
+			id: workspaceUser.id,
+			role: data.role,
+			isRoleEditable: isRoleEditable(workspaceUser.role),
+		};
+	});
+}
+
+export async function removeWorkspaceUserDemo(data: { userId: string }) {
+	return withState(async (state) => {
+		const workspaceUser = state.users.find((candidate) => candidate.id === data.userId);
+		if (!workspaceUser) {
+			throw new Error("User not found");
+		}
+
+		if (!isRoleEditable(workspaceUser.role)) {
+			throw new Error("Admin users can't be removed.");
+		}
+
+		for (const currentRotation of state.rotations) {
+			currentRotation.assigneeIds = currentRotation.assigneeIds.filter((assigneeId) => assigneeId !== data.userId);
+		}
+		state.rotationOverrides = state.rotationOverrides.filter((currentOverride) => currentOverride.assigneeId !== data.userId);
+
+		const deletedFallback = state.entryPoints.some(
+			(currentEntryPoint) => currentEntryPoint.type === "user" && currentEntryPoint.assigneeId === data.userId && currentEntryPoint.isFallback,
+		);
+		state.entryPoints = state.entryPoints.filter((currentEntryPoint) => !(currentEntryPoint.type === "user" && currentEntryPoint.assigneeId === data.userId));
+		if (deletedFallback && state.entryPoints.length > 0 && !state.entryPoints.some((currentEntryPoint) => currentEntryPoint.isFallback)) {
+			state.entryPoints[0]!.isFallback = true;
+		}
+
+		for (const service of state.services) {
+			service.userOwnerIds = service.userOwnerIds.filter((ownerId) => ownerId !== data.userId);
+		}
+
+		state.users = state.users.filter((candidate) => candidate.id !== data.userId);
+		return { success: true };
+	});
+}
+
+export async function getWorkspaceUserProvisioningSettingsDemo() {
+	const state = await loadState();
+	return {
+		defaultUserRole: state.client.defaultUserRole,
+		autoCreateUsersWithSso: state.client.autoCreateUsersWithSso,
+	};
+}
+
+export async function updateWorkspaceUserProvisioningSettingsDemo(data: { defaultUserRole?: ManageableUserRole; autoCreateUsersWithSso?: boolean }) {
+	return withState(async (state) => {
+		if (data.defaultUserRole !== undefined) {
+			state.client.defaultUserRole = data.defaultUserRole;
+		}
+		if (data.autoCreateUsersWithSso !== undefined) {
+			state.client.autoCreateUsersWithSso = data.autoCreateUsersWithSso;
+		}
+		return {
+			defaultUserRole: state.client.defaultUserRole,
+			autoCreateUsersWithSso: state.client.autoCreateUsersWithSso,
+		};
+	});
+}
+
+export async function addWorkspaceUserFromSlackDemo(data: { slackUserId: string }) {
+	return withState(async (state) => {
+		const slackConnected = state.workspaceIntegrations.some((workspaceIntegration) => workspaceIntegration.platform === "slack");
+		if (!slackConnected) {
+			throw new Error("Slack isn't connected to this workspace.");
+		}
+
+		const slackUser = state.slackUsers.find((candidate) => candidate.id === data.slackUserId);
+		if (!slackUser) {
+			throw new Error("Slack user not found.");
+		}
+
+		if (!slackUser.email) {
+			throw new Error("Slack user has no email.");
+		}
+
+		const domain = slackUser.email.toLowerCase().split("@")[1];
+		if (!domain || !state.client.domains.map((item) => item.toLowerCase()).includes(domain)) {
+			throw new Error("Email domain not allowed for this workspace.");
+		}
+
+		const existingByEmail = state.users.find((workspaceUser) => workspaceUser.email.toLowerCase() === slackUser.email.toLowerCase());
+		if (existingByEmail) {
+			if (existingByEmail.slackId && existingByEmail.slackId !== data.slackUserId) {
+				throw new Error("User linked to a different Slack user.");
+			}
+			if (!existingByEmail.slackId) {
+				existingByEmail.slackId = data.slackUserId;
+			}
+			if (!existingByEmail.image && slackUser.avatar) {
+				existingByEmail.image = slackUser.avatar;
+			}
+			if (!existingByEmail.name && slackUser.name) {
+				existingByEmail.name = slackUser.name;
+			}
+			return {
+				id: existingByEmail.id,
+				name: existingByEmail.name,
+				email: existingByEmail.email,
+				image: existingByEmail.image,
+				slackId: existingByEmail.slackId,
+				role: toManageableRole(existingByEmail.role),
+				isRoleEditable: isRoleEditable(existingByEmail.role),
+			};
+		}
+
+		const created = upsertUserFromSlack(state, data.slackUserId);
+		return {
+			id: created.id,
+			name: created.name,
+			email: created.email,
+			image: created.image,
+			slackId: created.slackId,
+			role: toManageableRole(created.role),
+			isRoleEditable: isRoleEditable(created.role),
+		};
+	});
+}
+
 export async function getTeamsDemo() {
 	const state = await loadState();
 	return sortByCreatedDesc(state.teams).map((team) => ({
@@ -973,7 +1163,7 @@ export async function getTeamsDemo() {
 		name: team.name,
 		imageUrl: team.imageUrl,
 		createdAt: team.createdAt,
-		memberCount: state.users.filter((user) => user.teamIds.includes(team.id)).length,
+		memberCount: state.users.filter((user) => user.teams.some((membership) => membership.id === team.id)).length,
 	}));
 }
 
@@ -1000,7 +1190,7 @@ export async function deleteTeamDemo(data: { id: string }) {
 	return withState(async (state) => {
 		state.teams = state.teams.filter((team) => team.id !== data.id);
 		for (const user of state.users) {
-			user.teamIds = user.teamIds.filter((teamId) => teamId !== data.id);
+			user.teams = user.teams.filter((membership) => membership.id !== data.id);
 		}
 		for (const rotation of state.rotations) {
 			if (rotation.teamId === data.id) {
@@ -1024,7 +1214,9 @@ export async function addTeamMemberDemo(data: { teamId: string; userId: string }
 		if (!user) {
 			throw new Error("User not found");
 		}
-		user.teamIds = ensureUniqueStrings([...user.teamIds, data.teamId]);
+		if (!user.teams.some((membership) => membership.id === data.teamId)) {
+			user.teams.push({ id: data.teamId, role: "ADMIN" });
+		}
 		return { success: true };
 	});
 }
@@ -1035,8 +1227,25 @@ export async function removeTeamMemberDemo(data: { teamId: string; userId: strin
 		if (!user) {
 			throw new Error("User not found");
 		}
-		user.teamIds = user.teamIds.filter((teamId) => teamId !== data.teamId);
+		user.teams = user.teams.filter((membership) => membership.id !== data.teamId);
 		return { success: true };
+	});
+}
+
+export async function updateTeamMemberRoleDemo(data: { teamId: string; userId: string; role: DemoTeamMembershipRole }) {
+	return withState(async (state) => {
+		const user = getUserById(state, data.userId);
+		if (!user) {
+			throw new Error("User not found");
+		}
+
+		const membership = user.teams.find((candidate) => candidate.id === data.teamId);
+		if (!membership) {
+			throw new Error("Team member not found.");
+		}
+
+		membership.role = data.role;
+		return { teamId: data.teamId, userId: data.userId, role: data.role };
 	});
 }
 
@@ -1059,7 +1268,9 @@ export async function updateTeamDemo(data: { id: string; name?: string; imageUrl
 export async function addSlackUserAsTeamMemberDemo(data: { teamId: string; slackUserId: string }) {
 	return withState(async (state) => {
 		const user = upsertUserFromSlack(state, data.slackUserId);
-		user.teamIds = ensureUniqueStrings([...user.teamIds, data.teamId]);
+		if (!user.teams.some((membership) => membership.id === data.teamId)) {
+			user.teams.push({ id: data.teamId, role: "ADMIN" });
+		}
 		return { success: true, userId: user.id };
 	});
 }

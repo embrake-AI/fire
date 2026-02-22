@@ -72,6 +72,8 @@ export const client = pgTable("client", {
 	name: text("name").notNull(),
 	image: text("image"),
 	domains: text("domains").array().default([]),
+	defaultUserRole: userRole("default_user_role").notNull().default("VIEWER"),
+	autoCreateUsersWithSso: boolean("auto_create_users_with_sso").notNull().default(true),
 	isStartupEligible: boolean("is_startup_eligible").notNull(),
 	startupDiscountConsumedAt: timestamp("startup_discount_consumed_at"),
 	createdAt: timestamp("created_at").notNull().defaultNow(),

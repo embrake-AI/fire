@@ -1,8 +1,10 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/solid-router";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 
 export const Route = createFileRoute("/_authed/settings")({
 	component: SettingsLayout,
 	beforeLoad: ({ location }) => {
+		requireRoutePermission("settings.account.read")({ location });
 		if (location.pathname === "/settings" || location.pathname === "/settings/") {
 			throw redirect({ to: "/settings/account/profile" });
 		}

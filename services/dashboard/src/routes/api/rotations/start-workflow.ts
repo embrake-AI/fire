@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/solid-router";
 import { and, eq, inArray } from "drizzle-orm";
 import { start } from "workflow/api";
 import { auth } from "~/lib/auth/auth";
+import { forbiddenJsonResponse, isAllowed } from "~/lib/auth/authorization";
 import { db } from "~/lib/db";
 import { rotationScheduleWorkflow } from "~/workflows/rotation/schedule";
 
@@ -71,12 +72,16 @@ export const Route = createFileRoute("/api/rotations/start-workflow")({
 async function handleStartRotationWorkflow(request: Request): Promise<Response> {
 	const session = await auth.api.getSession({ headers: request.headers });
 	const clientId = session?.user?.clientId;
+	const role = session?.user?.role;
 
 	if (!clientId) {
 		return new Response(JSON.stringify({ error: "Unauthorized" }), {
 			status: 401,
 			headers: { "Content-Type": "application/json" },
 		});
+	}
+	if (!isAllowed(role, "rotationWorkflow.trigger")) {
+		return forbiddenJsonResponse();
 	}
 
 	const url = new URL(request.url);

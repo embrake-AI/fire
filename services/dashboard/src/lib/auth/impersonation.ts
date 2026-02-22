@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "~/lib/auth/auth";
 import { db } from "~/lib/db";
 import { authMiddleware } from "./auth-middleware";
+import { canStopImpersonation, requirePermission } from "./authorization";
 
 export function signCookie(val: string, secret: string) {
 	return `${val}.${createHmac("sha256", secret).update(val).digest("base64")}`;
@@ -21,15 +22,11 @@ function createRandomString(length: number) {
 }
 
 export const startImpersonatingAction = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("impersonation.write")])
 	.inputValidator((data: { userId: string }) => data)
 	.handler(async ({ data, context }) => {
 		const { userId } = data;
 		const { user: adminUser } = context;
-
-		if (adminUser.role !== "SUPER_ADMIN") {
-			throw new Error("Only SUPER_ADMIN can impersonate users");
-		}
 
 		const request = getRequest();
 		const session = await auth.api.getSession({
@@ -78,7 +75,11 @@ export const startImpersonatingAction = createServerFn({ method: "POST" })
 
 export const stopImpersonatingAction = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
-	.handler(async () => {
+	.handler(async ({ context }) => {
+		if (!canStopImpersonation(context)) {
+			throw new Error("Only SUPER_ADMIN or active impersonation sessions can stop impersonation");
+		}
+
 		const request = getRequest();
 		const session = await auth.api.getSession({
 			headers: request.headers,

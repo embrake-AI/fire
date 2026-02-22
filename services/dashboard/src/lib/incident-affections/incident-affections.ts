@@ -2,6 +2,7 @@ import { incidentAffection, incidentAffectionService, incidentAffectionUpdate, s
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { authMiddleware } from "../auth/auth-middleware";
+import { requirePermission } from "../auth/authorization";
 import { db } from "../db";
 import { signedFetch } from "../utils/server";
 
@@ -97,7 +98,7 @@ async function assertAffectionAccess(affectionId: string, clientId: string) {
 
 export const getIncidentAffection = createServerFn({ method: "GET" })
 	.inputValidator((data: { incidentId: string }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.read")])
 	.handler(async ({ data, context }) => {
 		const affection = await db.query.incidentAffection.findFirst({
 			where: {
@@ -178,7 +179,7 @@ export const getIncidentAffection = createServerFn({ method: "GET" })
 
 export const createIncidentAffection = createServerFn({ method: "POST" })
 	.inputValidator((data: CreateIncidentAffectionInput) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const title = data.title.trim();
 		const initialMessage = data.initialMessage.trim();
@@ -230,7 +231,7 @@ export const createIncidentAffection = createServerFn({ method: "POST" })
 
 export const addIncidentAffectionUpdate = createServerFn({ method: "POST" })
 	.inputValidator((data: AddIncidentAffectionUpdateInput) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const message = data.message.trim();
 		if (!message) {
@@ -260,7 +261,7 @@ export const addIncidentAffectionUpdate = createServerFn({ method: "POST" })
 
 export const updateIncidentAffectionServices = createServerFn({ method: "POST" })
 	.inputValidator((data: UpdateIncidentAffectionServicesInput) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const services = normalizeServices(data.services);
 		if (services.length === 0) {

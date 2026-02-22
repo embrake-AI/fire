@@ -4,9 +4,29 @@ import { useServerFn } from "@tanstack/solid-start";
 import { type Accessor, createMemo } from "solid-js";
 import { useClient } from "../client/client.hooks";
 import { runDemoAware } from "../demo/runtime";
-import { getCurrentUserDemo, getUsersDemo, updateUserDemo } from "../demo/store";
+import {
+	addWorkspaceUserFromSlackDemo,
+	getCurrentUserDemo,
+	getUsersDemo,
+	getWorkspaceUserProvisioningSettingsDemo,
+	getWorkspaceUsersForManagementDemo,
+	removeWorkspaceUserDemo,
+	updateUserDemo,
+	updateWorkspaceUserProvisioningSettingsDemo,
+	updateWorkspaceUserRoleDemo,
+} from "../demo/store";
 import { useSlackUsers } from "../useSlackUsers";
-import { getCurrentUser, getUsers, updateUser } from "./users";
+import {
+	addWorkspaceUserFromSlack,
+	getCurrentUser,
+	getUsers,
+	getWorkspaceUserProvisioningSettings,
+	getWorkspaceUsersForManagement,
+	removeWorkspaceUser,
+	updateUser,
+	updateWorkspaceUserProvisioningSettings,
+	updateWorkspaceUserRole,
+} from "./users";
 
 export function useUserBySlackId(slackId: Accessor<string>, options?: { enabled?: Accessor<boolean> }) {
 	const usersQuery = useUsers(options);
@@ -62,7 +82,7 @@ export function usePossibleSlackUsers(options?: { enabled: Accessor<boolean> }) 
 		const slackUsers = slackUsersQuery.data?.filter((u) => emailInDomains(u.email, clientQuery.data?.domains ?? []) && !users.some((user) => user.slackId === u.id)) ?? [];
 
 		return [
-			...users.map((u) => ({ id: u.id, name: u.name, avatar: u.image, type: "user" as const, teamIds: u.teamIds, slackId: u.slackId })),
+			...users.map((u) => ({ id: u.id, name: u.name, avatar: u.image, type: "user" as const, teams: u.teams, slackId: u.slackId })),
 			...slackUsers.map((u) => ({ id: u.id, name: u.name, avatar: u.avatar, type: "slack" as const })),
 		].sort((a, b) => a.name.localeCompare(b.name));
 	});
@@ -113,6 +133,165 @@ export function useUpdateUser() {
 		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["current-user"] });
+			queryClient.invalidateQueries({ queryKey: ["users"] });
+		},
+	}));
+}
+
+export type ManageableUserRole = "VIEWER" | "MEMBER" | "ADMIN";
+
+type WorkspaceUsersManagementResponse = Awaited<ReturnType<typeof getWorkspaceUsersForManagement>>;
+type WorkspaceUserProvisioningSettingsResponse = Awaited<ReturnType<typeof getWorkspaceUserProvisioningSettings>>;
+
+export function useWorkspaceUsersForManagement() {
+	const getWorkspaceUsersForManagementFn = useServerFn(getWorkspaceUsersForManagement);
+	return useQuery(() => ({
+		queryKey: ["workspace-users-management"],
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getWorkspaceUsersForManagementDemo(),
+				remote: () => getWorkspaceUsersForManagementFn(),
+			}),
+		staleTime: 60_000,
+	}));
+}
+
+export function useUpdateWorkspaceUserRole() {
+	const queryClient = useQueryClient();
+	const updateWorkspaceUserRoleFn = useServerFn(updateWorkspaceUserRole);
+	return useMutation(() => ({
+		mutationFn: (data: { userId: string; role: ManageableUserRole }) =>
+			runDemoAware({
+				demo: () => updateWorkspaceUserRoleDemo(data),
+				remote: () => updateWorkspaceUserRoleFn({ data }),
+			}),
+		onMutate: async (newData) => {
+			await queryClient.cancelQueries({ queryKey: ["workspace-users-management"] });
+			const previousUsers = queryClient.getQueryData<WorkspaceUsersManagementResponse>(["workspace-users-management"]);
+			queryClient.setQueryData<WorkspaceUsersManagementResponse>(["workspace-users-management"], (previous) =>
+				previous?.map((workspaceUser) =>
+					workspaceUser.id === newData.userId ? { ...workspaceUser, role: newData.role, isRoleEditable: newData.role !== "ADMIN" } : workspaceUser,
+				),
+			);
+			return { previousUsers };
+		},
+		onError: (_err, _variables, context) => {
+			if (context?.previousUsers) {
+				queryClient.setQueryData(["workspace-users-management"], context.previousUsers);
+			}
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["workspace-users-management"] });
+			queryClient.invalidateQueries({ queryKey: ["users"] });
+		},
+	}));
+}
+
+export function useWorkspaceUserProvisioningSettings() {
+	const getWorkspaceUserProvisioningSettingsFn = useServerFn(getWorkspaceUserProvisioningSettings);
+	return useQuery(() => ({
+		queryKey: ["workspace-user-provisioning-settings"],
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getWorkspaceUserProvisioningSettingsDemo(),
+				remote: () => getWorkspaceUserProvisioningSettingsFn(),
+			}),
+		staleTime: 60_000,
+	}));
+}
+
+export function useUpdateWorkspaceUserProvisioningSettings() {
+	const queryClient = useQueryClient();
+	const updateWorkspaceUserProvisioningSettingsFn = useServerFn(updateWorkspaceUserProvisioningSettings);
+	return useMutation(() => ({
+		mutationFn: (data: { defaultUserRole?: ManageableUserRole; autoCreateUsersWithSso?: boolean }) =>
+			runDemoAware({
+				demo: () => updateWorkspaceUserProvisioningSettingsDemo(data),
+				remote: () => updateWorkspaceUserProvisioningSettingsFn({ data }),
+			}),
+		onMutate: async (newData) => {
+			await queryClient.cancelQueries({ queryKey: ["workspace-user-provisioning-settings"] });
+			const previousSettings = queryClient.getQueryData<WorkspaceUserProvisioningSettingsResponse>(["workspace-user-provisioning-settings"]);
+			if (previousSettings) {
+				queryClient.setQueryData<WorkspaceUserProvisioningSettingsResponse>(["workspace-user-provisioning-settings"], {
+					...previousSettings,
+					...(newData.defaultUserRole !== undefined && { defaultUserRole: newData.defaultUserRole }),
+					...(newData.autoCreateUsersWithSso !== undefined && { autoCreateUsersWithSso: newData.autoCreateUsersWithSso }),
+				});
+			}
+			return { previousSettings };
+		},
+		onError: (_err, _variables, context) => {
+			if (context?.previousSettings) {
+				queryClient.setQueryData(["workspace-user-provisioning-settings"], context.previousSettings);
+			}
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["workspace-user-provisioning-settings"] });
+		},
+	}));
+}
+
+export function useAddWorkspaceUserFromSlack() {
+	const queryClient = useQueryClient();
+	const addWorkspaceUserFromSlackFn = useServerFn(addWorkspaceUserFromSlack);
+	return useMutation(() => ({
+		mutationFn: (data: { slackUserId: string; name: string; avatar?: string }) =>
+			runDemoAware({
+				demo: () => addWorkspaceUserFromSlackDemo({ slackUserId: data.slackUserId }),
+				remote: () => addWorkspaceUserFromSlackFn({ data: { slackUserId: data.slackUserId } }),
+			}),
+		onMutate: async (newData) => {
+			await queryClient.cancelQueries({ queryKey: ["workspace-users-management"] });
+			const previousUsers = queryClient.getQueryData<WorkspaceUsersManagementResponse>(["workspace-users-management"]);
+			const optimisticUser = {
+				id: `optimistic-${newData.slackUserId}`,
+				name: newData.name,
+				email: "",
+				image: newData.avatar ?? null,
+				slackId: newData.slackUserId,
+				role: "MEMBER" as const,
+				isRoleEditable: true,
+			};
+			queryClient.setQueryData<WorkspaceUsersManagementResponse>(["workspace-users-management"], (previous) =>
+				[...(previous ?? []), optimisticUser].sort((a, b) => a.name.localeCompare(b.name)),
+			);
+			return { previousUsers };
+		},
+		onError: (_err, _variables, context) => {
+			if (context?.previousUsers) {
+				queryClient.setQueryData(["workspace-users-management"], context.previousUsers);
+			}
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["workspace-users-management"] });
+			queryClient.invalidateQueries({ queryKey: ["users"] });
+		},
+	}));
+}
+
+export function useRemoveWorkspaceUser() {
+	const queryClient = useQueryClient();
+	const removeWorkspaceUserFn = useServerFn(removeWorkspaceUser);
+	return useMutation(() => ({
+		mutationFn: (data: { userId: string }) =>
+			runDemoAware({
+				demo: () => removeWorkspaceUserDemo(data),
+				remote: () => removeWorkspaceUserFn({ data }),
+			}),
+		onMutate: async ({ userId }) => {
+			await queryClient.cancelQueries({ queryKey: ["workspace-users-management"] });
+			const previousUsers = queryClient.getQueryData<WorkspaceUsersManagementResponse>(["workspace-users-management"]);
+			queryClient.setQueryData<WorkspaceUsersManagementResponse>(["workspace-users-management"], (previous) => previous?.filter((workspaceUser) => workspaceUser.id !== userId));
+			return { previousUsers };
+		},
+		onError: (_err, _variables, context) => {
+			if (context?.previousUsers) {
+				queryClient.setQueryData(["workspace-users-management"], context.previousUsers);
+			}
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["workspace-users-management"] });
 			queryClient.invalidateQueries({ queryKey: ["users"] });
 		},
 	}));

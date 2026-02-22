@@ -7,10 +7,12 @@ import { ResolvedIncidents } from "~/components/ResolvedIncidents";
 import StartIncidentButton from "~/components/StartIncidentButton";
 import { Card } from "~/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { getSeverity } from "~/lib/incident-config";
 import { useIncidents } from "~/lib/incidents/incidents.hooks";
 
 export const Route = createFileRoute("/_authed/")({
+	beforeLoad: requireRoutePermission("incident.read"),
 	component: IncidentsList,
 });
 

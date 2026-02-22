@@ -3,6 +3,7 @@ import { integration, isSlackIntegrationData, userIntegration } from "@fire/db/s
 import { createServerFn } from "@tanstack/solid-start";
 import { and, eq } from "drizzle-orm";
 import { authMiddleware } from "~/lib/auth/auth-middleware";
+import { requirePermission, requirePermissionFromData } from "~/lib/auth/authorization";
 import { db } from "~/lib/db";
 import { fetchSlackBotChannels, fetchSlackEmojis } from "~/lib/slack";
 import { mustGetEnv, sign } from "~/lib/utils/server";
@@ -14,7 +15,7 @@ import { mustGetEnv, sign } from "~/lib/utils/server";
  * Get the Slack integration status for the current user's client.
  */
 export const getWorkspaceIntegrations = createServerFn({ method: "GET" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.read")])
 	.handler(async ({ context }) => {
 		const { clientId } = context;
 
@@ -30,7 +31,7 @@ export const getWorkspaceIntegrations = createServerFn({ method: "GET" })
  * Get the Slack integration status for the current user.
  */
 export const getUserIntegrations = createServerFn({ method: "GET" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.read")])
 	.handler(async ({ context }) => {
 		const { userId } = context;
 
@@ -50,7 +51,12 @@ export const getUserIntegrations = createServerFn({ method: "GET" })
  * Returns the URL to redirect the user to for Slack installation.
  */
 export const getInstallUrl = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([
+		authMiddleware,
+		requirePermissionFromData<{ platform: "slack" | "notion" | "intercom"; type: "workspace" | "user" }>((input) =>
+			input.type === "workspace" ? "settings.workspace.write" : "settings.account.write",
+		),
+	])
 	.inputValidator((data: { platform: "slack" | "notion" | "intercom"; type: "workspace" | "user" }) => data)
 	.handler(async ({ context, data }) => {
 		const { userId, clientId } = context;
@@ -106,7 +112,7 @@ export const getInstallUrl = createServerFn({ method: "POST" })
  * Disconnect a workspace integration.
  */
 export const disconnectWorkspaceIntegration = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("settings.workspace.write")])
 	.inputValidator((data: "slack" | "notion" | "intercom") => data)
 	.handler(async ({ context, data }) => {
 		const { clientId } = context;
@@ -141,7 +147,7 @@ export const disconnectWorkspaceIntegration = createServerFn({ method: "POST" })
  * Disconnect a user integration.
  */
 export const disconnectUserIntegration = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("settings.account.write")])
 	.inputValidator((data: "slack") => data)
 	.handler(async ({ context, data }) => {
 		const { userId } = context;
@@ -166,7 +172,7 @@ export const disconnectUserIntegration = createServerFn({ method: "POST" })
  * Returns an empty array if Slack is not connected.
  */
 export const getSlackBotChannels = createServerFn({ method: "GET" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.read")])
 	.handler(async ({ context }) => {
 		const { clientId } = context;
 
@@ -193,7 +199,7 @@ export const getSlackBotChannels = createServerFn({ method: "GET" })
  * Returns an empty object if Slack is not connected.
  */
 export const getSlackEmojis = createServerFn({ method: "GET" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.read")])
 	.handler(async ({ context }) => {
 		const { clientId } = context;
 

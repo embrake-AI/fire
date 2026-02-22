@@ -2,10 +2,11 @@ import { service, serviceDependency, serviceTeamOwner, serviceUserOwner, team, t
 import { createServerFn } from "@tanstack/solid-start";
 import { and, eq, inArray } from "drizzle-orm";
 import { authMiddleware } from "../auth/auth-middleware";
+import { requirePermission } from "../auth/authorization";
 import { db } from "../db";
 
 export const getServices = createServerFn({ method: "GET" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.read")])
 	.handler(async ({ context }) => {
 		const services = await db.query.service.findMany({
 			columns: {
@@ -68,7 +69,7 @@ export type CreateServiceInput = {
 };
 
 export const createService = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: CreateServiceInput) => data)
 	.handler(async ({ data, context }) => {
 		const trimmedName = data.name?.trim() ?? "";
@@ -119,7 +120,7 @@ export const createService = createServerFn({ method: "POST" })
 	});
 
 export const updateService = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { id: string; name?: string; description?: string | null; prompt?: string | null; imageUrl?: string | null }) => data)
 	.handler(async ({ data, context }) => {
 		const updateFields: { name?: string; description?: string | null; prompt?: string | null; imageUrl?: string | null } = {};
@@ -157,7 +158,7 @@ export const updateService = createServerFn({ method: "POST" })
 	});
 
 export const deleteService = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { id: string }) => data)
 	.handler(async ({ data, context }) => {
 		const result = await db
@@ -173,7 +174,7 @@ export const deleteService = createServerFn({ method: "POST" })
 	});
 
 export const addServiceTeamOwner = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { serviceId: string; teamId: string }) => data)
 	.handler(async ({ data, context }) => {
 		const [existingService] = await db
@@ -199,7 +200,7 @@ export const addServiceTeamOwner = createServerFn({ method: "POST" })
 	});
 
 export const removeServiceTeamOwner = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { serviceId: string; teamId: string }) => data)
 	.handler(async ({ data, context }) => {
 		const [existingService] = await db
@@ -216,7 +217,7 @@ export const removeServiceTeamOwner = createServerFn({ method: "POST" })
 	});
 
 export const addServiceUserOwner = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { serviceId: string; userId: string }) => data)
 	.handler(async ({ data, context }) => {
 		const [existingService] = await db
@@ -259,7 +260,7 @@ export const addServiceUserOwner = createServerFn({ method: "POST" })
 	});
 
 export const removeServiceUserOwner = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { serviceId: string; userId: string }) => data)
 	.handler(async ({ data, context }) => {
 		const [existingService] = await db
@@ -276,7 +277,7 @@ export const removeServiceUserOwner = createServerFn({ method: "POST" })
 	});
 
 export const addServiceDependency = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { baseServiceId: string; affectedServiceId: string }) => data)
 	.handler(async ({ data, context }) => {
 		if (data.baseServiceId === data.affectedServiceId) {
@@ -298,7 +299,7 @@ export const addServiceDependency = createServerFn({ method: "POST" })
 	});
 
 export const removeServiceDependency = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { baseServiceId: string; affectedServiceId: string }) => data)
 	.handler(async ({ data, context }) => {
 		if (data.baseServiceId === data.affectedServiceId) {

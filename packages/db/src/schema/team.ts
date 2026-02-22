@@ -1,4 +1,4 @@
-import { pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { client, user } from "./auth";
 
 export const team = pgTable("team", {
@@ -11,6 +11,8 @@ export const team = pgTable("team", {
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const teamMemberRole = pgEnum("team_member_role", ["MEMBER", "ADMIN"]);
+
 export const teamMember = pgTable(
 	"team_member",
 	{
@@ -20,6 +22,7 @@ export const teamMember = pgTable(
 		userId: text("user_id")
 			.notNull()
 			.references(() => user.id, { onDelete: "cascade" }),
+		role: teamMemberRole("role").notNull().default("ADMIN"),
 	},
 	(t) => [primaryKey({ columns: [t.teamId, t.userId] })],
 );

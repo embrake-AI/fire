@@ -11,6 +11,7 @@ import { Button } from "~/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { showToast } from "~/components/ui/toast";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
 import { connectWorkspaceIntegrationDemo, disconnectWorkspaceIntegrationDemo, getIntercomWorkspaceConfigDemo, setIntercomStatusPageDemo } from "~/lib/demo/store";
 import { disconnectWorkspaceIntegration, getInstallUrl } from "~/lib/integrations/integrations";
@@ -19,6 +20,7 @@ import { getIntercomWorkspaceConfig, setIntercomStatusPage } from "~/lib/interco
 import { useStatusPages } from "~/lib/status-pages/status-pages.hooks";
 
 export const Route = createFileRoute("/_authed/settings/workspace/integrations")({
+	beforeLoad: requireRoutePermission("settings.workspace.read"),
 	component: WorkspaceIntegrationsPage,
 	validateSearch: (search) => ({
 		installed: typeof search.installed === "string" ? search.installed : undefined,

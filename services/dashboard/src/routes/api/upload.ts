@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/solid-router";
 import { auth } from "~/lib/auth/auth";
+import { forbiddenJsonResponse, isAllowed } from "~/lib/auth/authorization";
 import { uploadImageFile, uploadImageFromUrl } from "~/lib/blob";
 
 type UploadType = "user" | "client" | "team" | "service" | "status-page";
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/api/upload")({
 				const session = await auth.api.getSession({ headers: request.headers });
 				const userId = session?.user?.id;
 				const clientId = session?.user?.clientId;
+				const role = session?.user?.role;
 
 				if (!userId || !clientId) {
 					return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -47,6 +49,11 @@ export const Route = createFileRoute("/api/upload")({
 						status: 400,
 						headers: { "Content-Type": "application/json" },
 					});
+				}
+
+				const requiredPermission = rawType === "user" ? "settings.account.write" : rawType === "client" ? "settings.workspace.write" : ("catalog.write" as const);
+				if (!isAllowed(role, requiredPermission)) {
+					return forbiddenJsonResponse();
 				}
 
 				const resolvedPrefix = resolveUploadPrefix(rawType, clientId, userId);

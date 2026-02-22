@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { DateRangePicker } from "~/components/ui/date-range-picker";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
 import { getMetricsDemo } from "~/lib/demo/store";
 import { getMetrics } from "~/lib/incidents/incidents";
@@ -18,6 +19,7 @@ import { useUsers } from "~/lib/users/users.hooks";
 import { useSlackUsers } from "~/lib/useSlackUsers";
 
 export const Route = createFileRoute("/_authed/metrics/")({
+	beforeLoad: requireRoutePermission("metrics.read"),
 	component: AnalysisDashboard,
 });
 

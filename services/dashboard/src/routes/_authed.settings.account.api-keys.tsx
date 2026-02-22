@@ -12,6 +12,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { showToast } from "~/components/ui/toast";
 import { createApiKey, revokeApiKey } from "~/lib/api-keys/api-keys";
 import { useApiKeys } from "~/lib/api-keys/api-keys.hooks";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
 import { createApiKeyDemo, revokeApiKeyDemo } from "~/lib/demo/store";
 
@@ -30,6 +31,7 @@ function generateKeyName(): string {
 // --- Route ---
 
 export const Route = createFileRoute("/_authed/settings/account/api-keys")({
+	beforeLoad: requireRoutePermission("apiKeys.read"),
 	component: ApiKeysPage,
 });
 

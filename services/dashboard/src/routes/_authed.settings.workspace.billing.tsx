@@ -5,10 +5,12 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { showToast } from "~/components/ui/toast";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { useCreateBillingCheckoutSession, useCreateBillingPortalSession, useWorkspaceBillingSummary } from "~/lib/billing/billing.hooks";
 import { isDemoMode } from "~/lib/demo/mode";
 
 export const Route = createFileRoute("/_authed/settings/workspace/billing")({
+	beforeLoad: requireRoutePermission("settings.workspace.read"),
 	component: WorkspaceBillingPage,
 	validateSearch: (search) => ({
 		billing: typeof search.billing === "string" ? search.billing : undefined,

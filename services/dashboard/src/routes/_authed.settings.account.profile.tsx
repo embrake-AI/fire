@@ -7,10 +7,12 @@ import { Button } from "~/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { useUploadImage } from "~/lib/uploads/uploads.hooks";
 import { useCurrentUser, useUpdateUser } from "~/lib/users/users.hooks";
 
 export const Route = createFileRoute("/_authed/settings/account/profile")({
+	beforeLoad: requireRoutePermission("settings.account.read"),
 	component: AccountProfilePage,
 });
 

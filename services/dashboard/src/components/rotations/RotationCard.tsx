@@ -525,7 +525,7 @@ function AddAssigneePickerContent(props: AddAssigneePickerContentProps) {
 		const filteredUsers = props.teamId
 			? users().filter((u) => {
 					if (u.type === "user") {
-						return u.teamIds.includes(props.teamId!);
+						return u.teams.some((membership) => membership.id === props.teamId);
 					} else {
 						// If a teamId is provided, we only allow existent users of that team
 						return false;

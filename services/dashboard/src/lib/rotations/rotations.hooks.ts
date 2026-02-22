@@ -445,7 +445,7 @@ export function useAddSlackUserAsRotationAssignee(options?: { onSuccess?: () => 
 						name: optimisticData.name ?? "Slack user",
 						email: "",
 						image: optimisticData.avatar ?? null,
-						teamIds: [],
+						teams: [],
 						slackId: slackUserId,
 					},
 				];

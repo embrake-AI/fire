@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as UnauthorizedRouteImport } from './routes/unauthorized'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
@@ -39,6 +40,7 @@ import { Route as AuthedTeamsTeamIdUsersRouteImport } from './routes/_authed.tea
 import { Route as AuthedTeamsTeamIdServicesRouteImport } from './routes/_authed.teams/$teamId.services'
 import { Route as AuthedTeamsTeamIdRotationsRouteImport } from './routes/_authed.teams/$teamId.rotations'
 import { Route as AuthedTeamsTeamIdEntryPointsRouteImport } from './routes/_authed.teams/$teamId.entry-points'
+import { Route as AuthedSettingsWorkspaceUsersRouteImport } from './routes/_authed.settings.workspace.users'
 import { Route as AuthedSettingsWorkspaceProfileRouteImport } from './routes/_authed.settings.workspace.profile'
 import { Route as AuthedSettingsWorkspaceIntegrationsRouteImport } from './routes/_authed.settings.workspace.integrations'
 import { Route as AuthedSettingsWorkspaceBillingRouteImport } from './routes/_authed.settings.workspace.billing'
@@ -46,6 +48,11 @@ import { Route as AuthedSettingsAccountProfileRouteImport } from './routes/_auth
 import { Route as AuthedSettingsAccountIntegrationsRouteImport } from './routes/_authed.settings.account.integrations'
 import { Route as AuthedSettingsAccountApiKeysRouteImport } from './routes/_authed.settings.account.api-keys'
 
+const UnauthorizedRoute = UnauthorizedRouteImport.update({
+  id: '/unauthorized',
+  path: '/unauthorized',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -204,6 +211,12 @@ const AuthedTeamsTeamIdEntryPointsRoute =
     path: '/entry-points',
     getParentRoute: () => AuthedTeamsTeamIdRoute,
   } as any)
+const AuthedSettingsWorkspaceUsersRoute =
+  AuthedSettingsWorkspaceUsersRouteImport.update({
+    id: '/workspace/users',
+    path: '/workspace/users',
+    getParentRoute: () => AuthedSettingsRoute,
+  } as any)
 const AuthedSettingsWorkspaceProfileRoute =
   AuthedSettingsWorkspaceProfileRouteImport.update({
     id: '/workspace/profile',
@@ -243,6 +256,7 @@ const AuthedSettingsAccountApiKeysRoute =
 
 export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
+  '/unauthorized': typeof UnauthorizedRoute
   '/catalog': typeof AuthedCatalogRouteWithChildren
   '/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
@@ -273,6 +287,7 @@ export interface FileRoutesByFullPath {
   '/settings/workspace/billing': typeof AuthedSettingsWorkspaceBillingRoute
   '/settings/workspace/integrations': typeof AuthedSettingsWorkspaceIntegrationsRoute
   '/settings/workspace/profile': typeof AuthedSettingsWorkspaceProfileRoute
+  '/settings/workspace/users': typeof AuthedSettingsWorkspaceUsersRoute
   '/teams/$teamId/entry-points': typeof AuthedTeamsTeamIdEntryPointsRoute
   '/teams/$teamId/rotations': typeof AuthedTeamsTeamIdRotationsRoute
   '/teams/$teamId/services': typeof AuthedTeamsTeamIdServicesRoute
@@ -280,6 +295,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
+  '/unauthorized': typeof UnauthorizedRoute
   '/catalog': typeof AuthedCatalogRouteWithChildren
   '/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
@@ -310,6 +326,7 @@ export interface FileRoutesByTo {
   '/settings/workspace/billing': typeof AuthedSettingsWorkspaceBillingRoute
   '/settings/workspace/integrations': typeof AuthedSettingsWorkspaceIntegrationsRoute
   '/settings/workspace/profile': typeof AuthedSettingsWorkspaceProfileRoute
+  '/settings/workspace/users': typeof AuthedSettingsWorkspaceUsersRoute
   '/teams/$teamId/entry-points': typeof AuthedTeamsTeamIdEntryPointsRoute
   '/teams/$teamId/rotations': typeof AuthedTeamsTeamIdRotationsRoute
   '/teams/$teamId/services': typeof AuthedTeamsTeamIdServicesRoute
@@ -319,6 +336,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
   '/login': typeof LoginRoute
+  '/unauthorized': typeof UnauthorizedRoute
   '/_authed/catalog': typeof AuthedCatalogRouteWithChildren
   '/_authed/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
@@ -349,6 +367,7 @@ export interface FileRoutesById {
   '/_authed/settings/workspace/billing': typeof AuthedSettingsWorkspaceBillingRoute
   '/_authed/settings/workspace/integrations': typeof AuthedSettingsWorkspaceIntegrationsRoute
   '/_authed/settings/workspace/profile': typeof AuthedSettingsWorkspaceProfileRoute
+  '/_authed/settings/workspace/users': typeof AuthedSettingsWorkspaceUsersRoute
   '/_authed/teams/$teamId/entry-points': typeof AuthedTeamsTeamIdEntryPointsRoute
   '/_authed/teams/$teamId/rotations': typeof AuthedTeamsTeamIdRotationsRoute
   '/_authed/teams/$teamId/services': typeof AuthedTeamsTeamIdServicesRoute
@@ -358,6 +377,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/login'
+    | '/unauthorized'
     | '/catalog'
     | '/settings'
     | '/api/upload'
@@ -388,6 +408,7 @@ export interface FileRouteTypes {
     | '/settings/workspace/billing'
     | '/settings/workspace/integrations'
     | '/settings/workspace/profile'
+    | '/settings/workspace/users'
     | '/teams/$teamId/entry-points'
     | '/teams/$teamId/rotations'
     | '/teams/$teamId/services'
@@ -395,6 +416,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
+    | '/unauthorized'
     | '/catalog'
     | '/settings'
     | '/api/upload'
@@ -425,6 +447,7 @@ export interface FileRouteTypes {
     | '/settings/workspace/billing'
     | '/settings/workspace/integrations'
     | '/settings/workspace/profile'
+    | '/settings/workspace/users'
     | '/teams/$teamId/entry-points'
     | '/teams/$teamId/rotations'
     | '/teams/$teamId/services'
@@ -433,6 +456,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authed'
     | '/login'
+    | '/unauthorized'
     | '/_authed/catalog'
     | '/_authed/settings'
     | '/api/upload'
@@ -463,6 +487,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/workspace/billing'
     | '/_authed/settings/workspace/integrations'
     | '/_authed/settings/workspace/profile'
+    | '/_authed/settings/workspace/users'
     | '/_authed/teams/$teamId/entry-points'
     | '/_authed/teams/$teamId/rotations'
     | '/_authed/teams/$teamId/services'
@@ -472,6 +497,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   LoginRoute: typeof LoginRoute
+  UnauthorizedRoute: typeof UnauthorizedRoute
   ApiUploadRoute: typeof ApiUploadRoute
   AuthErrorRoute: typeof AuthErrorRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -485,6 +511,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/solid-router' {
   interface FileRoutesByPath {
+    '/unauthorized': {
+      id: '/unauthorized'
+      path: '/unauthorized'
+      fullPath: '/unauthorized'
+      preLoaderRoute: typeof UnauthorizedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -695,6 +728,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AuthedTeamsTeamIdEntryPointsRouteImport
       parentRoute: typeof AuthedTeamsTeamIdRoute
     }
+    '/_authed/settings/workspace/users': {
+      id: '/_authed/settings/workspace/users'
+      path: '/workspace/users'
+      fullPath: '/settings/workspace/users'
+      preLoaderRoute: typeof AuthedSettingsWorkspaceUsersRouteImport
+      parentRoute: typeof AuthedSettingsRoute
+    }
     '/_authed/settings/workspace/profile': {
       id: '/_authed/settings/workspace/profile'
       path: '/workspace/profile'
@@ -767,6 +807,7 @@ interface AuthedSettingsRouteChildren {
   AuthedSettingsWorkspaceBillingRoute: typeof AuthedSettingsWorkspaceBillingRoute
   AuthedSettingsWorkspaceIntegrationsRoute: typeof AuthedSettingsWorkspaceIntegrationsRoute
   AuthedSettingsWorkspaceProfileRoute: typeof AuthedSettingsWorkspaceProfileRoute
+  AuthedSettingsWorkspaceUsersRoute: typeof AuthedSettingsWorkspaceUsersRoute
 }
 
 const AuthedSettingsRouteChildren: AuthedSettingsRouteChildren = {
@@ -778,6 +819,7 @@ const AuthedSettingsRouteChildren: AuthedSettingsRouteChildren = {
   AuthedSettingsWorkspaceIntegrationsRoute:
     AuthedSettingsWorkspaceIntegrationsRoute,
   AuthedSettingsWorkspaceProfileRoute: AuthedSettingsWorkspaceProfileRoute,
+  AuthedSettingsWorkspaceUsersRoute: AuthedSettingsWorkspaceUsersRoute,
 }
 
 const AuthedSettingsRouteWithChildren = AuthedSettingsRoute._addFileChildren(
@@ -833,6 +875,7 @@ const AuthedRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   LoginRoute: LoginRoute,
+  UnauthorizedRoute: UnauthorizedRoute,
   ApiUploadRoute: ApiUploadRoute,
   AuthErrorRoute: AuthErrorRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

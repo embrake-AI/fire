@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "~/components/ui/dialog";
 import { Skeleton } from "~/components/ui/skeleton";
 import { showToast } from "~/components/ui/toast";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { isDemoMode } from "~/lib/demo/mode";
 import { runDemoAware } from "~/lib/demo/runtime";
 import { getAnalysisByIdDemo, getIncidentsDemo, getNotionPagesDemo } from "~/lib/demo/store";
@@ -104,6 +105,7 @@ function AnalysisSkeleton() {
 }
 
 export const Route = createFileRoute("/_authed/metrics/$incidentId")({
+	beforeLoad: requireRoutePermission("metrics.read"),
 	component: AnalysisDetail,
 });
 

@@ -14,6 +14,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
 import { getSlackSelectableChannelsDemo } from "~/lib/demo/store";
 import { getRotationSelectableSlackChannels, type getRotations } from "~/lib/rotations/rotations";
@@ -40,6 +41,7 @@ import { usePossibleSlackUsers, useUsers } from "~/lib/users/users.hooks";
 import { cn } from "~/lib/utils/client";
 
 export const Route = createFileRoute("/_authed/rotations/$rotationId")({
+	beforeLoad: requireRoutePermission("catalog.read"),
 	component: RotationDetailsPage,
 });
 
@@ -129,7 +131,7 @@ function RotationHeader(props: { rotation: Rotation }) {
 		const usersById = new Map(usersQuery.data.map((user) => [user.id, user]));
 		const eligible = new Set<string>();
 		for (const team of teamsQuery.data) {
-			const hasAllMembers = props.rotation.assignees.every((assignee) => usersById.get(assignee.id)?.teamIds.includes(team.id));
+			const hasAllMembers = props.rotation.assignees.every((assignee) => usersById.get(assignee.id)?.teams.some((membership) => membership.id === team.id));
 			if (hasAllMembers) {
 				eligible.add(team.id);
 			}
@@ -1351,7 +1353,7 @@ function AssigneePickerContent(props: {
 		const filteredUsers = props.teamId
 			? users().filter((u) => {
 					if (u.type === "user") {
-						return u.teamIds.includes(props.teamId!);
+						return u.teams.some((membership) => membership.id === props.teamId);
 					} else {
 						return false;
 					}

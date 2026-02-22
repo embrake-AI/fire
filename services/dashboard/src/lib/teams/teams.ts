@@ -3,16 +3,18 @@ import type { SlackIntegrationData } from "@fire/db/schema";
 import { client, integration, team, teamMember, user } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, count, eq } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { authMiddleware } from "../auth/auth-middleware";
+import { assertTeamAdminOrWorkspaceCatalogWriter, requirePermission } from "../auth/authorization";
 import { uploadImageFromUrl } from "../blob";
 import { db } from "../db";
+import { createUserFacingError } from "../errors/user-facing-error";
 import { fetchSlackUserById } from "../slack";
+import { createWorkspaceUser } from "../users/users.server";
 
 export const getTeams = createServerFn({
 	method: "GET",
 })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.read")])
 	.handler(async ({ context }) => {
 		const teamsWithMemberCount = await db
 			.select({
@@ -31,7 +33,7 @@ export const getTeams = createServerFn({
 	});
 
 export const createTeam = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { name: string }) => data)
 	.handler(async ({ data, context }) => {
 		const [newTeam] = await db
@@ -52,7 +54,7 @@ export const createTeam = createServerFn({ method: "POST" })
 	});
 
 export const deleteTeam = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { id: string }) => data)
 	.handler(async ({ data, context }) => {
 		const result = await db
@@ -71,20 +73,14 @@ export const addTeamMember = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { teamId: string; userId: string }) => data)
 	.handler(async ({ data, context }) => {
-		const [existingTeam] = await db
-			.select()
-			.from(team)
-			.where(and(eq(team.id, data.teamId), eq(team.clientId, context.clientId)));
-
-		if (!existingTeam) {
-			throw new Error("Team not found");
-		}
+		await assertTeamAdminOrWorkspaceCatalogWriter(context, data.teamId);
 
 		await db
 			.insert(teamMember)
 			.values({
 				teamId: data.teamId,
 				userId: data.userId,
+				role: "ADMIN",
 			})
 			.onConflictDoNothing();
 
@@ -95,22 +91,40 @@ export const removeTeamMember = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { teamId: string; userId: string }) => data)
 	.handler(async ({ data, context }) => {
-		const [existingTeam] = await db
-			.select()
-			.from(team)
-			.where(and(eq(team.id, data.teamId), eq(team.clientId, context.clientId)));
-
-		if (!existingTeam) {
-			throw new Error("Team not found");
-		}
+		await assertTeamAdminOrWorkspaceCatalogWriter(context, data.teamId);
 
 		await db.delete(teamMember).where(and(eq(teamMember.teamId, data.teamId), eq(teamMember.userId, data.userId)));
 
 		return { success: true };
 	});
 
-export const updateTeam = createServerFn({ method: "POST" })
+export const updateTeamMemberRole = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
+	.inputValidator((data: { teamId: string; userId: string; role: "MEMBER" | "ADMIN" }) => data)
+	.handler(async ({ data, context }) => {
+		await assertTeamAdminOrWorkspaceCatalogWriter(context, data.teamId);
+
+		const [updatedMembership] = await db
+			.update(teamMember)
+			.set({
+				role: data.role,
+			})
+			.where(and(eq(teamMember.teamId, data.teamId), eq(teamMember.userId, data.userId)))
+			.returning({
+				teamId: teamMember.teamId,
+				userId: teamMember.userId,
+				role: teamMember.role,
+			});
+
+		if (!updatedMembership) {
+			throw createUserFacingError("Team member not found.");
+		}
+
+		return updatedMembership;
+	});
+
+export const updateTeam = createServerFn({ method: "POST" })
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { id: string; name?: string; imageUrl?: string | null }) => data)
 	.handler(async ({ data, context }) => {
 		const updateFields: { name?: string; imageUrl?: string | null } = {};
@@ -142,14 +156,7 @@ export const addSlackUserAsTeamMember = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { teamId: string; slackUserId: string }) => data)
 	.handler(async ({ data, context }) => {
-		const [existingTeam] = await db
-			.select()
-			.from(team)
-			.where(and(eq(team.id, data.teamId), eq(team.clientId, context.clientId)));
-
-		if (!existingTeam) {
-			throw new Error("Team not found");
-		}
+		await assertTeamAdminOrWorkspaceCatalogWriter(context, data.teamId);
 
 		const [clientWithSlackIntegration] = await db
 			.select()
@@ -199,9 +206,7 @@ export const addSlackUserAsTeamMember = createServerFn({ method: "POST" })
 					imageUrl = await uploadImageFromUrl(slackUser.avatar, `users/${context.clientId}`);
 				}
 
-				userId = nanoid();
-				await tx.insert(user).values({
-					id: userId,
+				const createdUser = await createWorkspaceUser(tx, {
 					name: slackUser.name,
 					email: slackUser.email,
 					emailVerified: true,
@@ -209,6 +214,7 @@ export const addSlackUserAsTeamMember = createServerFn({ method: "POST" })
 					clientId: context.clientId,
 					slackId: data.slackUserId,
 				});
+				userId = createdUser.id;
 			}
 
 			await tx
@@ -216,6 +222,7 @@ export const addSlackUserAsTeamMember = createServerFn({ method: "POST" })
 				.values({
 					teamId: data.teamId,
 					userId,
+					role: "ADMIN",
 				})
 				.onConflictDoNothing();
 		});

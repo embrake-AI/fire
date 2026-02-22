@@ -3,13 +3,14 @@ import { incidentAnalysis, integration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, eq } from "drizzle-orm";
 import { authMiddleware } from "../auth/auth-middleware";
+import { requirePermission } from "../auth/authorization";
 import { db } from "../db";
 import { createUserFacingError } from "../errors/user-facing-error";
 import type { IncidentAction, IncidentAnalysis } from "../incidents/incidents";
 import { createNotionPage, postMortemToNotionBlocks, searchNotionPages } from "./notion";
 
 export const getNotionPages = createServerFn({ method: "GET" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.inputValidator((data: { query?: string }) => data)
 	.handler(async ({ context, data }) => {
 		const [notionIntegration] = await db
@@ -31,7 +32,7 @@ export const getNotionPages = createServerFn({ method: "GET" })
 	});
 
 export const exportToNotion = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.inputValidator((data: { incidentId: string; parentPageId: string }) => data)
 	.handler(async ({ context, data }) => {
 		const [notionIntegration] = await db

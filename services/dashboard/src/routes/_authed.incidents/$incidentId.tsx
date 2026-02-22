@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/u
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Textarea } from "~/components/ui/textarea";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
 import { getIncidentByIdDemo, getIncidentsDemo } from "~/lib/demo/store";
 import type { AffectionImpact, AffectionStatus, IncidentAffectionData } from "~/lib/incident-affections/incident-affections";
@@ -148,6 +149,7 @@ function IncidentSkeleton() {
 }
 
 export const Route = createFileRoute("/_authed/incidents/$incidentId")({
+	beforeLoad: requireRoutePermission("incident.read"),
 	component: IncidentDetail,
 });
 

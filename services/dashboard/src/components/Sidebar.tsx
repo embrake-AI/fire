@@ -60,6 +60,7 @@ const settingsNavItems: SettingsNavItemType[] = [
 	{ label: "Profile", to: "/settings/workspace/profile", section: "workspace", icon: Building2 },
 	{ label: "API Keys", to: "/settings/account/api-keys", section: "account", icon: Key },
 	{ label: "Integrations", to: "/settings/workspace/integrations", section: "workspace", icon: Plug },
+	{ label: "User Management", to: "/settings/workspace/users", section: "workspace", icon: Users },
 	{ label: "Billing", to: "/settings/workspace/billing", section: "workspace", icon: CreditCard },
 ];
 
@@ -345,8 +346,8 @@ function MyTeamsSection(props: { collapsed: Accessor<boolean> }) {
 	const userTeams = createMemo(() => {
 		const currentUser = usersQuery.data?.find((u) => u.id === auth.userId);
 		if (!currentUser) return [];
-		const teamIds = new Set([...currentUser.teamIds]);
-		return teamsQuery.data?.filter((t) => teamIds.has(t.id)) ?? [];
+		const teamIdSet = new Set(currentUser.teams.map((membership) => membership.id));
+		return teamsQuery.data?.filter((t) => teamIdSet.has(t.id)) ?? [];
 	});
 
 	return (

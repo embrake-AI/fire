@@ -4,15 +4,16 @@ import type { SlackIntegrationData } from "@fire/db/schema";
 import { client, entryPoint, integration, rotation, rotationOverride, rotationWithAssignee, user } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq, exists, gt, inArray, lt, lte, type SQL, sql } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { resumeHook, start } from "workflow/api";
 import { getRotationScheduleWakeToken, type RotationScheduleWakeAction, rotationScheduleWorkflow } from "~/workflows/rotation/schedule";
 import { authMiddleware } from "../auth/auth-middleware";
+import { assertTeamAdminOrWorkspaceCatalogWriter, isWorkspaceCatalogWriter, requirePermission } from "../auth/authorization";
 import { queueBillingSeatSync } from "../billing/billing.server";
 import { uploadImageFromUrl } from "../blob";
 import { db } from "../db";
 import { createUserFacingError } from "../errors/user-facing-error";
 import { fetchSlackSelectableChannels, fetchSlackUserById, joinSlackChannel } from "../slack";
+import { createWorkspaceUser } from "../users/users.server";
 
 export type { SlackUser } from "../slack";
 
@@ -32,10 +33,40 @@ async function notifyRotationScheduleWorkflow(rotationId: string, signal: { dele
 	}
 }
 
+type RotationWriteContext = {
+	role?: Parameters<typeof isWorkspaceCatalogWriter>[0];
+	clientId: string;
+	userId: string;
+};
+
+async function getRotationForWrite(rotationId: string, clientId: string) {
+	const [existingRotation] = await db
+		.select({
+			id: rotation.id,
+			teamId: rotation.teamId,
+			clientId: rotation.clientId,
+		})
+		.from(rotation)
+		.where(and(eq(rotation.id, rotationId), eq(rotation.clientId, clientId)))
+		.limit(1);
+
+	if (!existingRotation) {
+		throw createUserFacingError("Rotation not found.");
+	}
+
+	return existingRotation;
+}
+
+async function assertRotationWriteAccess(context: RotationWriteContext, rotationId: string) {
+	const existingRotation = await getRotationForWrite(rotationId, context.clientId);
+	await assertTeamAdminOrWorkspaceCatalogWriter(context, existingRotation.teamId);
+	return existingRotation;
+}
+
 export const getRotations = createServerFn({
 	method: "GET",
 })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.read")])
 	.handler(async ({ context }) => {
 		const isInUseSubquery = exists(db.select().from(entryPoint).where(eq(entryPoint.rotationId, rotationWithAssignee.id))).mapWith(Boolean);
 
@@ -115,7 +146,7 @@ export const getRotations = createServerFn({
 	});
 
 export const getRotationSelectableSlackChannels = createServerFn({ method: "GET" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.read")])
 	.handler(async ({ context }) => {
 		const [slackIntegration] = await db
 			.select({ data: integration.data })
@@ -141,6 +172,10 @@ export const createRotation = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { name: string; shiftLength: ShiftLength; anchorAt?: Date; teamId?: string }) => data)
 	.handler(async ({ data, context }) => {
+		if (!isWorkspaceCatalogWriter(context.role)) {
+			await assertTeamAdminOrWorkspaceCatalogWriter(context, data.teamId);
+		}
+
 		let anchorAt = data.anchorAt;
 		if (!anchorAt) {
 			if (data.shiftLength === "1 day") {
@@ -182,6 +217,8 @@ export const deleteRotation = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { id: string }) => data)
 	.handler(async ({ data, context }) => {
+		await assertRotationWriteAccess(context, data.id);
+
 		// Check if rotation is used in any entry point
 		const usedInEntryPoints = await db
 			.select({ id: entryPoint.id })
@@ -212,6 +249,8 @@ export const updateRotationName = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { id: string; name: string }) => data)
 	.handler(async ({ data, context }) => {
+		await assertRotationWriteAccess(context, data.id);
+
 		const [updated] = await db
 			.update(rotation)
 			.set({ name: data.name })
@@ -226,7 +265,7 @@ export const updateRotationName = createServerFn({ method: "POST" })
 	});
 
 export const updateRotationTeam = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { id: string; teamId: string | null }) => data)
 	.handler(async ({ data, context }) => {
 		const existingRotation = await db.query.rotation.findFirst({
@@ -293,15 +332,7 @@ export const updateRotationSlackChannel = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { id: string; slackChannelId: string | null }) => data)
 	.handler(async ({ data, context }) => {
-		const [existingRotation] = await db
-			.select({ id: rotation.id })
-			.from(rotation)
-			.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)))
-			.limit(1);
-
-		if (!existingRotation) {
-			throw createUserFacingError("This rotation no longer exists.");
-		}
+		await assertRotationWriteAccess(context, data.id);
 
 		if (data.slackChannelId) {
 			const [slackIntegration] = await db
@@ -359,13 +390,7 @@ export const updateRotationShiftLength = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { id: string; shiftLength: string }) => data)
 	.handler(async ({ data, context }) => {
-		const [existingRotation] = await db
-			.select()
-			.from(rotation)
-			.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)));
-		if (!existingRotation) {
-			throw new Error("Rotation not found");
-		}
+		await assertRotationWriteAccess(context, data.id);
 
 		const { rows } = await db.execute<InferFromSQL<ReturnType<typeof getUpdateIntervalSQL>>>(getUpdateIntervalSQL(data.id, data.shiftLength));
 		const result = rows[0];
@@ -382,13 +407,7 @@ export const addRotationAssignee = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { rotationId: string; assigneeId: string }) => data)
 	.handler(async ({ data, context }) => {
-		const [existingRotation] = await db
-			.select()
-			.from(rotation)
-			.where(and(eq(rotation.id, data.rotationId), eq(rotation.clientId, context.clientId)));
-		if (!existingRotation) {
-			throw new Error("Rotation not found");
-		}
+		await assertRotationWriteAccess(context, data.rotationId);
 
 		await db.execute(getAddAssigneeSQL(data.rotationId, data.assigneeId));
 
@@ -402,14 +421,7 @@ export const addSlackUserAsRotationAssignee = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { rotationId: string; slackUserId: string }) => data)
 	.handler(async ({ data, context }) => {
-		const [existingRotation] = await db
-			.select()
-			.from(rotation)
-			.where(and(eq(rotation.id, data.rotationId), eq(rotation.clientId, context.clientId)));
-
-		if (!existingRotation) {
-			throw new Error("Rotation not found");
-		}
+		await assertRotationWriteAccess(context, data.rotationId);
 
 		const [clientWithSlackIntegration] = await db
 			.select()
@@ -459,9 +471,7 @@ export const addSlackUserAsRotationAssignee = createServerFn({ method: "POST" })
 					imageUrl = await uploadImageFromUrl(slackUser.avatar, `users/${context.clientId}`);
 				}
 
-				userId = nanoid();
-				await tx.insert(user).values({
-					id: userId,
+				const createdUser = await createWorkspaceUser(tx, {
 					name: slackUser.name,
 					email: slackUser.email,
 					emailVerified: true,
@@ -469,6 +479,7 @@ export const addSlackUserAsRotationAssignee = createServerFn({ method: "POST" })
 					clientId: context.clientId,
 					slackId: data.slackUserId,
 				});
+				userId = createdUser.id;
 			}
 
 			await tx.execute(getAddAssigneeSQL(data.rotationId, userId));
@@ -484,14 +495,7 @@ export const reorderRotationAssignee = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { rotationId: string; assigneeId: string; newPosition: number }) => data)
 	.handler(async ({ data, context }) => {
-		const [existingRotation] = await db
-			.select()
-			.from(rotation)
-			.where(and(eq(rotation.id, data.rotationId), eq(rotation.clientId, context.clientId)));
-
-		if (!existingRotation) {
-			throw new Error("Rotation not found");
-		}
+		await assertRotationWriteAccess(context, data.rotationId);
 
 		await db.transaction(async (tx) => {
 			await tx.execute(sql`set constraints "rotation_member_rotation_position_idx" deferred`);
@@ -507,14 +511,7 @@ export const removeRotationAssignee = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { rotationId: string; assigneeId: string }) => data)
 	.handler(async ({ data, context }) => {
-		const [existingRotation] = await db
-			.select()
-			.from(rotation)
-			.where(and(eq(rotation.id, data.rotationId), eq(rotation.clientId, context.clientId)));
-
-		if (!existingRotation) {
-			throw new Error("Rotation not found");
-		}
+		await assertRotationWriteAccess(context, data.rotationId);
 
 		await db.transaction(async (tx) => {
 			await tx.execute(sql`set constraints "rotation_member_rotation_position_idx" deferred`);
@@ -528,7 +525,7 @@ export const removeRotationAssignee = createServerFn({ method: "POST" })
 	});
 
 export const getRotationOverrides = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.read")])
 	.inputValidator((data: { rotationId: string; startAt: Date; endAt: Date }) => data)
 	.handler(async ({ data, context }) => {
 		if (data.startAt >= data.endAt) {
@@ -567,14 +564,7 @@ export const createRotationOverride = createServerFn({ method: "POST" })
 			throw new Error("Invalid override range");
 		}
 
-		const [existingRotation] = await db
-			.select()
-			.from(rotation)
-			.where(and(eq(rotation.id, data.rotationId), eq(rotation.clientId, context.clientId)));
-
-		if (!existingRotation) {
-			throw new Error("Rotation not found");
-		}
+		await assertRotationWriteAccess(context, data.rotationId);
 
 		const [createdOverride] = await db
 			.insert(rotationOverride)
@@ -595,14 +585,7 @@ export const setRotationOverride = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { rotationId: string; assigneeId: string }) => data)
 	.handler(async ({ data, context }) => {
-		const [existingRotation] = await db
-			.select()
-			.from(rotation)
-			.where(and(eq(rotation.id, data.rotationId), eq(rotation.clientId, context.clientId)));
-
-		if (!existingRotation) {
-			throw new Error("Rotation not found");
-		}
+		await assertRotationWriteAccess(context, data.rotationId);
 
 		await db.execute(getSetOverrideSQL(data.rotationId, data.assigneeId));
 		await notifyRotationScheduleWorkflow(data.rotationId, { action: "set_override" });
@@ -614,14 +597,7 @@ export const clearRotationOverride = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { rotationId: string; overrideId: string }) => data)
 	.handler(async ({ data, context }) => {
-		const [existingRotation] = await db
-			.select()
-			.from(rotation)
-			.where(and(eq(rotation.id, data.rotationId), eq(rotation.clientId, context.clientId)));
-
-		if (!existingRotation) {
-			throw new Error("Rotation not found");
-		}
+		await assertRotationWriteAccess(context, data.rotationId);
 
 		const deleted = await db
 			.delete(rotationOverride)
@@ -645,14 +621,7 @@ export const updateRotationOverride = createServerFn({ method: "POST" })
 			throw new Error("Invalid override range");
 		}
 
-		const [existingRotation] = await db
-			.select()
-			.from(rotation)
-			.where(and(eq(rotation.id, data.rotationId), eq(rotation.clientId, context.clientId)));
-
-		if (!existingRotation) {
-			throw new Error("Rotation not found");
-		}
+		await assertRotationWriteAccess(context, data.rotationId);
 
 		const updated = await db
 			.update(rotationOverride)
@@ -677,13 +646,7 @@ export const updateRotationAnchor = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { id: string; anchorAt: Date }) => data)
 	.handler(async ({ data, context }) => {
-		const [existingRotation] = await db
-			.select()
-			.from(rotation)
-			.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)));
-		if (!existingRotation) {
-			throw new Error("Rotation not found");
-		}
+		await assertRotationWriteAccess(context, data.id);
 
 		const { rows } = await db.execute<InferFromSQL<ReturnType<typeof getUpdateAnchorSQL>>>(getUpdateAnchorSQL(data.id, data.anchorAt));
 		const result = rows[0];

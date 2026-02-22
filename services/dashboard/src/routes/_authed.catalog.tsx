@@ -2,10 +2,12 @@ import { createFileRoute, Link, Outlet, redirect, useLocation } from "@tanstack/
 import { BookOpen } from "lucide-solid";
 import { createMemo } from "solid-js";
 import { Tabs, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 
 export const Route = createFileRoute("/_authed/catalog")({
 	component: CatalogLayout,
 	beforeLoad: ({ location }) => {
+		requireRoutePermission("catalog.read")({ location });
 		if (location.pathname === "/catalog") {
 			throw redirect({ to: "/catalog/teams" });
 		}

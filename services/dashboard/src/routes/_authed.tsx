@@ -36,6 +36,13 @@ function AuthedLayout() {
 		const auth = getAuth();
 		return !!auth?.userId && !!auth?.clientId;
 	});
+	const role = createMemo(() => {
+		if (isDemoMode()) {
+			return "ADMIN" as const;
+		}
+		return getAuth()?.role;
+	});
+	const shouldLoadShellData = createMemo(() => authed() && role() !== "VIEWER");
 	const [showDemoWelcome, setShowDemoWelcome] = createSignal(false);
 
 	const dismissDemoWelcome = () => {
@@ -47,10 +54,11 @@ function AuthedLayout() {
 		setShowDemoWelcome(true);
 	});
 	// app-wide interesting data. Kept to make things feel more responsive.
-	useEntryPoints({ enabled: authed });
-	const integrationsQuery = useIntegrations({ type: "workspace", enabled: authed });
+	useEntryPoints({ enabled: shouldLoadShellData });
+	const integrationsQuery = useIntegrations({ type: "workspace", enabled: shouldLoadShellData });
 
 	const slackConnected = createMemo(() => {
+		if (role() === "VIEWER") return true;
 		if (isDemoMode()) return true;
 		if (!integrationsQuery.data) return true; // Don't block while loading
 		return integrationsQuery.data.some((i) => i.platform === "slack");
@@ -58,14 +66,23 @@ function AuthedLayout() {
 
 	return (
 		<Show when={authed()}>
-			<div class="flex flex-1 min-h-0">
-				<Sidebar />
-				<main class="flex-1 flex flex-col overflow-y-auto">
-					<Outlet />
-				</main>
-			</div>
-			<Show when={!slackConnected()}>
-				<SlackConnectionRequired />
+			<Show
+				when={role() !== "VIEWER"}
+				fallback={
+					<main class="flex-1 flex flex-col overflow-y-auto">
+						<Outlet />
+					</main>
+				}
+			>
+				<div class="flex flex-1 min-h-0">
+					<Sidebar />
+					<main class="flex-1 flex flex-col overflow-y-auto">
+						<Outlet />
+					</main>
+				</div>
+				<Show when={!slackConnected()}>
+					<SlackConnectionRequired />
+				</Show>
 			</Show>
 			<Show when={showDemoWelcome()}>
 				<DemoModeWelcomeDialog onDismiss={dismissDemoWelcome} />

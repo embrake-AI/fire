@@ -30,6 +30,7 @@ import { Label } from "~/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { useClient } from "~/lib/client/client.hooks";
 import { isDemoMode } from "~/lib/demo/mode";
 import { useServices } from "~/lib/services/services.hooks";
@@ -45,6 +46,7 @@ import { useUploadImage } from "~/lib/uploads/uploads.hooks";
 import { cn } from "~/lib/utils/client";
 
 export const Route = createFileRoute("/_authed/status-page/$statusPageId")({
+	beforeLoad: requireRoutePermission("catalog.read"),
 	component: StatusPageDetailsPage,
 });
 

@@ -2,9 +2,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
 import { runDemoAware } from "../demo/runtime";
-import { addSlackUserAsTeamMemberDemo, addTeamMemberDemo, createTeamDemo, deleteTeamDemo, getTeamsDemo, removeTeamMemberDemo, updateTeamDemo } from "../demo/store";
+import {
+	addSlackUserAsTeamMemberDemo,
+	addTeamMemberDemo,
+	createTeamDemo,
+	deleteTeamDemo,
+	getTeamsDemo,
+	removeTeamMemberDemo,
+	updateTeamDemo,
+	updateTeamMemberRoleDemo,
+} from "../demo/store";
 import type { getUsers } from "../users/users";
-import { addSlackUserAsTeamMember, addTeamMember, createTeam, deleteTeam, getTeams, removeTeamMember, updateTeam } from "./teams";
+import { addSlackUserAsTeamMember, addTeamMember, createTeam, deleteTeam, getTeams, removeTeamMember, updateTeam, updateTeamMemberRole } from "./teams";
 
 type GetTeamsResponse = Awaited<ReturnType<typeof getTeams>>;
 type GetUsersResponse = Awaited<ReturnType<typeof getUsers>>;
@@ -171,7 +180,16 @@ export function useAddTeamMember(options?: { onSuccess?: () => void; onError?: (
 			const previousUsers = queryClient.getQueryData<GetUsersResponse>(["users"]);
 			const previousTeams = queryClient.getQueryData<GetTeamsResponse>(["teams"]);
 
-			queryClient.setQueryData<GetUsersResponse>(["users"], (previousUsers) => previousUsers?.map((u) => (u.id === userId ? { ...u, teamIds: [...u.teamIds, teamId] } : u)));
+			queryClient.setQueryData<GetUsersResponse>(["users"], (previousUsers) =>
+				previousUsers?.map((u) =>
+					u.id === userId
+						? {
+								...u,
+								teams: u.teams.some((membership) => membership.id === teamId) ? u.teams : [...u.teams, { id: teamId, role: "ADMIN" }],
+							}
+						: u,
+				),
+			);
 			queryClient.setQueryData<GetTeamsResponse>(["teams"], (previousTeams) => previousTeams?.map((t) => (t.id === teamId ? { ...t, memberCount: t.memberCount + 1 } : t)));
 
 			return { previousUsers, previousTeams };
@@ -212,7 +230,7 @@ export function useRemoveTeamMember(options?: { onSuccess?: () => void; onError?
 			const previousTeams = queryClient.getQueryData<GetTeamsResponse>(["teams"]);
 
 			queryClient.setQueryData<GetUsersResponse>(["users"], (previousUsers) =>
-				previousUsers?.map((u) => (u.id === userId ? { ...u, teamIds: u.teamIds.filter((t) => t !== teamId) } : u)),
+				previousUsers?.map((u) => (u.id === userId ? { ...u, teams: u.teams.filter((membership) => membership.id !== teamId) } : u)),
 			);
 			queryClient.setQueryData<GetTeamsResponse>(["teams"], (previousTeams) =>
 				previousTeams?.map((t) => (t.id === teamId ? { ...t, memberCount: Math.max(0, t.memberCount - 1) } : t)),
@@ -265,7 +283,7 @@ export function useAddSlackUserAsTeamMember(options?: { onSuccess?: () => void; 
 					name,
 					email: "",
 					image: avatar ?? null,
-					teamIds: [teamId],
+					teams: [{ id: teamId, role: "ADMIN" as const }],
 					connectedIntegrations: [],
 					disabled: false,
 					slackId: slackUserId,
@@ -291,6 +309,48 @@ export function useAddSlackUserAsTeamMember(options?: { onSuccess?: () => void; 
 			}
 			if (context?.previousTeams) {
 				queryClient.setQueryData(["teams"], context.previousTeams);
+			}
+			options?.onError?.();
+		},
+	}));
+}
+
+export function useUpdateTeamMemberRole(options?: { onSuccess?: () => void; onError?: () => void }) {
+	const queryClient = useQueryClient();
+	const updateTeamMemberRoleFn = useServerFn(updateTeamMemberRole);
+
+	return useMutation(() => ({
+		mutationFn: (data: { teamId: string; userId: string; role: "MEMBER" | "ADMIN" }) =>
+			runDemoAware({
+				demo: () => updateTeamMemberRoleDemo(data),
+				remote: () => updateTeamMemberRoleFn({ data }),
+			}),
+
+		onMutate: async ({ teamId, userId, role }) => {
+			await queryClient.cancelQueries({ queryKey: ["users"] });
+
+			const previousUsers = queryClient.getQueryData<GetUsersResponse>(["users"]);
+			queryClient.setQueryData<GetUsersResponse>(["users"], (users) =>
+				users?.map((currentUser) => {
+					if (currentUser.id !== userId) return currentUser;
+					return {
+						...currentUser,
+						teams: currentUser.teams.map((membership) => (membership.id === teamId ? { ...membership, role } : membership)),
+					};
+				}),
+			);
+
+			return { previousUsers };
+		},
+
+		onSuccess: () => {
+			options?.onSuccess?.();
+			queryClient.invalidateQueries({ queryKey: ["users"] });
+		},
+
+		onError: (_err, _variables, context) => {
+			if (context?.previousUsers) {
+				queryClient.setQueryData(["users"], context.previousUsers);
 			}
 			options?.onError?.();
 		},

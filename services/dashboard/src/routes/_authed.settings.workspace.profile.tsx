@@ -6,10 +6,12 @@ import { Button } from "~/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { useClient, useUpdateClient } from "~/lib/client/client.hooks";
 import { useUploadImage } from "~/lib/uploads/uploads.hooks";
 
 export const Route = createFileRoute("/_authed/settings/workspace/profile")({
+	beforeLoad: requireRoutePermission("settings.workspace.read"),
 	component: WorkspaceProfilePage,
 });
 

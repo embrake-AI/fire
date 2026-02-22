@@ -7,8 +7,9 @@ import { UserAvatar } from "~/components/UserAvatar";
 import { Button } from "~/components/ui/button";
 import { ConfigCard, ConfigCardActions, ConfigCardContent, ConfigCardDeleteButton, ConfigCardRow, ConfigCardTitle } from "~/components/ui/config-card";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
-import { useAddSlackUserAsTeamMember, useAddTeamMember, useRemoveTeamMember } from "~/lib/teams/teams.hooks";
+import { useAddSlackUserAsTeamMember, useAddTeamMember, useRemoveTeamMember, useUpdateTeamMemberRole } from "~/lib/teams/teams.hooks";
 import { usePossibleSlackUsers, useUsers } from "~/lib/users/users.hooks";
 
 export const Route = createFileRoute("/_authed/teams/$teamId/users")({
@@ -29,12 +30,17 @@ function TeamUsers(props: { teamId: string }) {
 	const usersQuery = useUsers();
 	const [members, setMembers] = createStore<NonNullable<typeof usersQuery.data>>([]);
 	createEffect(() => {
-		setMembers(reconcile(usersQuery.data?.filter((u) => u.teamIds.includes(props.teamId)) ?? [], { key: "id" }));
+		setMembers(reconcile(usersQuery.data?.filter((u) => u.teams.some((membership) => membership.id === props.teamId)) ?? [], { key: "id" }));
 	});
 	const removeMemberMutation = useRemoveTeamMember();
+	const updateRoleMutation = useUpdateTeamMemberRole();
 
 	const handleRemoveMember = async (userId: string) => {
 		removeMemberMutation.mutate({ teamId: props.teamId, userId });
+	};
+
+	const handleUpdateRole = (userId: string, role: "MEMBER" | "ADMIN") => {
+		updateRoleMutation.mutate({ teamId: props.teamId, userId, role });
 	};
 
 	return (
@@ -66,6 +72,20 @@ function TeamUsers(props: { teamId: string }) {
 									<ConfigCardContent>
 										<ConfigCardTitle>{member.name}</ConfigCardTitle>
 									</ConfigCardContent>
+									<Select
+										value={member.teams.find((membership) => membership.id === props.teamId)?.role ?? "MEMBER"}
+										onChange={(value) => {
+											if (!value) return;
+											handleUpdateRole(member.id, value as "MEMBER" | "ADMIN");
+										}}
+										options={["ADMIN", "MEMBER"]}
+										itemComponent={(props) => <SelectItem item={props.item}>{props.item.rawValue === "ADMIN" ? "Admin" : "Member"}</SelectItem>}
+									>
+										<SelectTrigger class="h-8 w-28">
+											<SelectValue<string>>{(state) => (state.selectedOption() === "ADMIN" ? "Admin" : "Member")}</SelectValue>
+										</SelectTrigger>
+										<SelectContent />
+									</Select>
 									<ConfigCardActions animated>
 										<ConfigCardDeleteButton
 											onDelete={() => handleRemoveMember(member.id)}
@@ -91,7 +111,7 @@ function AddMemberSelector(props: { teamId: string }) {
 	const combinedEntities = createMemo(() => {
 		return possibleSlackUsers().filter((user) => {
 			if (user.type === "user") {
-				return !user.teamIds.includes(props.teamId);
+				return !user.teams.some((membership) => membership.id === props.teamId);
 			}
 			return true;
 		});

@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/u
 import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { useTeams, useUpdateTeam } from "~/lib/teams/teams.hooks";
 import { useUploadImage } from "~/lib/uploads/uploads.hooks";
 import { cn } from "~/lib/utils/client";
@@ -14,6 +15,7 @@ import { cn } from "~/lib/utils/client";
 export const Route = createFileRoute("/_authed/teams/$teamId")({
 	component: TeamDetailsLayout,
 	beforeLoad: ({ location, params }) => {
+		requireRoutePermission("catalog.read")({ location });
 		const pathname = location.pathname.endsWith("/") ? location.pathname.slice(0, -1) : location.pathname;
 		if (pathname === `/teams/${params.teamId}`) {
 			throw redirect({ to: "/teams/$teamId/users", params });

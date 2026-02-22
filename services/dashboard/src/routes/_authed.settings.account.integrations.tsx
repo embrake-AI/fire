@@ -8,12 +8,14 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { showToast } from "~/components/ui/toast";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
 import { connectUserIntegrationDemo, disconnectUserIntegrationDemo } from "~/lib/demo/store";
 import { disconnectUserIntegration, getInstallUrl } from "~/lib/integrations/integrations";
 import { useIntegrations } from "~/lib/integrations/integrations.hooks";
 
 export const Route = createFileRoute("/_authed/settings/account/integrations")({
+	beforeLoad: requireRoutePermission("settings.account.read"),
 	component: AccountIntegrationsPage,
 });
 

@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "~/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Skeleton } from "~/components/ui/skeleton";
+import { requireRoutePermission } from "~/lib/auth/route-guards";
 import type { getServices } from "~/lib/services/services";
 import {
 	useAddServiceDependency,
@@ -29,6 +30,7 @@ import { useUploadImage } from "~/lib/uploads/uploads.hooks";
 import { useUsers } from "~/lib/users/users.hooks";
 
 export const Route = createFileRoute("/_authed/services/$serviceId")({
+	beforeLoad: requireRoutePermission("catalog.read"),
 	component: ServiceDetailsPage,
 });
 
@@ -264,7 +266,7 @@ function ServiceOwnersPanel(props: { service: Service }) {
 	const eligibleUsers = createMemo(() => {
 		const ownerTeamIds = new Set(props.service.teamOwnerIds);
 		if (ownerTeamIds.size === 0) return [];
-		return usersQuery.data?.filter((user) => user.teamIds.some((teamId) => ownerTeamIds.has(teamId)) && !props.service.userOwnerIds.includes(user.id)) ?? [];
+		return usersQuery.data?.filter((user) => user.teams.some((membership) => ownerTeamIds.has(membership.id)) && !props.service.userOwnerIds.includes(user.id)) ?? [];
 	});
 	const eligibleUserEntities = createMemo(() => eligibleUsers().map((user) => ({ id: user.id, name: user.name, avatar: user.image })));
 

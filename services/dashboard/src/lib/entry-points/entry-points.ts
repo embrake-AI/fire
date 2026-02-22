@@ -3,16 +3,18 @@ import type { SlackIntegrationData } from "@fire/db/schema";
 import { client, entryPoint, integration, rotation, user } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { authMiddleware } from "../auth/auth-middleware";
+import { assertRolePermission, assertTeamAdminOrWorkspaceCatalogWriter, requirePermission } from "../auth/authorization";
 import { uploadImageFromUrl } from "../blob";
 import { db } from "../db";
+import { createUserFacingError } from "../errors/user-facing-error";
 import { fetchSlackUserById, fetchSlackUsers } from "../slack";
+import { createWorkspaceUser } from "../users/users.server";
 
 export const getEntryPoints = createServerFn({
 	method: "GET",
 })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.read")])
 	.handler(async ({ context }) => {
 		const entryPointsWithRotation = await db
 			.select({
@@ -58,7 +60,7 @@ export const getEntryPoints = createServerFn({
 export const getSlackUsers = createServerFn({
 	method: "GET",
 })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.read")])
 	.handler(async ({ context }) => {
 		const [slackIntegration] = await db
 			.select()
@@ -76,10 +78,51 @@ export const getSlackUsers = createServerFn({
 export type CreateEntryPointInput = { type: "user"; userId: string; prompt?: string } | { type: "rotation"; rotationId: string; prompt?: string; teamId?: string };
 export type CreateSlackUserEntryPointInput = { slackUserId: string; prompt?: string };
 
+async function getRotationForEntryPoint(rotationId: string, clientId: string) {
+	const [existingRotation] = await db
+		.select({
+			id: rotation.id,
+			teamId: rotation.teamId,
+		})
+		.from(rotation)
+		.where(and(eq(rotation.id, rotationId), eq(rotation.clientId, clientId)))
+		.limit(1);
+
+	if (!existingRotation) {
+		throw createUserFacingError("Rotation not found.");
+	}
+
+	return existingRotation;
+}
+
+async function assertEntryPointWriteAccess(
+	context: {
+		clientId: string;
+		userId: string;
+		role: Parameters<typeof assertRolePermission>[0];
+	},
+	currentEntryPoint: { type: "user" | "rotation"; rotationId: string | null },
+) {
+	if (currentEntryPoint.type !== "rotation" || !currentEntryPoint.rotationId) {
+		assertRolePermission(context.role, "catalog.write");
+		return;
+	}
+
+	const existingRotation = await getRotationForEntryPoint(currentEntryPoint.rotationId, context.clientId);
+	await assertTeamAdminOrWorkspaceCatalogWriter(context, existingRotation.teamId);
+}
+
 export const createEntryPoint = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: CreateEntryPointInput) => data)
 	.handler(async ({ data, context }) => {
+		if (data.type === "user") {
+			assertRolePermission(context.role, "catalog.write");
+		} else {
+			const existingRotation = await getRotationForEntryPoint(data.rotationId, context.clientId);
+			await assertTeamAdminOrWorkspaceCatalogWriter(context, existingRotation.teamId);
+		}
+
 		const existing = await db.select().from(entryPoint).where(eq(entryPoint.clientId, context.clientId)).limit(1);
 		const isFirst = existing.length === 0;
 
@@ -113,7 +156,7 @@ export const createEntryPoint = createServerFn({ method: "POST" })
 	});
 
 export const createEntryPointFromSlackUser = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: CreateSlackUserEntryPointInput) => data)
 	.handler(async ({ data, context }) => {
 		const existing = await db.select().from(entryPoint).where(eq(entryPoint.clientId, context.clientId)).limit(1);
@@ -167,9 +210,7 @@ export const createEntryPointFromSlackUser = createServerFn({ method: "POST" })
 					imageUrl = await uploadImageFromUrl(slackUser.avatar, `users/${context.clientId}`);
 				}
 
-				userId = nanoid();
-				await tx.insert(user).values({
-					id: userId,
+				const createdUser = await createWorkspaceUser(tx, {
 					name: slackUser.name,
 					email: slackUser.email,
 					emailVerified: true,
@@ -177,6 +218,7 @@ export const createEntryPointFromSlackUser = createServerFn({ method: "POST" })
 					clientId: context.clientId,
 					slackId: data.slackUserId,
 				});
+				userId = createdUser.id;
 			}
 
 			return tx
@@ -209,6 +251,24 @@ export const deleteEntryPoint = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { id: string }) => data)
 	.handler(async ({ data, context }) => {
+		const [existingEntryPoint] = await db
+			.select({
+				type: entryPoint.type,
+				rotationId: entryPoint.rotationId,
+			})
+			.from(entryPoint)
+			.where(and(eq(entryPoint.id, data.id), eq(entryPoint.clientId, context.clientId)))
+			.limit(1);
+
+		if (!existingEntryPoint) {
+			throw createUserFacingError("Entry point not found.");
+		}
+
+		await assertEntryPointWriteAccess(context, {
+			type: existingEntryPoint.type,
+			rotationId: existingEntryPoint.rotationId,
+		});
+
 		await db.transaction(async (tx) => {
 			const result = await tx
 				.delete(entryPoint)
@@ -240,6 +300,24 @@ export const updateEntryPointPrompt = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; prompt: string }) => data)
 	.middleware([authMiddleware])
 	.handler(async ({ data, context }) => {
+		const [existingEntryPoint] = await db
+			.select({
+				type: entryPoint.type,
+				rotationId: entryPoint.rotationId,
+			})
+			.from(entryPoint)
+			.where(and(eq(entryPoint.id, data.id), eq(entryPoint.clientId, context.clientId)))
+			.limit(1);
+
+		if (!existingEntryPoint) {
+			throw createUserFacingError("Entry point not found.");
+		}
+
+		await assertEntryPointWriteAccess(context, {
+			type: existingEntryPoint.type,
+			rotationId: existingEntryPoint.rotationId,
+		});
+
 		const [updated] = await db
 			.update(entryPoint)
 			.set({ prompt: data.prompt })
@@ -264,6 +342,24 @@ export const setFallbackEntryPoint = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
 	.inputValidator((data: { id: string }) => data)
 	.handler(async ({ data, context }) => {
+		const [existingEntryPoint] = await db
+			.select({
+				type: entryPoint.type,
+				rotationId: entryPoint.rotationId,
+			})
+			.from(entryPoint)
+			.where(and(eq(entryPoint.id, data.id), eq(entryPoint.clientId, context.clientId)))
+			.limit(1);
+
+		if (!existingEntryPoint) {
+			throw createUserFacingError("Entry point not found.");
+		}
+
+		await assertEntryPointWriteAccess(context, {
+			type: existingEntryPoint.type,
+			rotationId: existingEntryPoint.rotationId,
+		});
+
 		await db.transaction(async (tx) => {
 			await tx
 				.update(entryPoint)

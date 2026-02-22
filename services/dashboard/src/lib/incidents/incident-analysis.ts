@@ -2,12 +2,13 @@ import { incidentAction, incidentAnalysis } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
 import { and, eq, exists } from "drizzle-orm";
 import { authMiddleware } from "../auth/auth-middleware";
+import { requirePermission } from "../auth/authorization";
 import { db } from "../db";
 import { createUserFacingError } from "../errors/user-facing-error";
 
 export const updateAnalysisImpact = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; impact: string }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const [updated] = await db
 			.update(incidentAnalysis)
@@ -20,7 +21,7 @@ export const updateAnalysisImpact = createServerFn({ method: "POST" })
 
 export const updateAnalysisRootCause = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; rootCause: string }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const [updated] = await db
 			.update(incidentAnalysis)
@@ -33,7 +34,7 @@ export const updateAnalysisRootCause = createServerFn({ method: "POST" })
 
 export const updateAnalysisTimeline = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; timeline: { created_at: string; text: string }[] }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const filtered = data.timeline.filter((item) => item.text.trim().length > 0).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 		const [updated] = await db
@@ -47,7 +48,7 @@ export const updateAnalysisTimeline = createServerFn({ method: "POST" })
 
 export const updateIncidentAction = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; description: string }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const ownsAction = exists(
 			db
@@ -66,7 +67,7 @@ export const updateIncidentAction = createServerFn({ method: "POST" })
 
 export const deleteIncidentAction = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const ownsAction = exists(
 			db
@@ -84,7 +85,7 @@ export const deleteIncidentAction = createServerFn({ method: "POST" })
 
 export const createIncidentAction = createServerFn({ method: "POST" })
 	.inputValidator((data: { incidentId: string; description: string }) => data)
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const [analysis] = await db
 			.select({ id: incidentAnalysis.id })

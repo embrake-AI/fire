@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/solid-start";
 import type { InferSelectModel } from "drizzle-orm";
 import { and, eq, inArray } from "drizzle-orm";
 import { authMiddleware } from "../auth/auth-middleware";
+import { requirePermission } from "../auth/authorization";
 import { db } from "../db";
 import { addDomainToVercel, getDomainConfig, removeDomainFromVercel } from "../vercel/vercel-domains";
 import { isApexDomain, isValidDomain, normalizeDomain } from "./status-pages.utils";
@@ -56,7 +57,7 @@ function validateSlug(slug: string): string | null {
 }
 
 export const getStatusPages = createServerFn({ method: "GET" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.read")])
 	.handler(async ({ context }) => {
 		const pages = await db.query.statusPage.findMany({
 			where: {
@@ -129,7 +130,7 @@ export const getStatusPages = createServerFn({ method: "GET" })
 	});
 
 export const createStatusPage = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { name: string; slug: string }) => data)
 	.handler(async ({ context, data }) => {
 		const trimmedName = data.name.trim();
@@ -184,7 +185,7 @@ export const createStatusPage = createServerFn({ method: "POST" })
 	});
 
 export const updateStatusPage = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator(
 		(data: {
 			id: string;
@@ -328,7 +329,7 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 	});
 
 export const deleteStatusPage = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { id: string }) => data)
 	.handler(async ({ context, data }) => {
 		const result = await db
@@ -344,7 +345,7 @@ export const deleteStatusPage = createServerFn({ method: "POST" })
 	});
 
 export const updateStatusPageServices = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { id: string; serviceIds: string[] }) => data)
 	.handler(async ({ context, data }) => {
 		const page = await db.query.statusPage.findFirst({
@@ -397,7 +398,7 @@ export const updateStatusPageServices = createServerFn({ method: "POST" })
 	});
 
 export const updateStatusPageServiceDescription = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { statusPageId: string; serviceId: string; description: string | null }) => data)
 	.handler(async ({ context, data }) => {
 		const page = await db.query.statusPage.findFirst({
@@ -428,7 +429,7 @@ export const updateStatusPageServiceDescription = createServerFn({ method: "POST
 	});
 
 export const verifyCustomDomain = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
+	.middleware([authMiddleware, requirePermission("catalog.write")])
 	.inputValidator((data: { id: string }) => data)
 	.handler(async ({ context, data }) => {
 		const page = await db.query.statusPage.findFirst({

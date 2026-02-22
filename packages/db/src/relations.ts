@@ -205,6 +205,10 @@ export const relations = defineRelations(schema, (r) => ({
 		}),
 	},
 	user: {
+		teamMember: r.many.teamMember({
+			from: r.user.id,
+			to: r.teamMember.userId,
+		}),
 		teams: r.many.team({
 			from: r.user.id.through(r.teamMember.userId),
 			to: r.team.id.through(r.teamMember.teamId),

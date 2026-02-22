@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/solid-query";
 import { isDemoMode } from "../demo/mode";
+import { createUserFacingError } from "../errors/user-facing-error";
 
 export type UploadImageType = "user" | "client" | "team" | "service" | "status-page";
 
@@ -10,6 +11,12 @@ type UploadImageInput = {
 
 type UploadImageResult = {
 	imageUrl: string;
+};
+
+type UploadErrorResponse = {
+	error?: string;
+	userMessage?: string;
+	code?: string;
 };
 
 type UploadImageOptions = {
@@ -64,7 +71,17 @@ async function uploadImage(type: UploadImageType, { file, url }: UploadImageInpu
 	});
 
 	if (!response.ok) {
-		throw new Error("Upload failed");
+		let payload: UploadErrorResponse | null = null;
+
+		try {
+			payload = (await response.json()) as UploadErrorResponse;
+		} catch {
+			payload = null;
+		}
+
+		const message = payload?.userMessage?.trim() || payload?.error?.trim() || (response.status === 403 ? "You don't have permission to perform this action." : "Upload failed");
+		const code = payload?.code;
+		throw createUserFacingError(message, code ? { code } : undefined);
 	}
 
 	const data = (await response.json()) as { url: string };
