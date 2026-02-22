@@ -3,6 +3,10 @@ import * as schema from "./schema";
 
 export const relations = defineRelations(schema, (r) => ({
 	client: {
+		billing: r.one.clientBilling({
+			from: r.client.id,
+			to: r.clientBilling.clientId,
+		}),
 		integrations: r.many.integration({
 			from: r.client.id,
 			to: r.integration.clientId,
@@ -26,6 +30,12 @@ export const relations = defineRelations(schema, (r) => ({
 		statusPages: r.many.statusPage({
 			from: r.client.id,
 			to: r.statusPage.clientId,
+		}),
+	},
+	clientBilling: {
+		client: r.one.client({
+			from: r.clientBilling.clientId,
+			to: r.client.id,
 		}),
 	},
 	team: {

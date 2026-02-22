@@ -1,5 +1,22 @@
 import { Link, useLocation, useNavigate } from "@tanstack/solid-router";
-import { ArrowLeft, BarChart3, BookOpen, Building2, ChevronDown, Flame, Key, LogOut, PanelLeftClose, PanelLeftOpen, Plug, RefreshCw, Settings, User, Users } from "lucide-solid";
+import {
+	ArrowLeft,
+	BarChart3,
+	BookOpen,
+	Building2,
+	ChevronDown,
+	CreditCard,
+	Flame,
+	Key,
+	LogOut,
+	PanelLeftClose,
+	PanelLeftOpen,
+	Plug,
+	RefreshCw,
+	Settings,
+	User,
+	Users,
+} from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, For, on, onMount, Show, Suspense } from "solid-js";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
@@ -40,9 +57,10 @@ type SettingsNavItemType = {
 const settingsNavItems: SettingsNavItemType[] = [
 	{ label: "Profile", to: "/settings/account/profile", section: "account", icon: User },
 	{ label: "Connected Accounts", to: "/settings/account/integrations", section: "account", icon: Plug },
-	{ label: "API Keys", to: "/settings/account/api-keys", section: "account", icon: Key },
 	{ label: "Profile", to: "/settings/workspace/profile", section: "workspace", icon: Building2 },
+	{ label: "API Keys", to: "/settings/account/api-keys", section: "account", icon: Key },
 	{ label: "Integrations", to: "/settings/workspace/integrations", section: "workspace", icon: Plug },
+	{ label: "Billing", to: "/settings/workspace/billing", section: "workspace", icon: CreditCard },
 ];
 
 function createStoredBoolean(key: string, defaultValue: boolean) {

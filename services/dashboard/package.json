@@ -36,6 +36,7 @@
 		"nanoid": "^5.1.6",
 		"nitro": "^3.0.1-alpha.1",
 		"pg": "catalog:",
+		"stripe": "^18.3.0",
 		"solid-js": "^1.9.10",
 		"tailwind-merge": "^3.4.0",
 		"workflow": "4.1.0-beta.60"

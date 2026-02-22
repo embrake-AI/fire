@@ -20,12 +20,9 @@ import { useStatusPages } from "~/lib/status-pages/status-pages.hooks";
 
 export const Route = createFileRoute("/_authed/settings/workspace/integrations")({
 	component: WorkspaceIntegrationsPage,
-	validateSearch: (search) => {
-		if ("installed" in search) {
-			return { installed: search.installed };
-		}
-		return {};
-	},
+	validateSearch: (search) => ({
+		installed: typeof search.installed === "string" ? search.installed : undefined,
+	}),
 });
 
 type WorkspacePlatform = "slack" | "notion" | "intercom";
@@ -88,8 +85,7 @@ function IntegrationsContent() {
 	});
 
 	onMount(() => {
-		const search = params();
-		const installed = "installed" in search ? (search.installed as string) : null;
+		const installed = params().installed ?? null;
 		if (installed) {
 			queryClient.invalidateQueries({ queryKey: ["users"] });
 			showToast({
@@ -97,7 +93,7 @@ function IntegrationsContent() {
 				description: `${installed} has been successfully connected to your workspace.`,
 				variant: "success",
 			});
-			navigate({ to: ".", search: {}, replace: true });
+			navigate({ to: ".", search: { installed: undefined }, replace: true });
 		}
 	});
 

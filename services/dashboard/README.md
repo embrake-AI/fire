@@ -39,6 +39,14 @@ bun install
 bun run dev
 ```
 
+## Stripe Billing Environment
+
+Set these env vars for workspace billing:
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_SEAT_PRICE_ID`
+
 ## License
 
 MIT

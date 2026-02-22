@@ -1,5 +1,6 @@
 export * from "./api-key";
 export * from "./auth";
+export * from "./client-billing";
 export * from "./entry-point";
 export * from "./ignore";
 export * from "./incident";
