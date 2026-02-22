@@ -19,7 +19,7 @@ export const Route = createFileRoute("/api/billing/webhook")({
 				const payload = await request.text();
 				let event: Stripe.Event;
 				try {
-					event = getStripeClient().webhooks.constructEvent(payload, signature, mustGetEnv("STRIPE_WEBHOOK_SECRET"));
+					event = await getStripeClient().webhooks.constructEventAsync(payload, signature, mustGetEnv("STRIPE_WEBHOOK_SECRET"));
 				} catch (error) {
 					const message = error instanceof Error ? error.message : "Invalid webhook payload";
 					return new Response(JSON.stringify({ error: message }), {
