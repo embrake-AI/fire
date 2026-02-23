@@ -444,6 +444,16 @@ async function hasActiveConfiguredStartupDiscount(
 	};
 }
 
+async function getConfiguredStartupDiscountPercentOff(startupCouponId: string): Promise<number | null> {
+	const stripe = getStripeClient();
+	const coupon = await runWithStripeRetries("retrieve-startup-coupon", () => stripe.coupons.retrieve(startupCouponId));
+	if ("deleted" in coupon && coupon.deleted) {
+		return null;
+	}
+
+	return coupon.percent_off ?? null;
+}
+
 async function markStartupDiscountConsumedIfApplicable(clientId: string, subscription: Stripe.Subscription): Promise<void> {
 	const startupCouponId = process.env.STRIPE_STARTUP_COUPON_ID?.trim() ?? "";
 	if (!startupCouponId) {
@@ -509,11 +519,23 @@ export async function getWorkspaceBillingSummaryForClient(clientId: string): Pro
 		}
 	}
 
+	if (startupCouponId) {
+		try {
+			startupDiscountPercentOff = await getConfiguredStartupDiscountPercentOff(startupCouponId);
+		} catch (error) {
+			console.error("Failed to resolve configured startup coupon", {
+				clientId,
+				startupCouponId,
+				error: getStripeErrorDetails(error),
+			});
+		}
+	}
+
 	if (startupCouponId && billing?.stripeSubscriptionId) {
 		try {
 			const startupDiscount = await hasActiveConfiguredStartupDiscount(billing.stripeSubscriptionId, startupCouponId);
 			hasActiveStartupDiscount = startupDiscount.hasActiveStartupDiscount;
-			startupDiscountPercentOff = startupDiscount.startupDiscountPercentOff;
+			startupDiscountPercentOff = startupDiscount.startupDiscountPercentOff ?? startupDiscountPercentOff;
 		} catch (error) {
 			console.error("Failed to resolve startup discount status", {
 				clientId,
