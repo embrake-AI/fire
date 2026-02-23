@@ -20,7 +20,7 @@ const AGENT_STATE_KEY = "AG";
 const ALARM_INTERVAL_MS = 200;
 const MAX_ATTEMPTS = 3;
 const AGENT_INITIAL_DEBOUNCE_MS = 60_000;
-const AGENT_DEBOUNCE_MS = 10_000;
+const AGENT_DEBOUNCE_MS = 13_000;
 
 type AgentState = {
 	lastProcessedEventId: number;

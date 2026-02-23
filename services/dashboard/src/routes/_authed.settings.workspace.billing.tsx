@@ -113,12 +113,27 @@ function BillingSection() {
 	const billingSummary = () => billingSummaryQuery.data;
 	const hasSubscription = () => billingSummary()?.hasSubscription ?? false;
 	const isActionPending = () => checkoutSessionMutation.isPending || portalSessionMutation.isPending;
+	const startupDiscountPercentOff = () => billingSummary()?.startupDiscountPercentOff ?? null;
 	const startupDiscountStatus = () =>
-		formatStartupDiscountStatus({
+		resolveStartupDiscountStatus({
 			hasActiveStartupDiscount: billingSummary()?.hasActiveStartupDiscount ?? false,
 			startupDiscountConsumedAt: billingSummary()?.startupDiscountConsumedAt ?? null,
 			isStartupEligible: billingSummary()?.isStartupEligible ?? false,
 		});
+	const hasActivePercentStartupDiscount = () => startupDiscountStatus() === "applied" && (startupDiscountPercentOff() ?? 0) > 0;
+	const discountedPricePerSeatCents = () =>
+		hasActivePercentStartupDiscount() ? applyPercentDiscountCents(billingSummary()?.pricePerSeatCents ?? null, startupDiscountPercentOff()) : null;
+	const baseEstimatedTotalCents = () => {
+		const pricePerSeatCents = billingSummary()?.pricePerSeatCents ?? null;
+		const seats = billingSummary()?.billedSeatCount ?? null;
+		if (pricePerSeatCents === null || seats === null) {
+			return null;
+		}
+
+		return pricePerSeatCents * seats;
+	};
+	const discountedEstimatedTotalCents = () => (hasActivePercentStartupDiscount() ? applyPercentDiscountCents(baseEstimatedTotalCents(), startupDiscountPercentOff()) : null);
+	const showStartupDiscountCallout = () => startupDiscountStatus() === "applied" || startupDiscountStatus() === "eligible";
 
 	const handleAddCard = async () => {
 		const result = await checkoutSessionMutation.mutateAsync();
@@ -175,28 +190,82 @@ function BillingSection() {
 					</div>
 					<div class="flex items-center justify-between py-3">
 						<p class="text-sm text-muted-foreground">Price per seat</p>
-						<p class="text-sm font-medium text-foreground">
-							{formatPricePerSeat(billingSummary()?.pricePerSeatCents ?? null, billingSummary()?.currency ?? null, billingSummary()?.billingInterval ?? null)}
-						</p>
+						<Show
+							when={hasActivePercentStartupDiscount() && discountedPricePerSeatCents() !== null}
+							fallback={
+								<p class="text-sm font-medium text-foreground">
+									{formatPricePerSeat(billingSummary()?.pricePerSeatCents ?? null, billingSummary()?.currency ?? null, billingSummary()?.billingInterval ?? null)}
+								</p>
+							}
+						>
+							<div class="text-right">
+								<p class="text-xs text-muted-foreground line-through">
+									{formatPricePerSeat(billingSummary()?.pricePerSeatCents ?? null, billingSummary()?.currency ?? null, billingSummary()?.billingInterval ?? null)}
+								</p>
+								<p class="text-sm font-medium text-emerald-600">
+									{formatPricePerSeat(discountedPricePerSeatCents(), billingSummary()?.currency ?? null, billingSummary()?.billingInterval ?? null)}
+								</p>
+							</div>
+						</Show>
 					</div>
 					<div class="flex items-center justify-between py-3">
 						<p class="text-sm text-muted-foreground">Estimated total</p>
-						<p class="text-sm font-medium text-foreground">
-							{formatEstimatedTotal(
-								billingSummary()?.pricePerSeatCents ?? null,
-								billingSummary()?.billedSeatCount ?? null,
-								billingSummary()?.currency ?? null,
-								billingSummary()?.billingInterval ?? null,
-							)}
-						</p>
+						<Show
+							when={hasActivePercentStartupDiscount() && discountedEstimatedTotalCents() !== null}
+							fallback={
+								<p class="text-sm font-medium text-foreground">
+									{formatEstimatedTotal(
+										billingSummary()?.pricePerSeatCents ?? null,
+										billingSummary()?.billedSeatCount ?? null,
+										billingSummary()?.currency ?? null,
+										billingSummary()?.billingInterval ?? null,
+									)}
+								</p>
+							}
+						>
+							<div class="text-right">
+								<p class="text-xs text-muted-foreground line-through">
+									{formatEstimatedTotal(
+										billingSummary()?.pricePerSeatCents ?? null,
+										billingSummary()?.billedSeatCount ?? null,
+										billingSummary()?.currency ?? null,
+										billingSummary()?.billingInterval ?? null,
+									)}
+								</p>
+								<p class="text-sm font-medium text-emerald-600">
+									{formatTotalFromCents(discountedEstimatedTotalCents(), billingSummary()?.currency ?? null, billingSummary()?.billingInterval ?? null)}
+								</p>
+							</div>
+						</Show>
 					</div>
 					<Show when={startupDiscountStatus()}>
 						<div class="flex items-center justify-between py-3">
 							<p class="text-sm text-muted-foreground">Startup discount</p>
-							<p class="text-sm font-medium text-foreground">{startupDiscountStatus()}</p>
+							<p class="text-sm font-medium text-foreground">{formatStartupDiscountStatus(startupDiscountStatus(), startupDiscountPercentOff())}</p>
 						</div>
 					</Show>
 				</div>
+
+				<Show when={showStartupDiscountCallout()}>
+					<div
+						classList={{
+							"my-3 rounded-lg border px-3 py-2": true,
+							"border-emerald-200 bg-emerald-50/70": startupDiscountStatus() === "applied",
+							"border-sky-200 bg-sky-50/70": startupDiscountStatus() === "eligible",
+						}}
+					>
+						<p class="text-sm font-medium text-foreground">
+							{startupDiscountStatus() === "applied"
+								? `${formatDiscountPercent(startupDiscountPercentOff()) ?? "Startup"} discount applied`
+								: `${formatDiscountPercent(startupDiscountPercentOff()) ?? "Startup"} discount available`}
+						</p>
+						<p class="text-xs text-muted-foreground mt-0.5">
+							{startupDiscountStatus() === "applied"
+								? "Your seat price and total include the active startup discount."
+								: "This startup discount will be automatically applied when billing is configured."}
+						</p>
+					</div>
+				</Show>
 			</div>
 		</div>
 	);
@@ -249,18 +318,65 @@ function formatEstimatedTotal(cents: number | null, seats: number | null, curren
 	return interval ? `${amount}/${interval}` : amount;
 }
 
-function formatStartupDiscountStatus(params: { hasActiveStartupDiscount: boolean; startupDiscountConsumedAt: string | null; isStartupEligible: boolean }) {
+function formatTotalFromCents(totalCents: number | null, currency: string | null, interval: string | null): string {
+	if (totalCents === null || !currency) {
+		return "-";
+	}
+
+	const amount = new Intl.NumberFormat(undefined, {
+		style: "currency",
+		currency: currency.toUpperCase(),
+		maximumFractionDigits: 2,
+	}).format(totalCents / 100);
+
+	return interval ? `${amount}/${interval}` : amount;
+}
+
+function applyPercentDiscountCents(cents: number | null, percentOff: number | null): number | null {
+	if (cents === null || percentOff === null || percentOff <= 0) {
+		return null;
+	}
+
+	return Math.max(0, Math.round(cents * ((100 - percentOff) / 100)));
+}
+
+function formatDiscountPercent(percentOff: number | null): string | null {
+	if (percentOff === null || percentOff <= 0) {
+		return null;
+	}
+
+	return `${percentOff}%`;
+}
+
+function resolveStartupDiscountStatus(params: { hasActiveStartupDiscount: boolean; startupDiscountConsumedAt: string | null; isStartupEligible: boolean }) {
 	if (params.hasActiveStartupDiscount) {
-		return "Applied";
+		return "applied";
 	}
 
 	if (params.startupDiscountConsumedAt) {
-		return "Consumed";
+		return "consumed";
 	}
 
 	if (params.isStartupEligible) {
-		return "Eligible";
+		return "eligible";
 	}
 
 	return null;
+}
+
+function formatStartupDiscountStatus(status: "applied" | "consumed" | "eligible" | null, startupDiscountPercentOff: number | null): string {
+	const discountPercent = formatDiscountPercent(startupDiscountPercentOff);
+	if (status === "applied") {
+		return discountPercent ? `Applied (${discountPercent} off)` : "Applied";
+	}
+
+	if (status === "consumed") {
+		return "Consumed";
+	}
+
+	if (status === "eligible") {
+		return discountPercent ? `Eligible (${discountPercent} off)` : "Eligible";
+	}
+
+	return "";
 }

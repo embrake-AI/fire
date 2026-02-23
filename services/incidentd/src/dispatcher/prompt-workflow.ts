@@ -1,17 +1,100 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import type { IS } from "@fire/common";
-import { buildSuggestionTools, getValidStatusTransitions } from "../agent/suggestions";
+import { getValidStatusTransitions } from "../agent/suggestions";
 import type { AgentContextResponse, AgentPromptPayload, AgentSuggestionContext } from "../agent/types";
 import { addReaction, removeReaction } from "../lib/slack";
 
-const SYSTEM_PROMPT = `You are an incident response agent helping respond to a user prompt.
-You may either:
-- Use tools to apply changes to the incident or status page.
-- Reply to the prompt with a concise text response.
+const SYSTEM_PROMPT = `You are an incident operations assistant.
+You must choose one mode:
+1) If the user prompt includes an explicit instruction to change incident state or status page, call the matching tool and execute it.
+2) If there is no explicit instruction, reply with concise plain text.
 
 Rules:
-- Only use tools when you are directly instructed to do so.
-- Keep replies concise.`;
+- Follow explicit user instructions immediately.
+- Keep text replies concise.`;
+
+type PromptTool = { type: "function"; function: { name: string; description: string; parameters: unknown } };
+
+function buildPromptTools(context: AgentSuggestionContext): PromptTool[] {
+	const serviceOptions = context.services.map((service) => service.id);
+	return [
+		{
+			type: "function",
+			function: {
+				name: "update_status",
+				description: "Update incident status.",
+				parameters: {
+					type: "object",
+					properties: {
+						status: { type: "string", enum: ["mitigating", "resolved"] },
+						message: { type: "string", description: "Message explaining status change. Keep concise." },
+					},
+					required: ["status", "message"],
+					additionalProperties: false,
+				},
+			},
+		},
+		{
+			type: "function",
+			function: {
+				name: "update_severity",
+				description: "Update incident severity.",
+				parameters: {
+					type: "object",
+					properties: {
+						severity: { type: "string", enum: ["low", "medium", "high"] },
+					},
+					required: ["severity"],
+					additionalProperties: false,
+				},
+			},
+		},
+		{
+			type: "function",
+			function: {
+				name: "add_status_page_update",
+				description: "Post a status page update.",
+				parameters: {
+					type: "object",
+					properties: {
+						message: { type: "string" },
+						affectionStatus: { type: "string", enum: ["investigating", "mitigating", "resolved"] },
+						title: { type: "string" },
+						services: {
+							type: "array",
+							items: {
+								type: "object",
+								properties: {
+									id: { type: "string", enum: serviceOptions.length ? serviceOptions : [""] },
+									impact: { type: "string", enum: ["partial", "major"] },
+								},
+								required: ["id", "impact"],
+								additionalProperties: false,
+							},
+						},
+					},
+					required: ["message"],
+					additionalProperties: false,
+				},
+			},
+		},
+	];
+}
+
+function parseToolArguments(raw?: string): Record<string, unknown> {
+	if (!raw) {
+		return {};
+	}
+	try {
+		const parsed = JSON.parse(raw) as unknown;
+		if (parsed && typeof parsed === "object") {
+			return parsed as Record<string, unknown>;
+		}
+		return {};
+	} catch {
+		return {};
+	}
+}
 
 function buildPromptUserMessage(context: AgentSuggestionContext) {
 	const eventsDescription = context.events
@@ -113,7 +196,7 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 			},
 		};
 
-		const tools = buildSuggestionTools(context);
+		const tools = buildPromptTools(context);
 		const messages: Array<{ role: "system" | "user" | "assistant" | "tool"; content?: string; tool_calls?: unknown; name?: string }> = [
 			{ role: "system", content: SYSTEM_PROMPT },
 			{ role: "user", content: buildPromptUserMessage(context) },
@@ -185,23 +268,27 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 
 			const toolCall = message.tool_calls?.[0];
 			if (toolCall) {
-				const args = toolCall.function.arguments ? (JSON.parse(toolCall.function.arguments) as Record<string, unknown>) : {};
+				const args = parseToolArguments(toolCall.function.arguments);
+				let handledToolCall = false;
 				switch (toolCall.function.name) {
 					case "update_status": {
-						if (typeof args.status === "string" && typeof args.message === "string") {
+						const status = args.status;
+						if (status === "mitigating" || status === "resolved") {
+							const messageText = args.message as string;
 							await step.do(`agent-prompt.apply-status:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
-								await stub.updateStatus(args.status as Exclude<IS["status"], "open">, args.message as string, "fire", eventMetadata);
-								return null;
+								await stub.updateStatus(status, messageText, "fire", eventMetadata);
 							});
+							handledToolCall = true;
 						}
 						break;
 					}
 					case "update_severity": {
-						if (typeof args.severity === "string") {
+						const severity = args.severity;
+						if (severity === "low" || severity === "medium" || severity === "high") {
 							await step.do(`agent-prompt.apply-severity:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
-								await stub.setSeverity(args.severity as IS["severity"], "fire", eventMetadata);
-								return null;
+								await stub.setSeverity(severity, "fire", eventMetadata);
 							});
+							handledToolCall = true;
 						}
 						break;
 					}
@@ -217,14 +304,16 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 									adapter: "fire",
 									eventMetadata,
 								});
-								return null;
 							});
+							handledToolCall = true;
 						}
 						break;
 					}
 				}
 
-				return;
+				if (handledToolCall) {
+					return;
+				}
 			}
 
 			const trimmedResponse = message.content?.trim();

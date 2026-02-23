@@ -7,7 +7,6 @@ import { UserAvatar } from "~/components/UserAvatar";
 import { Button } from "~/components/ui/button";
 import { ConfigCard, ConfigCardActions, ConfigCardContent, ConfigCardDeleteButton, ConfigCardRow, ConfigCardTitle } from "~/components/ui/config-card";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { useAddSlackUserAsTeamMember, useAddTeamMember, useRemoveTeamMember } from "~/lib/teams/teams.hooks";
 import { usePossibleSlackUsers, useUsers } from "~/lib/users/users.hooks";

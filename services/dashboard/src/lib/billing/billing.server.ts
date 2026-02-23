@@ -23,6 +23,7 @@ export type WorkspaceBillingSummary = {
 	isStartupEligible: boolean;
 	startupDiscountConsumedAt: string | null;
 	hasActiveStartupDiscount: boolean;
+	startupDiscountPercentOff: number | null;
 };
 
 type ClientBillingPatch = {
@@ -409,16 +410,38 @@ function getSubscriptionDiscountCouponIds(subscription: Stripe.Subscription): st
 	return couponIds;
 }
 
-async function hasActiveConfiguredStartupDiscount(subscriptionId: string, startupCouponId: string): Promise<boolean> {
+async function hasActiveConfiguredStartupDiscount(
+	subscriptionId: string,
+	startupCouponId: string,
+): Promise<{ hasActiveStartupDiscount: boolean; startupDiscountPercentOff: number | null }> {
 	const stripe = getStripeClient();
 	const subscription = await runWithStripeRetries("retrieve-subscription-for-startup-discount", () =>
 		stripe.subscriptions.retrieve(subscriptionId, {
-			expand: ["discounts"],
+			expand: ["discounts", "discounts.data.coupon"],
 		}),
 	);
 
-	const discountCouponIds = getSubscriptionDiscountCouponIds(subscription);
-	return discountCouponIds.includes(startupCouponId);
+	for (const discountEntry of subscription.discounts ?? []) {
+		if (typeof discountEntry === "string") {
+			continue;
+		}
+
+		const coupon = discountEntry.coupon as string | Stripe.Coupon | null | undefined;
+		const couponId = parseStripeCouponId(coupon);
+		if (couponId !== startupCouponId) {
+			continue;
+		}
+
+		return {
+			hasActiveStartupDiscount: true,
+			startupDiscountPercentOff: coupon && typeof coupon !== "string" ? (coupon.percent_off ?? null) : null,
+		};
+	}
+
+	return {
+		hasActiveStartupDiscount: false,
+		startupDiscountPercentOff: null,
+	};
 }
 
 async function markStartupDiscountConsumedIfApplicable(clientId: string, subscription: Stripe.Subscription): Promise<void> {
@@ -457,6 +480,7 @@ export async function getWorkspaceBillingSummaryForClient(clientId: string): Pro
 	let cardBrand: string | null = null;
 	let cardLast4: string | null = null;
 	let hasActiveStartupDiscount = false;
+	let startupDiscountPercentOff: number | null = null;
 	try {
 		const stripe = getStripeClient();
 		const price = await runWithStripeRetries("retrieve-seat-price", () => stripe.prices.retrieve(seatPriceId));
@@ -487,7 +511,9 @@ export async function getWorkspaceBillingSummaryForClient(clientId: string): Pro
 
 	if (startupCouponId && billing?.stripeSubscriptionId) {
 		try {
-			hasActiveStartupDiscount = await hasActiveConfiguredStartupDiscount(billing.stripeSubscriptionId, startupCouponId);
+			const startupDiscount = await hasActiveConfiguredStartupDiscount(billing.stripeSubscriptionId, startupCouponId);
+			hasActiveStartupDiscount = startupDiscount.hasActiveStartupDiscount;
+			startupDiscountPercentOff = startupDiscount.startupDiscountPercentOff;
 		} catch (error) {
 			console.error("Failed to resolve startup discount status", {
 				clientId,
@@ -511,6 +537,7 @@ export async function getWorkspaceBillingSummaryForClient(clientId: string): Pro
 		isStartupEligible: startupState.isStartupEligible,
 		startupDiscountConsumedAt: startupState.startupDiscountConsumedAt ? startupState.startupDiscountConsumedAt.toISOString() : null,
 		hasActiveStartupDiscount,
+		startupDiscountPercentOff,
 	};
 }
 

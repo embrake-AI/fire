@@ -2,18 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
 import { runDemoAware } from "../demo/runtime";
-import {
-	addSlackUserAsTeamMemberDemo,
-	addTeamMemberDemo,
-	createTeamDemo,
-	deleteTeamDemo,
-	getTeamsDemo,
-	removeTeamMemberDemo,
-	updateTeamDemo,
-	updateTeamMemberRoleDemo,
-} from "../demo/store";
+import { addSlackUserAsTeamMemberDemo, addTeamMemberDemo, createTeamDemo, deleteTeamDemo, getTeamsDemo, removeTeamMemberDemo, updateTeamDemo } from "../demo/store";
 import type { getUsers } from "../users/users";
-import { addSlackUserAsTeamMember, addTeamMember, createTeam, deleteTeam, getTeams, removeTeamMember, updateTeam, updateTeamMemberRole } from "./teams";
+import { addSlackUserAsTeamMember, addTeamMember, createTeam, deleteTeam, getTeams, removeTeamMember, updateTeam } from "./teams";
 
 type GetTeamsResponse = Awaited<ReturnType<typeof getTeams>>;
 type GetUsersResponse = Awaited<ReturnType<typeof getUsers>>;
