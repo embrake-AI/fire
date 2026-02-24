@@ -148,9 +148,13 @@ function RotationHeader(props: { rotation: Rotation }) {
 		}
 	});
 
-	const formattedAnchor = createMemo(() => {
+	const formattedNextShiftStart = createMemo(() => {
 		if (!props.rotation.shiftStart) return "Not set";
-		return new Date(props.rotation.shiftStart).toLocaleDateString(undefined, {
+		const shiftMs = parseShiftLengthMs(props.rotation.shiftLength);
+		if (!shiftMs) return "Not set";
+		const nextShiftStart = getNextShiftStartAt(new Date(props.rotation.shiftStart), shiftMs);
+		if (!nextShiftStart) return "Not set";
+		return nextShiftStart.toLocaleDateString(undefined, {
 			weekday: "short",
 			month: "short",
 			day: "numeric",
@@ -284,8 +288,8 @@ function RotationHeader(props: { rotation: Rotation }) {
 							class="text-xs text-muted-foreground hover:text-foreground cursor-pointer bg-transparent border-none p-0 inline-flex items-center gap-1.5 group"
 							onClick={() => setIsEditingAnchor(true)}
 						>
-							<span>Shift started</span>
-							<span class="font-medium text-foreground">{formattedAnchor()}</span>
+							<span>Next shift starts</span>
+							<span class="font-medium text-foreground">{formattedNextShiftStart()}</span>
 							<Pencil class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
 						</button>
 					</Show>
@@ -564,6 +568,7 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 	const [rangeDays, setRangeDays] = createSignal<number>(rangeOptions[1].days);
 	const [viewMode, setViewMode] = createSignal<"timeline" | "calendar">("timeline");
 	const [viewAnchor, setViewAnchor] = createSignal(startOfDay(new Date()));
+	const [currentTime, setCurrentTime] = createSignal(new Date());
 	const selectedRange = createMemo(() => rangeOptions.find((option) => option.days === rangeDays()) ?? rangeOptions[1]);
 	const calendarMonthStart = createMemo(() => startOfMonth(viewAnchor()));
 	const isCalendarView = createMemo(() => viewMode() === "calendar");
@@ -689,6 +694,31 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 
 	const totalDays = createMemo(() => Math.max(1, Math.ceil((viewEnd().getTime() - viewStart().getTime()) / DAY_MS)));
 	const dayLabels = createMemo(() => Array.from({ length: totalDays() }, (_, index) => new Date(viewStart().getTime() + index * DAY_MS)));
+	const calendarCells = createMemo(() => {
+		const monthStart = calendarMonthStart();
+		const assigneesByDay = calendarAssigneeByDay();
+		const users = usersById();
+		const colors = assigneeColorById();
+		const today = startOfDay(currentTime()).getTime();
+
+		return calendarDays().map((day) => {
+			const dayKey = startOfDay(day).toDateString();
+			const assigneeId = assigneesByDay.get(dayKey);
+			const assignee = assigneeId ? users.get(assigneeId) : undefined;
+			const isCurrentMonth = day.getMonth() === monthStart.getMonth() && day.getFullYear() === monthStart.getFullYear();
+			const isToday = startOfDay(day).getTime() === today;
+			const colorClass = assigneeId ? (colors.get(assigneeId) ?? "bg-muted/50 text-muted-foreground border-border/50") : "bg-muted/50 text-muted-foreground border-border/50";
+
+			return {
+				day,
+				assigneeId,
+				assigneeName: assignee?.name ?? "Unknown user",
+				isCurrentMonth,
+				isToday,
+				colorClass,
+			};
+		});
+	});
 
 	const overrideLayout = createMemo(() => {
 		const overrides = scheduleOverrides().filter((override) => override.start < viewEnd() && override.end > viewStart());
@@ -961,6 +991,14 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 
 	const gridColumns = createMemo(() => (isHourView() ? 24 : totalDays()));
 
+	createEffect(() => {
+		if (typeof window === "undefined") return;
+		const id = window.setInterval(() => {
+			setCurrentTime(new Date());
+		}, 30 * 1000);
+		onCleanup(() => window.clearInterval(id));
+	});
+
 	return (
 		<div class="space-y-4">
 			<div class="flex items-center justify-between gap-4">
@@ -1061,7 +1099,7 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 										const containerHeight = (1 + visibleOverrideRows) * (rowHeight + rowGap) + rowGap;
 										const totalMs = viewEnd().getTime() - viewStart().getTime();
 
-										const now = new Date();
+										const now = currentTime();
 										const nowPosition = ((now.getTime() - viewStart().getTime()) / totalMs) * 100;
 										const showNowLine = nowPosition >= 0 && nowPosition <= 100;
 
@@ -1269,39 +1307,25 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 									<For each={WEEKDAY_LABELS}>{(label) => <div class="px-2 py-1.5">{label}</div>}</For>
 								</div>
 								<div class="grid grid-cols-7 gap-px rounded-lg border border-border/60 bg-border/60 overflow-hidden">
-									<For each={calendarDays()}>
-										{(day) => {
-											const dayKey = startOfDay(day).toDateString();
-											const assigneeId = calendarAssigneeByDay().get(dayKey);
-											const assignee = assigneeId ? usersById().get(assigneeId) : undefined;
-											const isCurrentMonth = day.getMonth() === calendarMonthStart().getMonth() && day.getFullYear() === calendarMonthStart().getFullYear();
-											const isToday = isSameDay(day, new Date());
-											const colorClass = assigneeId
-												? (assigneeColorById().get(assigneeId) ?? "bg-muted/50 text-muted-foreground border-border/50")
-												: "bg-muted/50 text-muted-foreground border-border/50";
-
-											return (
-												<div
-													class={cn(
-														"min-h-[96px] bg-background p-2 flex flex-col gap-1",
-														!isCurrentMonth && "bg-muted/20 text-muted-foreground",
-														isToday && "ring-1 ring-primary/40",
-													)}
-												>
-													<div class="flex items-center justify-between">
-														<span class={cn("text-xs font-medium", isToday && "text-primary")}>{day.getDate()}</span>
-													</div>
-													<Show when={assigneeId}>
-														<div
-															class={cn("inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] font-medium truncate", colorClass)}
-															title={assignee?.name ?? "Unknown user"}
-														>
-															<span class="truncate">{assignee?.name ?? "Unknown user"}</span>
-														</div>
-													</Show>
+									<For each={calendarCells()}>
+										{(cell) => (
+											<div
+												class={cn(
+													"min-h-[96px] bg-background p-2 flex flex-col gap-1",
+													!cell.isCurrentMonth && "bg-muted/20 text-muted-foreground",
+													cell.isToday && "ring-1 ring-primary/40",
+												)}
+											>
+												<div class="flex items-center justify-between">
+													<span class={cn("text-xs font-medium", cell.isToday && "text-primary")}>{cell.day.getDate()}</span>
 												</div>
-											);
-										}}
+												<Show when={cell.assigneeId}>
+													<div class={cn("inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] font-medium truncate", cell.colorClass)} title={cell.assigneeName}>
+														<span class="truncate">{cell.assigneeName}</span>
+													</div>
+												</Show>
+											</div>
+										)}
 									</For>
 								</div>
 							</div>
@@ -1392,6 +1416,15 @@ function parseShiftLengthMs(interval: string) {
 	if (unit === "day") return value * DAY_MS;
 	if (unit === "week") return value * 7 * DAY_MS;
 	return null;
+}
+
+function getNextShiftStartAt(anchor: Date, shiftMs: number, now = new Date()) {
+	if (!Number.isFinite(shiftMs) || shiftMs <= 0) return null;
+	const anchorTime = anchor.getTime();
+	const nowTime = now.getTime();
+	if (!Number.isFinite(anchorTime) || !Number.isFinite(nowTime)) return null;
+	const intervalsUntilNextBoundary = Math.floor((nowTime - anchorTime) / shiftMs) + 1;
+	return new Date(anchorTime + intervalsUntilNextBoundary * shiftMs);
 }
 
 function buildBaseSegments(input: { assignees: Rotation["assignees"]; shiftStart: Date; shiftMs: number; viewStart: Date; viewEnd: Date }): BaseSegment[] {
@@ -1553,10 +1586,6 @@ function startOfWeek(date: Date) {
 
 function endOfWeek(date: Date) {
 	return addDays(startOfWeek(date), 6);
-}
-
-function isSameDay(a: Date, b: Date) {
-	return startOfDay(a).getTime() === startOfDay(b).getTime();
 }
 
 function floorToHour(date: Date) {

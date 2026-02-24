@@ -362,18 +362,23 @@ type SlackPostMessageResponse = {
  * Post a message to a Slack channel as the bot.
  * @see https://docs.slack.dev/reference/methods/chat.postMessage/
  */
-export async function postSlackMessage(botToken: string, params: { channel: string; text: string }): Promise<void> {
+export async function postSlackMessage(botToken: string, params: { channel: string; text: string; blocks?: unknown[] }): Promise<void> {
+	const body: Record<string, unknown> = {
+		channel: params.channel,
+		text: params.text,
+		mrkdwn: true,
+	};
+	if (params.blocks) {
+		body.blocks = params.blocks;
+	}
+
 	const response = await fetch("https://slack.com/api/chat.postMessage", {
 		method: "POST",
 		headers: {
 			Authorization: `Bearer ${botToken}`,
 			"Content-Type": "application/json",
 		},
-		body: JSON.stringify({
-			channel: params.channel,
-			text: params.text,
-			mrkdwn: true,
-		}),
+		body: JSON.stringify(body),
 	});
 
 	const data: SlackPostMessageResponse = await response.json();

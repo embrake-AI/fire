@@ -296,7 +296,7 @@ async function logRotationChange(params: {
 			return;
 		}
 
-		const assigneeIds = [params.nextAssigneeId].filter((id): id is string => !!id);
+		const assigneeIds = [params.previousAssigneeId, params.nextAssigneeId].filter((id): id is string => !!id);
 		const assigneesByUserId = new Map<string, { slackId: string | null; name: string }>();
 		if (assigneeIds.length > 0) {
 			const users = await db
@@ -314,15 +314,23 @@ async function logRotationChange(params: {
 		}
 
 		const rotationUrl = getRotationUrl(params.workflowRotationId);
-		const message = [
-			`*${params.rotationName}* rotation changed (${formatReasonLabel(params.reason)}).`,
-			`Next: ${formatAssigneeReference(params.nextAssigneeId, assigneesByUserId.get(params.nextAssigneeId ?? ""))}`,
-			rotationUrl ? `View rotation: ${rotationUrl}` : `View rotation: /rotations/${params.workflowRotationId}`,
-		].join("\n");
+		const linkUrl = rotationUrl ?? `/rotations/${params.workflowRotationId}`;
+		const nextRef = formatAssigneeReference(params.nextAssigneeId, assigneesByUserId.get(params.nextAssigneeId ?? ""));
+		const prevRef = formatAssigneeReference(params.previousAssigneeId, assigneesByUserId.get(params.previousAssigneeId ?? ""));
+
+		const { text, blocks } = buildRotationBlocks({
+			rotationName: params.rotationName,
+			reason: params.reason,
+			nextRef,
+			prevRef,
+			linkUrl,
+			isUnassigned: !params.nextAssigneeId,
+		});
 
 		await postSlackMessage(slackData.botToken, {
 			channel: params.slackChannelId,
-			text: message,
+			text,
+			blocks,
 		});
 	} catch (error) {
 		console.error("Failed to send rotation notification to Slack", {
@@ -347,16 +355,63 @@ function formatAssigneeReference(assigneeId: string | null, assignee?: { slackId
 	return `user:${assigneeId}`;
 }
 
-function formatReasonLabel(reason: NotificationReason): string {
+function buildRotationBlocks(params: { rotationName: string; reason: NotificationReason; nextRef: string; prevRef: string; linkUrl: string; isUnassigned: boolean }): {
+	text: string;
+	blocks: unknown[];
+} {
+	if (params.isUnassigned) {
+		const text = `:warning: *${params.rotationName}* rotation — no one on-call`;
+		return {
+			text,
+			blocks: [
+				{ type: "section", text: { type: "mrkdwn", text } },
+				{
+					type: "section",
+					text: {
+						type: "mrkdwn",
+						text: "This rotation currently has no assignee. Add members or create an override to restore coverage.",
+					},
+				},
+				{
+					type: "context",
+					elements: [{ type: "mrkdwn", text: `<${params.linkUrl}|View rotation>` }],
+				},
+			],
+		};
+	}
+
+	const { icon, subtitle, nextLabel, prevLabel } = reasonConfig(params.reason);
+	const headline = `${icon} *${params.rotationName}* rotation — ${subtitle}`;
+
+	return {
+		text: headline,
+		blocks: [
+			{ type: "section", text: { type: "mrkdwn", text: headline } },
+			{
+				type: "section",
+				fields: [
+					{ type: "mrkdwn", text: `*${nextLabel}*\n${params.nextRef}` },
+					{ type: "mrkdwn", text: `*${prevLabel}*\n${params.prevRef}` },
+				],
+			},
+			{
+				type: "context",
+				elements: [{ type: "mrkdwn", text: `<${params.linkUrl}|View rotation>` }],
+			},
+		],
+	};
+}
+
+function reasonConfig(reason: NotificationReason) {
 	switch (reason) {
 		case "shift_change":
-			return "shift change";
+			return { icon: ":arrows_counterclockwise:", subtitle: "shift handoff", nextLabel: "Now on-call", prevLabel: "Previous" };
 		case "override_start":
-			return "override start";
+			return { icon: ":arrow_right:", subtitle: "override active", nextLabel: "Now on-call", prevLabel: "Covering for" };
 		case "override_end":
-			return "override end";
+			return { icon: ":rewind:", subtitle: "override ended", nextLabel: "Back on-call", prevLabel: "Previous" };
 		default:
-			return "schedule update";
+			return { icon: ":wrench:", subtitle: "schedule updated", nextLabel: "Now on-call", prevLabel: "Previous" };
 	}
 }
 
