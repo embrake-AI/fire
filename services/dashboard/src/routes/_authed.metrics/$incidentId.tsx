@@ -443,7 +443,14 @@ function EditableImpact(props: { incidentId: string; value: string }) {
 	return (
 		<div class="space-y-2">
 			<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Impact</h4>
-			<AutoSaveTextarea value={props.value} onSave={async (value) => void (await mutation.mutateAsync(value))} placeholder="Describe the impact..." rows={2} />
+			<AutoSaveTextarea
+				value={props.value}
+				onSave={async (value) => {
+					await mutation.mutateAsync(value);
+				}}
+				placeholder="Describe the impact..."
+				rows={4}
+			/>
 		</div>
 	);
 }
@@ -454,7 +461,14 @@ function EditableRootCause(props: { incidentId: string; value: string }) {
 	return (
 		<div class="space-y-2">
 			<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Root cause</h4>
-			<AutoSaveTextarea value={props.value} onSave={async (value) => void (await mutation.mutateAsync(value))} placeholder="Describe the root cause..." rows={2} />
+			<AutoSaveTextarea
+				value={props.value}
+				onSave={async (value) => {
+					await mutation.mutateAsync(value);
+				}}
+				placeholder="Describe the root cause..."
+				rows={4}
+			/>
 		</div>
 	);
 }
