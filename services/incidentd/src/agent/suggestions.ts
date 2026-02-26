@@ -22,6 +22,7 @@ Hard rules:
 - You will receive a "Suggestion target state" summary. Treat any target listed as pending as blocked by default.
 - Exception: you may re-suggest the same action+target only when decisive new evidence appears after [TURN BOUNDARY] that makes that exact target newly correct (not just more discussion or rewording).
 - If you use this exception, your evidence MUST cite the post-boundary event(s) and explain why the earlier pending suggestion was premature or not yet actionable.
+- Staleness: a pending suggestion becomes stale when it was made >10 minutes ago AND >20 events ago (shown as "stale" in the target state summary). You may re-suggest a stale target if current evidence still warrants it, without needing the post-boundary exception.
 - NEVER suggest a status transition that is not in validStatusTransitions.
 - Treat prior AGENT_SUGGESTION add_status_page_update as pending public-update intent until an AFFECTION_UPDATE is logged.
 - If a pending add_status_page_update exists and no new external-facing fact appears after it, suggest NO additional status-page update.
@@ -52,7 +53,8 @@ Status-page guidance:
   2) If you do NOT suggest update_status in this turn, set affectionStatus=update for follow-up public communication.
 - If effectiveHasAffection=true and no status change, suggest a status-page update only when there is materially new external information (new impact/scope, renewed errors, mitigation progress, root-cause insight, recovery milestone, or clear next-step/update commitment).
 - New-information gate (strict): for effectiveHasAffection=true with no lifecycle status change, require at least one new external-facing fact that was NOT already communicated in recent AFFECTION_UPDATE or prior add_status_page_update AGENT_SUGGESTION events. Rewording the same state, internal debate, or repeated/ambiguous signals is NOT enough.
-- Anti-spam: do not post near-duplicate public updates that add no new external value.
+- Stakeholder cadence: if hasAffection=true and lastUpdatedAt is >10 minutes ago, suggest a status-page update even if no new external facts have appeared (this overrides the new-information gate). Stakeholders expect regular communication during active incidents. Use affectionStatus=update with a brief reassurance or status recap.
+- Anti-spam: do not post near-duplicate public updates that add no new external value (except when the stakeholder cadence rule applies).
 
 Output constraints:
 - Keep suggestion messages concise (~200 chars max).
@@ -275,23 +277,31 @@ function parseAffectionStatus(value: unknown): AgentAffectionStatus | undefined 
 	return AFFECTION_STATUSES.includes(value as AgentAffectionStatus) ? (value as AgentAffectionStatus) : undefined;
 }
 
+type PendingTarget = {
+	value: string;
+	createdAt: string;
+	eventIndex: number;
+};
+
 type SuggestionTargetState = {
-	pendingStatus: Set<string>;
-	pendingSeverity: Set<string>;
-	pendingStatusPage: Set<string>;
+	pendingStatus: Map<string, PendingTarget>;
+	pendingSeverity: Map<string, PendingTarget>;
+	pendingStatusPage: Map<string, PendingTarget>;
 	appliedStatus: Set<string>;
 	appliedSeverity: Set<string>;
 	appliedStatusPage: Set<string>;
+	totalEvents: number;
 };
 
 function createEmptySuggestionTargetState(): SuggestionTargetState {
 	return {
-		pendingStatus: new Set(),
-		pendingSeverity: new Set(),
-		pendingStatusPage: new Set(),
+		pendingStatus: new Map(),
+		pendingSeverity: new Map(),
+		pendingStatusPage: new Map(),
 		appliedStatus: new Set(),
 		appliedSeverity: new Set(),
 		appliedStatusPage: new Set(),
+		totalEvents: 0,
 	};
 }
 
@@ -304,7 +314,10 @@ function parseStatusPageTarget(value: unknown): "investigating" | "mitigating" |
 
 function deriveSuggestionTargetState(events: AgentEvent[]): SuggestionTargetState {
 	const state = createEmptySuggestionTargetState();
-	for (const event of events) {
+	state.totalEvents = events.length;
+
+	for (let i = 0; i < events.length; i++) {
+		const event = events[i]!;
 		const data = event.event_data as Record<string, unknown>;
 		const suggestion =
 			event.event_type === "MESSAGE_ADDED" && event.event_metadata?.kind === "suggestion" && data?.suggestion && typeof data.suggestion === "object"
@@ -312,13 +325,18 @@ function deriveSuggestionTargetState(events: AgentEvent[]): SuggestionTargetStat
 				: null;
 
 		if (suggestion) {
+			const pending: PendingTarget = { value: "", createdAt: event.created_at, eventIndex: i };
 			const action = suggestion.action;
 			if (action === "update_status" && typeof suggestion.status === "string") {
-				state.pendingStatus.add(suggestion.status);
+				pending.value = suggestion.status;
+				state.pendingStatus.set(suggestion.status, pending);
 			} else if (action === "update_severity" && typeof suggestion.severity === "string") {
-				state.pendingSeverity.add(suggestion.severity);
+				pending.value = suggestion.severity;
+				state.pendingSeverity.set(suggestion.severity, pending);
 			} else if (action === "add_status_page_update") {
-				state.pendingStatusPage.add(parseStatusPageTarget(suggestion.affectionStatus));
+				const target = parseStatusPageTarget(suggestion.affectionStatus);
+				pending.value = target;
+				state.pendingStatusPage.set(target, pending);
 			}
 		}
 
@@ -350,7 +368,22 @@ function deriveSuggestionTargetState(events: AgentEvent[]): SuggestionTargetStat
 	return state;
 }
 
-function formatTargetSet(values: Set<string>): string {
+function formatPendingTargetMap(targets: Map<string, PendingTarget>, totalEvents: number): string {
+	if (!targets.size) {
+		return "none";
+	}
+
+	const parts: string[] = [];
+	for (const [key, target] of targets) {
+		const eventsAgo = totalEvents - target.eventIndex;
+		const timeAgo = formatRelativeTime(target.createdAt);
+		parts.push(`${key} (${timeAgo}, ${eventsAgo} events ago)`);
+	}
+
+	return parts.sort().join(", ");
+}
+
+function formatAppliedTargetSet(values: Set<string>): string {
 	if (!values.size) {
 		return "none";
 	}
@@ -359,13 +392,14 @@ function formatTargetSet(values: Set<string>): string {
 
 export function buildSuggestionStateContextMessage(context: AgentSuggestionContext): string {
 	const state = deriveSuggestionTargetState(context.events);
+
 	return `Suggestion target state:
-- pending update_status targets: ${formatTargetSet(state.pendingStatus)}
-- pending update_severity targets: ${formatTargetSet(state.pendingSeverity)}
-- pending add_status_page_update targets: ${formatTargetSet(state.pendingStatusPage)}
-- applied update_status targets: ${formatTargetSet(state.appliedStatus)}
-- applied update_severity targets: ${formatTargetSet(state.appliedSeverity)}
-- applied add_status_page_update targets: ${formatTargetSet(state.appliedStatusPage)}`;
+- pending update_status targets: ${formatPendingTargetMap(state.pendingStatus, state.totalEvents)}
+- pending update_severity targets: ${formatPendingTargetMap(state.pendingSeverity, state.totalEvents)}
+- pending add_status_page_update targets: ${formatPendingTargetMap(state.pendingStatusPage, state.totalEvents)}
+- applied update_status targets: ${formatAppliedTargetSet(state.appliedStatus)}
+- applied update_severity targets: ${formatAppliedTargetSet(state.appliedSeverity)}
+- applied add_status_page_update targets: ${formatAppliedTargetSet(state.appliedStatusPage)}`;
 }
 
 function formatRelativeTime(value?: string): string {

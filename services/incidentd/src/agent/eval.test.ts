@@ -2833,6 +2833,131 @@ function buildMicroTurnNoiseScenario(): LifecycleScenario {
 }
 
 // ---------------------------------------------------------------------------
+// Scenario 14: Stale pending suggestion can be re-suggested
+// ---------------------------------------------------------------------------
+
+function buildStalePendingSuggestionScenario(): LifecycleScenario {
+	const SERVICES: AgentSuggestionContext["services"] = [{ id: "svc_api", name: "REST API", prompt: "Public REST API for integrations (api.example.com)" }];
+
+	const incidentBase = {
+		title: "API latency spike after config rollout",
+		description: "Customers observe elevated API latency and intermittent timeout errors.",
+		prompt: "Investigate API latency spike and coordinate mitigation.",
+	};
+
+	resetIds();
+	const t1Events: AgentEvent[] = [
+		mkEvent(
+			{
+				event_type: "INCIDENT_CREATED",
+				event_data: {
+					status: "open",
+					severity: "high",
+					createdBy: "U_ONCALL",
+					...incidentBase,
+					source: "slack",
+					assignee: "U_ONCALL",
+					entryPointId: "ep_api",
+					rotationId: "rot_api",
+				},
+			},
+			0,
+		),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "API latency is 10x baseline and timeout rate is rising for customers.", userId: "U_ALICE" } }, 2),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Rolled back the config rollout on all API pods. Monitoring now.", userId: "U_BOB" } }, 4),
+	];
+
+	resetIds();
+	const t2Events: AgentEvent[] = [
+		...t1Events,
+		mkSuggestionEvent({ action: "update_status", status: "mitigating", message: "Rollback applied to mitigate API latency spike" }, 5, "sug_stale_1"),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Waiting for latency to stabilize before confirming recovery.", userId: "U_ALICE" } }, 7),
+		mkEvent({ event_type: "MESSAGE_ADDED", event_data: { message: "Incident status is still open while we monitor.", userId: "U_BOB" } }, 8),
+	];
+	const t2ProcessedThrough = t1Events[t1Events.length - 1]!.id;
+
+	const staleChatter: AgentEvent[] = [];
+	for (let i = 0; i < 21; i += 1) {
+		staleChatter.push(
+			mkEvent(
+				{
+					event_type: "MESSAGE_ADDED",
+					event_data: {
+						message: `Monitoring update ${i + 1}: latency improved but incident status is still open pending dispatcher update.`,
+						userId: i % 2 === 0 ? "U_ALICE" : "U_BOB",
+					},
+				},
+				20 + i,
+			),
+		);
+	}
+
+	const t3Events: AgentEvent[] = [
+		...t2Events,
+		...staleChatter,
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "Reminder: rollback mitigation was completed earlier and is still active; status should be moved to mitigating.",
+					userId: "U_ONCALL",
+				},
+			},
+			45,
+		),
+	];
+	const t3ProcessedThrough = t2Events[t2Events.length - 1]!.id;
+
+	return {
+		id: "stale-pending",
+		name: "Stale Pending Suggestion: Re-Suggest Allowed",
+		description:
+			"When a pending suggestion is still unapplied and becomes stale (>10 minutes and >20 events), the agent may re-suggest the same target if evidence still supports it.",
+		turns: [
+			{
+				name: "Turn 1: Rollback applied — suggest mitigating",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "high" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t1Events,
+					processedThroughId: 0,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating")],
+			},
+			{
+				name: "Turn 2: Fresh pending suggestion — do not repeat mitigating",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "high" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t2Events,
+					processedThroughId: t2ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating")],
+			},
+			{
+				name: "Turn 3: Pending suggestion is stale — re-suggest mitigating",
+				context: {
+					incident: baseIncident({ ...incidentBase, severity: "high" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t3Events,
+					processedThroughId: t3ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [
+					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
+					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+				],
+			},
+		],
+	};
+}
+
+// ---------------------------------------------------------------------------
 // All scenarios
 // ---------------------------------------------------------------------------
 
@@ -2850,6 +2975,7 @@ export const SCENARIOS: LifecycleScenario[] = [
 	buildRealPerformanceIncidentScenario(),
 	buildPendingInvestigatingSpamScenario(),
 	buildMicroTurnNoiseScenario(),
+	buildStalePendingSuggestionScenario(),
 ];
 
 // ---------------------------------------------------------------------------
