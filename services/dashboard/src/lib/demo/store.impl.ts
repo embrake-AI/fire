@@ -931,6 +931,31 @@ function computeMetricsFromEvents(events: IncidentEvent[]) {
 	};
 }
 
+function getTerminalStatusDetailsFromEvents(events: IncidentEvent[]) {
+	for (const event of [...events].reverse()) {
+		if (event.event_type !== "STATUS_UPDATE") {
+			continue;
+		}
+		if (event.event_data.status === "declined") {
+			const declineReason = event.event_data.message.trim();
+			return {
+				terminalStatus: "declined" as const,
+				declineReason: declineReason.length ? declineReason : null,
+			};
+		}
+		if (event.event_data.status === "resolved") {
+			return {
+				terminalStatus: "resolved" as const,
+				declineReason: null,
+			};
+		}
+	}
+	return {
+		terminalStatus: "resolved" as const,
+		declineReason: null,
+	};
+}
+
 function ensureUniqueStrings(values: string[]): string[] {
 	return Array.from(new Set(values));
 }
@@ -2283,14 +2308,19 @@ export async function getResolvedIncidentsDemo() {
 		.filter((analysis) => !!analysis.resolvedAt)
 		.sort((a, b) => (b.resolvedAt?.getTime() ?? 0) - (a.resolvedAt?.getTime() ?? 0))
 		.slice(0, MAX_RESOLVED_INCIDENTS)
-		.map((analysis) => ({
-			id: analysis.id,
-			title: analysis.title,
-			description: analysis.description,
-			severity: analysis.severity,
-			createdAt: analysis.createdAt,
-			resolvedAt: analysis.resolvedAt!,
-		}));
+		.map((analysis) => {
+			const terminal = getTerminalStatusDetailsFromEvents(analysis.events);
+			return {
+				id: analysis.id,
+				title: analysis.title,
+				description: analysis.description,
+				severity: analysis.severity,
+				createdAt: analysis.createdAt,
+				resolvedAt: analysis.resolvedAt!,
+				terminalStatus: terminal.terminalStatus,
+				declineReason: terminal.declineReason,
+			};
+		});
 	return resolved;
 }
 
@@ -2300,17 +2330,21 @@ export async function getAnalysisByIdDemo(data: { id: string }): Promise<GetAnal
 	if (!analysis || !analysis.resolvedAt) {
 		return null;
 	}
+	const terminal = getTerminalStatusDetailsFromEvents(analysis.events);
 	return {
 		...analysis,
 		resolvedAt: analysis.resolvedAt,
 		actions: [...analysis.actions],
+		terminalStatus: terminal.terminalStatus,
+		declineReason: terminal.declineReason,
 	};
 }
 
-export async function getMetricsDemo(data: { startDate?: string; endDate?: string; teamId?: string }): Promise<GetMetricsResponse> {
+export async function getMetricsDemo(data: { startDate?: string; endDate?: string; teamId?: string; includeRejected?: boolean }): Promise<GetMetricsResponse> {
 	const state = await loadState();
 	const startDate = data.startDate ? new Date(data.startDate) : null;
 	const endDate = data.endDate ? new Date(data.endDate) : null;
+	const includeRejected = data.includeRejected === true;
 
 	return state.analyses
 		.filter((analysis): analysis is DemoAnalysis & { resolvedAt: Date } => !!analysis.resolvedAt)
@@ -2322,6 +2356,7 @@ export async function getMetricsDemo(data: { startDate?: string; endDate?: strin
 		.map((analysis) => {
 			const entryPoint = state.entryPoints.find((entry) => entry.id === analysis.entryPointId);
 			const rotation = analysis.rotationId ? state.rotations.find((candidate) => candidate.id === analysis.rotationId) : undefined;
+			const terminal = getTerminalStatusDetailsFromEvents(analysis.events);
 			return {
 				id: analysis.id,
 				title: analysis.title,
@@ -2335,8 +2370,11 @@ export async function getMetricsDemo(data: { startDate?: string; endDate?: strin
 				teamId: analysis.teamId,
 				entryPointPrompt: entryPoint?.prompt ?? null,
 				rotationName: rotation?.name ?? null,
+				terminalStatus: terminal.terminalStatus,
 			};
-		});
+		})
+		.filter((analysis) => includeRejected || analysis.terminalStatus === "resolved")
+		.map(({ terminalStatus: _terminalStatus, ...analysis }) => analysis);
 }
 
 export async function updateAnalysisImpactDemo(data: { id: string; impact: string }) {

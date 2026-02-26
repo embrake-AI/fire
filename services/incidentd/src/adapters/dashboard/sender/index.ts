@@ -74,7 +74,7 @@ export async function incidentAssigneeUpdated(params: SenderParams["incidentAssi
 
 export async function incidentStatusUpdated(params: SenderParams["incidentStatusUpdated"]): Promise<void> {
 	const { step, env, id, incident } = params;
-	if (incident.status === "resolved") {
+	if (incident.status === "resolved" || incident.status === "declined") {
 		await step("d1.incident.delete", async () => {
 			await env.incidents.prepare("DELETE FROM incident WHERE id = ?").bind(id).run();
 			return true;

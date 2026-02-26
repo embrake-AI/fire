@@ -10,6 +10,7 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { DateRangePicker } from "~/components/ui/date-range-picker";
 import { Skeleton } from "~/components/ui/skeleton";
+import { Switch, SwitchControl, SwitchLabel, SwitchThumb } from "~/components/ui/switch";
 import { Tabs, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
@@ -21,18 +22,36 @@ import { useSlackUsers } from "~/lib/useSlackUsers";
 export const Route = createFileRoute("/_authed/metrics/")({
 	beforeLoad: requireRoutePermission("metrics.read"),
 	component: AnalysisDashboard,
+	validateSearch: (search) => ({
+		includeRejected:
+			search.includeRejected === true || (typeof search.includeRejected === "string" && (search.includeRejected === "true" || search.includeRejected === "1")) ? true : undefined,
+	}),
 });
 
 function AnalysisDashboard() {
 	const [range, setRange] = createSignal<DateValue[]>([]);
 	const [grouping, setGrouping] = createSignal("assignee");
+	const search = Route.useSearch();
+	const navigate = Route.useNavigate();
+	const includeRejected = createMemo(() => search().includeRejected === true);
 
 	const getMetricsFn = useServerFn(getMetrics);
 	const usersQuery = useUsers();
 	const slackUsersQuery = useSlackUsers();
 
+	const setIncludeRejected = (next: boolean) => {
+		navigate({
+			to: ".",
+			search: (prev) => ({
+				...prev,
+				includeRejected: next ? true : undefined,
+			}),
+			replace: true,
+		});
+	};
+
 	const metricsQuery = useQuery(() => ({
-		queryKey: ["metrics", range()[0]?.toString(), range()[1]?.toString()],
+		queryKey: ["metrics", range()[0]?.toString(), range()[1]?.toString(), includeRejected()],
 		queryFn: () => {
 			const fromStr = range()[0]?.toString();
 			const toStr = range()[1]?.toString();
@@ -45,12 +64,14 @@ function AnalysisDashboard() {
 					getMetricsDemo({
 						startDate: startDate.toISOString(),
 						endDate: endDate.toISOString(),
+						includeRejected: includeRejected(),
 					}),
 				remote: () =>
 					getMetricsFn({
 						data: {
 							startDate: startDate.toISOString(),
 							endDate: endDate.toISOString(),
+							includeRejected: includeRejected(),
 						},
 					}),
 			});
@@ -159,11 +180,11 @@ function AnalysisDashboard() {
 					</div>
 
 					<div class="flex items-center gap-3">
-						<CopyApiUrlButton range={range()} />
+						<CopyApiUrlButton range={range()} includeRejected={includeRejected()} />
 					</div>
 				</div>
 
-				<Filters range={range()} setRange={setRange} />
+				<Filters range={range()} setRange={setRange} includeRejected={includeRejected()} onIncludeRejectedChange={setIncludeRejected} />
 
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 					<MetricSummaryCard title="Total Incidents" value={incidents().length} icon={<ChartColumn class="w-5 h-5 text-blue-500" />} />
@@ -253,7 +274,7 @@ function AnalysisDashboard() {
 	);
 }
 
-function Filters(props: { range: DateValue[]; setRange: (v: DateValue[]) => void }) {
+function Filters(props: { range: DateValue[]; setRange: (v: DateValue[]) => void; includeRejected: boolean; onIncludeRejectedChange: (value: boolean) => void }) {
 	return (
 		<Card>
 			<CardContent class="p-4">
@@ -263,6 +284,12 @@ function Filters(props: { range: DateValue[]; setRange: (v: DateValue[]) => void
 						<span class="text-sm font-medium">Period:</span>
 						<DateRangePicker value={props.range} onValueChange={props.setRange} defaultPreset="thisWeek" />
 					</div>
+					<Switch checked={props.includeRejected} onChange={props.onIncludeRejectedChange} class="flex items-center gap-2">
+						<SwitchControl>
+							<SwitchThumb />
+						</SwitchControl>
+						<SwitchLabel>Include rejected incidents</SwitchLabel>
+					</Switch>
 				</div>
 			</CardContent>
 		</Card>
@@ -283,7 +310,7 @@ function MetricSummaryCard(props: { title: string; value: string | number; icon:
 	);
 }
 
-function CopyApiUrlButton(props: { range: DateValue[] }) {
+function CopyApiUrlButton(props: { range: DateValue[]; includeRejected: boolean }) {
 	const [copied, setCopied] = createSignal(false);
 
 	const handleCopy = () => {
@@ -297,6 +324,9 @@ function CopyApiUrlButton(props: { range: DateValue[] }) {
 		const url = new URL("/api/metrics", window.location.origin);
 		url.searchParams.set("startDate", startDate.toISOString());
 		url.searchParams.set("endDate", endDate.toISOString());
+		if (props.includeRejected) {
+			url.searchParams.set("includeRejected", "true");
+		}
 
 		void navigator.clipboard.writeText(url.toString());
 		setCopied(true);

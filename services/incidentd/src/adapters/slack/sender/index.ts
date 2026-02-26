@@ -602,7 +602,7 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 			});
 		}
 		if (!isSuggestionAppliedEvent(eventMetadata)) {
-			const statusEmoji = status === "resolved" ? "✅" : status === "mitigating" ? "🟡" : "🔴";
+			const statusEmoji = status === "resolved" ? "✅" : status === "mitigating" ? "🟡" : status === "declined" ? "⛔" : "🔴";
 			const statusText = message ? `Status: ${statusEmoji} *${status}*\n${message}` : `Status: ${statusEmoji} *${status}*`;
 			await postToChannel(stepDo, botToken, incidentChannelId, statusText, "slack.post-status-update");
 		}
@@ -613,7 +613,7 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 	}
 	await maybeUpdateSuggestionMessage(stepDo, botToken, eventMetadata);
 
-	if (incidentChannelId && status === "resolved") {
+	if (incidentChannelId && (status === "resolved" || status === "declined")) {
 		await archiveChannel(stepDo, botToken, incidentChannelId).catch((err) => {
 			console.warn("Failed to archive incident channel", err);
 		});
@@ -704,7 +704,14 @@ async function updateIncidentMessage({
 	if (incidentChannelId && channel !== incidentChannelId) {
 		blocks = addIncidentChannelPointerBlock(blocks, incidentChannelId);
 	}
-	const textFallback = `${incidentName} - ${status === "resolved" ? "resolved ✅" : status === "mitigating" ? "mitigating 🟡" : "open 🔴"}`;
+	const textFallback =
+		status === "resolved"
+			? `${incidentName} - resolved ✅`
+			: status === "mitigating"
+				? `${incidentName} - mitigating 🟡`
+				: status === "declined"
+					? `${incidentName} - declined ⛔`
+					: `${incidentName} - open 🔴`;
 	await stepDo(
 		stepName,
 		{
@@ -769,17 +776,18 @@ async function updateIncidentMessage({
 
 /**
  * Returns the valid status transitions for a given status.
- * open -> mitigating, resolved
- * mitigating -> resolved
- * resolved -> (none, terminal state)
+ * open -> mitigating, resolved, declined
+ * mitigating -> resolved, declined
+ * resolved/declined -> (none, terminal state)
  */
 function getValidStatusTransitions(currentStatus: Incident["status"]): Incident["status"][] {
 	switch (currentStatus) {
 		case "open":
-			return ["mitigating", "resolved"];
+			return ["mitigating", "resolved", "declined"];
 		case "mitigating":
-			return ["resolved"];
+			return ["resolved", "declined"];
 		case "resolved":
+		case "declined":
 			return [];
 	}
 }
@@ -795,6 +803,8 @@ function formatStatus(status: Incident["status"]): string {
 			return "🟡 Mitigating";
 		case "resolved":
 			return "🟢 Resolved";
+		case "declined":
+			return "⛔ Declined";
 	}
 }
 
@@ -816,14 +826,18 @@ function incidentBlocks({
 	title: string;
 }): KnownBlock[] {
 	const isResolved = status === "resolved";
+	const isDeclined = status === "declined";
+	const isTerminal = isResolved || isDeclined;
 	const isMitigating = status === "mitigating";
 	const validTransitions = getValidStatusTransitions(status);
 
 	const headerText = isResolved
 		? `<${frontendUrl}/metrics/${incidentId}|${title}> - ✅ resolved`
-		: isMitigating
-			? `<${frontendUrl}/incidents/${incidentId}|${title}> - 🟡 mitigating`
-			: `<${frontendUrl}/incidents/${incidentId}|${title}> - 🚨`;
+		: isDeclined
+			? `<${frontendUrl}/metrics/${incidentId}|${title}> - ⛔ declined`
+			: isMitigating
+				? `<${frontendUrl}/incidents/${incidentId}|${title}> - 🟡 mitigating`
+				: `<${frontendUrl}/incidents/${incidentId}|${title}> - 🚨`;
 
 	const blocks: KnownBlock[] = [
 		{
@@ -835,7 +849,7 @@ function incidentBlocks({
 		},
 	];
 
-	if (!isResolved) {
+	if (!isTerminal) {
 		blocks.push({
 			type: "section",
 			fields: [
@@ -845,8 +859,8 @@ function incidentBlocks({
 		});
 	}
 
-	if (statusMessage && (isMitigating || isResolved)) {
-		const messageLabel = isResolved ? "Resolution" : "Mitigation";
+	if (statusMessage && (isMitigating || isResolved || isDeclined)) {
+		const messageLabel = isResolved ? "Resolution" : isDeclined ? "Decline reason" : "Mitigation";
 		blocks.push({
 			type: "section",
 			text: {
@@ -858,7 +872,7 @@ function incidentBlocks({
 
 	blocks.push({ type: "divider" });
 
-	if (!isResolved) {
+	if (!isTerminal) {
 		const actionElements: ActionsBlock["elements"] = [
 			{
 				type: "static_select",

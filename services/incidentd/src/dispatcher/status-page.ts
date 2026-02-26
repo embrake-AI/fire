@@ -85,10 +85,12 @@ export async function affectionUpdated(params: SenderParams["affectionUpdated"])
 
 export async function incidentStatusUpdated(params: SenderParams["incidentStatusUpdated"]): Promise<void> {
 	const { step, env, id, incident, message } = params;
-	if (incident.status !== "resolved") {
+	if (incident.status !== "resolved" && incident.status !== "declined") {
 		return;
 	}
 	const db = getDB(env.db);
+	const trimmedMessage = message.trim();
+	const closureMessage = incident.status === "declined" ? (trimmedMessage ? `Declined: ${trimmedMessage}` : "Declined") : trimmedMessage || null;
 
 	await step(
 		"status-page.affection.resolve",
@@ -117,7 +119,7 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 				await tx.insert(incidentAffectionUpdate).values({
 					affectionId: existing.id,
 					status: "resolved",
-					message: message.trim() || null,
+					message: closureMessage,
 					createdBy: null,
 				});
 

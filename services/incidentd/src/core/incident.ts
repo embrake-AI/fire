@@ -38,6 +38,10 @@ type IncidentService = { id: string; name: string; prompt: string | null };
 type SuggestionLogInput = { message: string; suggestionId: string; messageId: string; suggestion?: Record<string, unknown> };
 type BootstrapMessage = { message: string; userId: string; messageId: string; createdAt: string };
 
+function isTerminalIncidentStatus(status: IS["status"]) {
+	return status === "resolved" || status === "declined";
+}
+
 function getAffectionStatusIndex(status: AffectionStatus) {
 	return AFFECTION_STATUS_ORDER.indexOf(status);
 }
@@ -131,7 +135,7 @@ export class Incident extends DurableObject<Env> {
 			return { error: "NOT_FOUND" };
 		} else if (!state._initialized) {
 			return { error: "NOT_INITIALIZED" };
-		} else if (state.status === "resolved") {
+		} else if (isTerminalIncidentStatus(state.status)) {
 			return { error: "RESOLVED" };
 		}
 		return state;
@@ -424,7 +428,7 @@ export class Incident extends DurableObject<Env> {
 			await this.scheduleAlarmAtMost(Date.now() + ALARM_INTERVAL_MS);
 		} else if (shouldScheduleForAgent && agentState.nextAt) {
 			await this.scheduleAlarmAtMost(agentState.nextAt);
-		} else if (state.status === "resolved" && !agentState.nextAt) {
+		} else if (isTerminalIncidentStatus(state.status) && !agentState.nextAt) {
 			await this.destroy();
 		}
 	}
@@ -606,7 +610,7 @@ export class Incident extends DurableObject<Env> {
 		}
 		const currentStatus = state.status;
 
-		const invalidTransition = currentStatus === "resolved" || (currentStatus === "mitigating" && status === "open");
+		const invalidTransition = isTerminalIncidentStatus(currentStatus) || (currentStatus === "mitigating" && status === "open");
 		const statusChange = currentStatus !== status;
 		if (invalidTransition || !statusChange) {
 			return;

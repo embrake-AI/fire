@@ -72,6 +72,12 @@ export const statusConfig: Record<Status, StatusConfig> = {
 		bg: "bg-emerald-100",
 		dot: "bg-emerald-500",
 	},
+	declined: {
+		label: "Declined",
+		color: "text-zinc-700",
+		bg: "bg-zinc-200",
+		dot: "bg-zinc-500",
+	},
 };
 
 export function getSeverity(severity: Severity) {

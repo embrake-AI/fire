@@ -25,6 +25,7 @@ export const getIncidents = createServerFn({
 export type IncidentEvent = IS_Event & { id: number; created_at: string; adapter: "slack" | "dashboard" | "fire" };
 export type IncidentTimelineItem = { created_at: string; text: string };
 export type IncidentAction = { id: string; description: string };
+export type TerminalIncidentStatus = "resolved" | "declined";
 
 export const getIncidentById = createServerFn({ method: "GET" })
 	.inputValidator((data: { id: string }) => data)
@@ -303,12 +304,14 @@ export type ResolvedIncident = {
 	severity: "low" | "medium" | "high";
 	createdAt: Date;
 	resolvedAt: Date;
+	terminalStatus: TerminalIncidentStatus;
+	declineReason: string | null;
 };
 
 export const getResolvedIncidents = createServerFn({ method: "GET" })
 	.middleware([authMiddleware, requirePermission("metrics.read")])
 	.handler(async ({ context }) => {
-		const resolved = await db
+		const analyses = await db
 			.select({
 				id: incidentAnalysis.id,
 				title: incidentAnalysis.title,
@@ -316,13 +319,15 @@ export const getResolvedIncidents = createServerFn({ method: "GET" })
 				severity: incidentAnalysis.severity,
 				createdAt: incidentAnalysis.createdAt,
 				resolvedAt: incidentAnalysis.resolvedAt,
+				terminalStatus: incidentAnalysis.terminalStatus,
+				declineReason: incidentAnalysis.declineReason,
 			})
 			.from(incidentAnalysis)
 			.where(eq(incidentAnalysis.clientId, context.clientId))
 			.orderBy(desc(incidentAnalysis.resolvedAt))
 			.limit(50);
-		// No pagination for now, when someone reaches 50, I'll add it
-		return resolved;
+
+		return analyses;
 	});
 
 export const getAnalysisById = createServerFn({ method: "GET" })
@@ -415,11 +420,12 @@ export function computeIncidentMetrics(analysis: IncidentAnalysisRow) {
 }
 
 export const getMetrics = createServerFn({ method: "GET" })
-	.inputValidator((data: { startDate?: string; endDate?: string; teamId?: string }) => data)
+	.inputValidator((data: { startDate?: string; endDate?: string; teamId?: string; includeRejected?: boolean }) => data)
 	.middleware([authMiddleware, requirePermission("metrics.read")])
 	.handler(async ({ data, context }) => {
 		const startDate = data.startDate ? new Date(data.startDate) : null;
 		const endDate = data.endDate ? new Date(data.endDate) : null;
+		const includeRejected = data.includeRejected === true;
 
 		const conditions = [eq(incidentAnalysis.clientId, context.clientId)];
 		if (startDate) {
@@ -430,6 +436,9 @@ export const getMetrics = createServerFn({ method: "GET" })
 		}
 		if (data.teamId) {
 			conditions.push(eq(incidentAnalysis.teamId, data.teamId));
+		}
+		if (!includeRejected) {
+			conditions.push(eq(incidentAnalysis.terminalStatus, "resolved"));
 		}
 
 		const incidents = await db
@@ -445,18 +454,23 @@ export const getMetrics = createServerFn({ method: "GET" })
 			.orderBy(desc(incidentAnalysis.resolvedAt))
 			.limit(100);
 
-		return incidents.map(({ incident, entryPointPrompt, rotationName }) => ({
-			id: incident.id,
-			title: incident.title,
-			severity: incident.severity,
-			assignee: incident.assignee,
-			createdAt: incident.createdAt,
-			resolvedAt: incident.resolvedAt,
-			metrics: computeIncidentMetrics(incident),
-			entryPointId: incident.entryPointId,
-			rotationId: incident.rotationId,
-			teamId: incident.teamId,
-			entryPointPrompt,
-			rotationName,
-		}));
+		const mappedIncidents = incidents.map(({ incident, entryPointPrompt, rotationName }) => {
+			return {
+				id: incident.id,
+				title: incident.title,
+				severity: incident.severity,
+				assignee: incident.assignee,
+				createdAt: incident.createdAt,
+				resolvedAt: incident.resolvedAt,
+				metrics: computeIncidentMetrics(incident),
+				entryPointId: incident.entryPointId,
+				rotationId: incident.rotationId,
+				teamId: incident.teamId,
+				entryPointPrompt,
+				rotationName,
+				terminalStatus: incident.terminalStatus,
+			};
+		});
+
+		return mappedIncidents.map(({ terminalStatus: _terminalStatus, ...incident }) => incident);
 	});

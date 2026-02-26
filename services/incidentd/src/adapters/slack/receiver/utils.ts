@@ -268,7 +268,14 @@ async function openStatusUpdateModal({
 	incidentId: string;
 	newStatus: Exclude<IS["status"], "open">;
 }) {
-	const statusLabel = newStatus === "mitigating" ? "Mitigating" : "Resolved";
+	const statusLabel = newStatus === "mitigating" ? "Mitigating" : newStatus === "resolved" ? "Resolved" : "Declined";
+	const messageLabel = newStatus === "resolved" ? "Resolution message" : newStatus === "declined" ? "Decline reason" : "Status update message";
+	const placeholderText =
+		newStatus === "resolved"
+			? "Describe how the incident was resolved..."
+			: newStatus === "declined"
+				? "Describe why this incident was declined..."
+				: "Describe the mitigation steps taken...";
 	const modalView = {
 		type: "modal",
 		callback_id: "status_update_modal",
@@ -298,7 +305,7 @@ async function openStatusUpdateModal({
 				block_id: "status_message_block",
 				label: {
 					type: "plain_text",
-					text: newStatus === "resolved" ? "Resolution message" : "Status update message",
+					text: messageLabel,
 				},
 				element: {
 					type: "plain_text_input",
@@ -306,7 +313,7 @@ async function openStatusUpdateModal({
 					multiline: true,
 					placeholder: {
 						type: "plain_text",
-						text: newStatus === "resolved" ? "Describe how the incident was resolved..." : "Describe the mitigation steps taken...",
+						text: placeholderText,
 					},
 				},
 			},

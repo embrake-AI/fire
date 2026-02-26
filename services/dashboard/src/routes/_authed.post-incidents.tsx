@@ -3,12 +3,13 @@ import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { ChevronRight, CircleCheck, Search, ShieldAlert } from "lucide-solid";
 import { createMemo, createSignal, For, Show, Suspense } from "solid-js";
+import { Badge } from "~/components/ui/badge";
 import { Card } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
 import { getResolvedIncidentsDemo } from "~/lib/demo/store";
-import { getSeverity } from "~/lib/incident-config";
+import { getSeverity, getStatus } from "~/lib/incident-config";
 import { getResolvedIncidents, type ResolvedIncident } from "~/lib/incidents/incidents";
 
 export const Route = createFileRoute("/_authed/post-incidents")({
@@ -50,11 +51,14 @@ function PostIncidentsContent() {
 	const resolvedIncidents = () => resolvedQuery.data ?? [];
 
 	const [search, setSearch] = createSignal("");
+	const [showDeclined, setShowDeclined] = createSignal(false);
+	const declinedCount = createMemo(() => resolvedIncidents().filter((incident) => incident.terminalStatus === "declined").length);
 
 	const filtered = createMemo(() => {
+		const base = showDeclined() ? resolvedIncidents() : resolvedIncidents().filter((inc) => inc.terminalStatus !== "declined");
 		const q = search().toLowerCase().trim();
-		if (!q) return resolvedIncidents();
-		return resolvedIncidents().filter((inc) => inc.title.toLowerCase().includes(q) || inc.description?.toLowerCase().includes(q));
+		if (!q) return base;
+		return base.filter((inc) => inc.title.toLowerCase().includes(q) || inc.description?.toLowerCase().includes(q) || inc.declineReason?.toLowerCase().includes(q));
 	});
 
 	return (
@@ -68,6 +72,14 @@ function PostIncidentsContent() {
 					<span class="text-sm text-muted-foreground">
 						{filtered().length} incident{filtered().length !== 1 ? "s" : ""}
 					</span>
+					<div class="ml-auto">
+						<Show when={declinedCount() > 0}>
+							<label class="flex items-center gap-1.5 text-sm text-muted-foreground select-none cursor-pointer">
+								<input type="checkbox" checked={showDeclined()} onChange={(e) => setShowDeclined(e.currentTarget.checked)} class="cursor-pointer" />
+								Show declined
+							</label>
+						</Show>
+					</div>
 				</div>
 
 				<div class="max-h-[70vh] overflow-y-auto pr-2">
@@ -107,6 +119,8 @@ function NoResolvedIncidents() {
 
 function ResolvedIncidentCard(props: { incident: ResolvedIncident }) {
 	const severity = () => getSeverity(props.incident.severity);
+	const status = () => getStatus(props.incident.terminalStatus);
+	const isDeclined = () => props.incident.terminalStatus === "declined";
 
 	return (
 		<Link to="/metrics/$incidentId" params={{ incidentId: props.incident.id }} class="block">
@@ -119,9 +133,15 @@ function ResolvedIncidentCard(props: { incident: ResolvedIncident }) {
 							<Show when={props.incident.description}>
 								<p class="mt-1 line-clamp-2 text-sm text-muted-foreground">{props.incident.description}</p>
 							</Show>
+							<Show when={isDeclined() && props.incident.declineReason}>
+								<p class="mt-1 line-clamp-2 text-sm text-muted-foreground">
+									<span class="font-medium text-foreground">Decline reason:</span> {props.incident.declineReason}
+								</p>
+							</Show>
 						</div>
 					</div>
 					<div class="flex shrink-0 items-center gap-3">
+						<Badge class={`${status().bg} ${status().color} border-transparent`}>{status().label}</Badge>
 						<span class="text-sm text-muted-foreground">
 							{new Date(props.incident.resolvedAt).toLocaleString(undefined, {
 								month: "short",

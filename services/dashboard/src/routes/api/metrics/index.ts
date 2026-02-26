@@ -17,6 +17,7 @@ import { sha256 } from "~/lib/utils/server";
  * - startDate: ISO date string (default: 2 months ago)
  * - endDate: ISO date string (default: now)
  * - teamId: UUID of team to filter by (optional)
+ * - includeRejected: include rejected/declined incidents when "true" or "1" (default: false)
  *
  * Returns incident data with computed metrics for integration with
  * upstream systems or external dashboards.
@@ -59,6 +60,8 @@ export const Route = createFileRoute("/api/metrics/")({
 				const startDateParam = url.searchParams.get("startDate");
 				const endDateParam = url.searchParams.get("endDate");
 				const teamIdParam = url.searchParams.get("teamId");
+				const includeRejectedParam = url.searchParams.get("includeRejected");
+				const includeRejected = includeRejectedParam === "true" || includeRejectedParam === "1";
 
 				// Default: endDate = now, startDate = 2 months back (matching tech KPI convention)
 				const now = new Date();
@@ -83,6 +86,9 @@ export const Route = createFileRoute("/api/metrics/")({
 				if (teamIdParam) {
 					conditions.push(eq(incidentAnalysis.teamId, teamIdParam));
 				}
+				if (!includeRejected) {
+					conditions.push(eq(incidentAnalysis.terminalStatus, "resolved"));
+				}
 
 				const incidents = await db
 					.select({
@@ -99,29 +105,32 @@ export const Route = createFileRoute("/api/metrics/")({
 					.orderBy(desc(incidentAnalysis.resolvedAt))
 					.limit(100);
 
-				const results = incidents.map(({ incident, entryPointPrompt, rotationName, teamName }) => {
-					const metrics = computeIncidentMetrics(incident);
-					return {
-						id: incident.id,
-						title: incident.title,
-						severity: incident.severity,
-						assignee: incident.assignee,
-						createdAt: incident.createdAt,
-						resolvedAt: incident.resolvedAt,
-						entryPointId: incident.entryPointId,
-						entryPointPrompt,
-						rotationId: incident.rotationId,
-						rotationName,
-						teamId: incident.teamId,
-						teamName,
-						metrics: {
-							timeToFirstResponseMs: metrics.timeToFirstResponse,
-							timeToAssigneeResponseMs: metrics.timeToAssigneeResponse,
-							timeToMitigateMs: metrics.timeToMitigate,
-							totalDurationMs: metrics.totalDuration,
-						},
-					};
-				});
+				const results = incidents
+					.map(({ incident, entryPointPrompt, rotationName, teamName }) => {
+						const metrics = computeIncidentMetrics(incident);
+						return {
+							id: incident.id,
+							title: incident.title,
+							severity: incident.severity,
+							assignee: incident.assignee,
+							createdAt: incident.createdAt,
+							resolvedAt: incident.resolvedAt,
+							entryPointId: incident.entryPointId,
+							entryPointPrompt,
+							rotationId: incident.rotationId,
+							rotationName,
+							teamId: incident.teamId,
+							teamName,
+							terminalStatus: incident.terminalStatus,
+							metrics: {
+								timeToFirstResponseMs: metrics.timeToFirstResponse,
+								timeToAssigneeResponseMs: metrics.timeToAssigneeResponse,
+								timeToMitigateMs: metrics.timeToMitigate,
+								totalDurationMs: metrics.totalDuration,
+							},
+						};
+					})
+					.map(({ terminalStatus: _terminalStatus, ...incident }) => incident);
 
 				return new Response(JSON.stringify({ incidents: results }), {
 					status: 200,

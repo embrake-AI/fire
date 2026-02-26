@@ -452,13 +452,14 @@ export function buildIncidentStateMessage(context: AgentSuggestionContext): stri
 	return `Incident state:\n- status: ${context.incident.status} (valid transitions: ${validTransitions})\n- severity: ${context.incident.severity}`;
 }
 
-export function getValidStatusTransitions(currentStatus: IS["status"]): Array<Exclude<IS["status"], "open">> {
+export function getValidStatusTransitions(currentStatus: IS["status"]): Array<Exclude<IS["status"], "open" | "declined">> {
 	switch (currentStatus) {
 		case "open":
 			return ["mitigating", "resolved"];
 		case "mitigating":
 			return ["resolved"];
 		case "resolved":
+		case "declined":
 			return [];
 	}
 }

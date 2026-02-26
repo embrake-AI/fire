@@ -99,8 +99,8 @@ interface Sender {
 
 const senders: Sender[] = [dashboardSender, slackSender, statusPageDispatcher];
 
-function isIncidentResolved(event: IS_Event) {
-	return event.event_type === "STATUS_UPDATE" && event.event_data.status === "resolved";
+function isIncidentTerminal(event: IS_Event) {
+	return event.event_type === "STATUS_UPDATE" && (event.event_data.status === "resolved" || event.event_data.status === "declined");
 }
 
 async function settleDispatch(label: string, tasks: Array<Promise<unknown> | undefined>) {
@@ -204,7 +204,7 @@ export class IncidentWorkflow extends WorkflowEntrypoint<Env, IncidentWorkflowPa
 
 		await this.dispatchWithLogging(step, payload);
 
-		while (!lastEvent || !isIncidentResolved(lastEvent)) {
+		while (!lastEvent || !isIncidentTerminal(lastEvent)) {
 			const nextEvent = await step.waitForEvent<IncidentWorkflowPayload>(`wait-for-incident-event_${String(waitKey)}`, {
 				type: INCIDENT_WORKFLOW_EVENT_TYPE,
 				timeout: "7 days",

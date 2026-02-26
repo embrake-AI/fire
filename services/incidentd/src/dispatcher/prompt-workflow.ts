@@ -1,6 +1,5 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import type { IS } from "@fire/common";
-import { getValidStatusTransitions } from "../agent/suggestions";
 import type { AgentContextResponse, AgentPromptPayload, AgentSuggestionContext } from "../agent/types";
 import { addReaction, removeReaction } from "../lib/slack";
 
@@ -15,6 +14,18 @@ Rules:
 
 type PromptTool = { type: "function"; function: { name: string; description: string; parameters: unknown } };
 
+function getPromptWorkflowValidStatusTransitions(currentStatus: IS["status"]): Array<Exclude<IS["status"], "open">> {
+	switch (currentStatus) {
+		case "open":
+			return ["mitigating", "resolved", "declined"];
+		case "mitigating":
+			return ["resolved", "declined"];
+		case "resolved":
+		case "declined":
+			return [];
+	}
+}
+
 function buildPromptTools(context: AgentSuggestionContext): PromptTool[] {
 	const serviceOptions = context.services.map((service) => service.id);
 	return [
@@ -26,7 +37,7 @@ function buildPromptTools(context: AgentSuggestionContext): PromptTool[] {
 				parameters: {
 					type: "object",
 					properties: {
-						status: { type: "string", enum: ["mitigating", "resolved"] },
+						status: { type: "string", enum: ["mitigating", "resolved", "declined"] },
 						message: { type: "string", description: "Message explaining status change. Keep concise." },
 					},
 					required: ["status", "message"],
@@ -186,7 +197,7 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 			services,
 			affection,
 			events,
-			validStatusTransitions: getValidStatusTransitions(incident.status),
+			validStatusTransitions: getPromptWorkflowValidStatusTransitions(incident.status),
 			prompt: {
 				text: payload.prompt,
 				userId: payload.userId,
@@ -273,7 +284,7 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 				switch (toolCall.function.name) {
 					case "update_status": {
 						const status = args.status;
-						if (status === "mitigating" || status === "resolved") {
+						if (status === "mitigating" || status === "resolved" || status === "declined") {
 							const messageText = args.message as string;
 							await step.do(`agent-prompt.apply-status:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
 								await stub.updateStatus(status, messageText, "fire", eventMetadata);

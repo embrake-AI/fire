@@ -31,6 +31,25 @@ function parseTimestamp(value: string | undefined) {
 	return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function isTerminalIncidentStatus(status: string | undefined): status is Extract<IS["status"], "resolved" | "declined"> {
+	return status === "resolved" || status === "declined";
+}
+
+function getTerminalStatusEvent(
+	events: IncidentEventData[],
+): (IncidentEventData & { event_type: "STATUS_UPDATE"; event_data: Extract<IS_Event, { event_type: "STATUS_UPDATE" }>["event_data"] }) | undefined {
+	for (const event of [...events].reverse()) {
+		if (event.event_type !== "STATUS_UPDATE") {
+			continue;
+		}
+		const status = (event.event_data as { status?: string } | undefined)?.status;
+		if (isTerminalIncidentStatus(status)) {
+			return event as IncidentEventData & { event_type: "STATUS_UPDATE"; event_data: Extract<IS_Event, { event_type: "STATUS_UPDATE" }>["event_data"] };
+		}
+	}
+	return undefined;
+}
+
 function isResolvedStatusEvent(
 	event: IncidentEventData,
 ): event is IncidentEventData & { event_type: "STATUS_UPDATE"; event_data: Extract<IS_Event, { event_type: "STATUS_UPDATE" }>["event_data"] } {
@@ -41,24 +60,31 @@ export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAn
 	async run(event: WorkflowEvent<IncidentAnalysisWorkflowPayload>, step: WorkflowStep) {
 		const payload = event.payload;
 		const { incidentId, incident, metadata, events } = payload;
+		const terminalStatusEvent = getTerminalStatusEvent(events);
+		const terminalStatus = terminalStatusEvent?.event_data.status === "declined" ? "declined" : "resolved";
+		const declineReasonRaw = terminalStatus === "declined" ? (terminalStatusEvent?.event_data.message.trim() ?? "") : "";
+		const declineReason = declineReasonRaw.length ? declineReasonRaw : null;
+		const shouldGeneratePostmortem = terminalStatus !== "declined";
 
-		const postmortem = await step.do(`generate-postmortem:${incidentId}`, { retries: { limit: 5, delay: "30 seconds", backoff: "exponential" } }, async () =>
-			generateIncidentPostmortem(
-				{
-					title: incident.title,
-					description: incident.description,
-					severity: incident.severity,
-					prompt: incident.prompt,
-					createdAt: parseTimestamp(incident.createdAt) ?? new Date(),
-				},
-				events.map((eventItem) => ({
-					event_type: eventItem.event_type,
-					event_data: eventItem.event_data,
-					created_at: eventItem.created_at,
-				})),
-				this.env.OPENAI_API_KEY,
-			),
-		);
+		const postmortem = shouldGeneratePostmortem
+			? await step.do(`generate-postmortem:${incidentId}`, { retries: { limit: 5, delay: "30 seconds", backoff: "exponential" } }, async () =>
+					generateIncidentPostmortem(
+						{
+							title: incident.title,
+							description: incident.description,
+							severity: incident.severity,
+							prompt: incident.prompt,
+							createdAt: parseTimestamp(incident.createdAt) ?? new Date(),
+						},
+						events.map((eventItem) => ({
+							event_type: eventItem.event_type,
+							event_data: eventItem.event_data,
+							created_at: eventItem.created_at,
+						})),
+						this.env.OPENAI_API_KEY,
+					),
+				)
+			: null;
 
 		await step.do(`persist-analysis:${incidentId}`, { retries: { limit: 5, delay: "1 minute", backoff: "exponential" } }, async () => {
 			const db = getDB(this.env.db);
@@ -71,13 +97,13 @@ export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAn
 				return { status: "exists" };
 			}
 
-			const timeline = postmortem.timeline.filter((item) => item?.text?.trim().length);
-			const rootCause = postmortem.rootCause.trim();
-			const impact = postmortem.impact.trim();
-			const actions = postmortem.actions.map((action) => action.trim()).filter((action) => action.length);
+			const timeline = postmortem ? postmortem.timeline.filter((item) => item?.text?.trim().length) : [];
+			const rootCause = postmortem?.rootCause.trim() ?? "";
+			const impact = postmortem?.impact.trim() ?? "";
+			const actions = postmortem ? postmortem.actions.map((action) => action.trim()).filter((action) => action.length) : [];
 
 			const createdAt = parseTimestamp(incident.createdAt) ?? parseTimestamp(events[0]?.created_at) ?? new Date();
-			const resolvedAtFromEvents = [...events].reverse().find(isResolvedStatusEvent);
+			const resolvedAtFromEvents = terminalStatusEvent ?? (shouldGeneratePostmortem ? [...events].reverse().find(isResolvedStatusEvent) : undefined);
 			const resolvedAtValue = parseTimestamp(resolvedAtFromEvents?.created_at) ?? new Date();
 
 			await db.transaction(async (tx) => {
@@ -95,6 +121,8 @@ export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAn
 					rootCause: rootCause.length ? rootCause : undefined,
 					impact: impact.length ? impact : undefined,
 					events,
+					terminalStatus,
+					declineReason,
 					createdAt,
 					resolvedAt: resolvedAtValue,
 					entryPointId: incident.entryPointId || undefined,

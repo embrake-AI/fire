@@ -181,8 +181,17 @@ function AnalysisDetail() {
 							{(data) => (
 								<div class="space-y-6">
 									<AnalysisHeader analysis={data} />
-									<MetricsCard analysis={data} />
-									<PostmortemCard analysis={data} />
+									<Show
+										when={data().terminalStatus === "declined"}
+										fallback={
+											<>
+												<MetricsCard analysis={data} />
+												<PostmortemCard analysis={data} />
+											</>
+										}
+									>
+										<DeclinedSummaryCard analysis={data} />
+									</Show>
 									<Timeline events={data().events} />
 								</div>
 							)}
@@ -197,7 +206,7 @@ function AnalysisDetail() {
 function AnalysisHeader(props: { analysis: Accessor<IncidentAnalysis> }) {
 	const analysis = () => props.analysis();
 	const severityConfig = () => getSeverity(analysis().severity);
-	const status = getStatus("resolved");
+	const status = () => getStatus(analysis().terminalStatus);
 	const user = useUserBySlackId(() => analysis().assignee);
 
 	const formatDuration = () => {
@@ -217,9 +226,9 @@ function AnalysisHeader(props: { analysis: Accessor<IncidentAnalysis> }) {
 		<div class="space-y-4">
 			<div class="flex items-start justify-between gap-4">
 				<h1 class="text-3xl font-bold tracking-tight">{analysis().title}</h1>
-				<Badge round class={`${status.bg} ${status.color} border-transparent h-8 px-3 text-sm shrink-0`}>
-					<span class={`w-2 h-2 rounded-full mr-2 ${status.dot}`} />
-					{status.label}
+				<Badge round class={`${status().bg} ${status().color} border-transparent h-8 px-3 text-sm shrink-0`}>
+					<span class={`w-2 h-2 rounded-full mr-2 ${status().dot}`} />
+					{status().label}
 				</Badge>
 			</div>
 			<div class="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
@@ -246,7 +255,7 @@ function AnalysisHeader(props: { analysis: Accessor<IncidentAnalysis> }) {
 				<div class="flex items-center gap-2">
 					<FileText class="h-4 w-4" />
 					<span>
-						Resolved{" "}
+						{analysis().terminalStatus === "declined" ? "Declined" : "Resolved"}{" "}
 						{new Date(analysis().resolvedAt).toLocaleString(undefined, {
 							month: "short",
 							day: "numeric",
@@ -257,6 +266,26 @@ function AnalysisHeader(props: { analysis: Accessor<IncidentAnalysis> }) {
 				</div>
 			</div>
 		</div>
+	);
+}
+
+function DeclinedSummaryCard(props: { analysis: Accessor<IncidentAnalysis> }) {
+	const reason = createMemo(() => {
+		const value = props.analysis().declineReason?.trim();
+		return value?.length ? value : "No decline reason provided.";
+	});
+
+	return (
+		<Card class="border-l-4 border-l-zinc-500">
+			<CardContent class="py-5">
+				<div class="space-y-2">
+					<h3 class="text-lg font-semibold">Declined</h3>
+					<p class="text-sm text-muted-foreground">
+						<span class="font-medium text-foreground">Reason:</span> {reason()}
+					</p>
+				</div>
+			</CardContent>
+		</Card>
 	);
 }
 

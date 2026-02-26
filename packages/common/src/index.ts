@@ -1,4 +1,4 @@
-export const IS_STATUS = ["open", "mitigating", "resolved"] as const;
+export const IS_STATUS = ["open", "mitigating", "resolved", "declined"] as const;
 type IS_STATUS = (typeof IS_STATUS)[number];
 
 export const IS_SEVERITY = ["low", "medium", "high"] as const;

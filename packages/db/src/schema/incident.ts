@@ -7,6 +7,7 @@ import { team } from "./team";
 
 export const incidentSeverity = pgEnum("incident_severity", ["low", "medium", "high"]);
 export const incidentSource = pgEnum("incident_source", ["slack", "dashboard"]);
+export const incidentTerminalStatus = pgEnum("incident_terminal_status", ["resolved", "declined"]);
 
 /**
  * Event stored in the events JSONB array.
@@ -42,6 +43,8 @@ export const incidentAnalysis = pgTable("incident_analysis", {
 	rootCause: text("root_cause"),
 	impact: text("impact"),
 	events: jsonb("events").$type<IncidentEventData[]>().notNull(),
+	terminalStatus: incidentTerminalStatus("terminal_status").notNull().default("resolved"),
+	declineReason: text("decline_reason"),
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 	resolvedAt: timestamp("resolved_at", { withTimezone: true }).defaultNow().notNull(),
 	entryPointId: uuid("entry_point_id").references(() => entryPoint.id, { onDelete: "set null" }),
