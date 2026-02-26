@@ -325,7 +325,6 @@ export const getResolvedIncidents = createServerFn({ method: "GET" })
 			.from(incidentAnalysis)
 			.where(eq(incidentAnalysis.clientId, context.clientId))
 			.orderBy(desc(incidentAnalysis.resolvedAt))
-			.limit(50);
 
 		return analyses;
 	});
