@@ -98,7 +98,7 @@ export const updateSeverity = createServerFn({ method: "POST" })
 	});
 
 export const updateStatus = createServerFn({ method: "POST" })
-	.inputValidator((data: { id: string; status: "mitigating" | "resolved"; message: string }) => data)
+	.inputValidator((data: { id: string; status: Exclude<IS["status"], "open">; message: string }) => data)
 	.middleware([authMiddleware, requirePermission("incident.write")])
 	.handler(async ({ data, context }) => {
 		const response = await signedFetch(
@@ -324,7 +324,7 @@ export const getResolvedIncidents = createServerFn({ method: "GET" })
 			})
 			.from(incidentAnalysis)
 			.where(eq(incidentAnalysis.clientId, context.clientId))
-			.orderBy(desc(incidentAnalysis.resolvedAt))
+			.orderBy(desc(incidentAnalysis.resolvedAt));
 
 		return analyses;
 	});

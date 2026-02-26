@@ -100,13 +100,13 @@ export function useUpdateIncidentAssignee(incidentId: Accessor<string>, options?
 	}));
 }
 
-export function useUpdateIncidentStatus(incidentId: Accessor<string>, options?: { onSuccess?: (status: "mitigating" | "resolved") => void; onError?: () => void }) {
+export function useUpdateIncidentStatus(incidentId: Accessor<string>, options?: { onSuccess?: (status: Exclude<IS["status"], "open">) => void; onError?: () => void }) {
 	const queryClient = useQueryClient();
 
 	const updateStatusFn = useServerFn(updateStatus);
 
 	return useMutation(() => ({
-		mutationFn: async ({ status, message }: { status: "mitigating" | "resolved"; message: string }) =>
+		mutationFn: async ({ status, message }: { status: Exclude<IS["status"], "open">; message: string }) =>
 			runDemoAware({
 				demo: () => updateStatusDemo({ id: incidentId(), status, message }),
 				remote: () => updateStatusFn({ data: { id: incidentId(), status, message } }),

@@ -40,6 +40,7 @@ import { usePossibleSlackUsers, useUserBySlackId } from "~/lib/users/users.hooks
 import { cn } from "~/lib/utils/client";
 
 type ServiceListItem = Awaited<ReturnType<typeof getServices>>[number];
+type UpdatableIncidentStatus = Exclude<IS["status"], "open">;
 
 const AFFECTION_STATUS_ORDER: AffectionStatus[] = ["investigating", "mitigating", "resolved"];
 
@@ -248,7 +249,7 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 	const updateAssigneeMutation = useUpdateIncidentAssignee(() => incident().id);
 	const updateStatusMutation = useUpdateIncidentStatus(() => incident().id, {
 		onSuccess: async (status) => {
-			if (status === "resolved") {
+			if (status === "resolved" || status === "declined") {
 				const previousIncidents = queryClient.getQueryData<IS[]>(["incidents"]);
 				if (previousIncidents) {
 					const newIncidents = previousIncidents.filter((i) => i.id !== incident().id);
@@ -266,17 +267,21 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 	const [open, setOpen] = createSignal(false);
 
 	const [statusDialogOpen, setStatusDialogOpen] = createSignal(false);
-	const [selectedStatus, setSelectedStatus] = createSignal<"mitigating" | "resolved" | null>(null);
+	const [selectedStatus, setSelectedStatus] = createSignal<UpdatableIncidentStatus | null>(null);
 	const [statusMessage, setStatusMessage] = createSignal("");
+	const selectedStatusConfig = createMemo(() => {
+		const nextStatus = selectedStatus();
+		return nextStatus ? getStatus(nextStatus) : null;
+	});
 
-	const availableTransitions = createMemo(() => {
+	const availableTransitions = createMemo<readonly UpdatableIncidentStatus[]>(() => {
 		const current = incident().status;
-		if (current === "open") return ["mitigating", "resolved"] as const;
-		if (current === "mitigating") return ["resolved"] as const;
+		if (current === "open") return ["mitigating", "resolved", "declined"] as const;
+		if (current === "mitigating") return ["resolved", "declined"] as const;
 		return [] as const;
 	});
 
-	const handleStatusClick = (newStatus: "mitigating" | "resolved") => {
+	const handleStatusClick = (newStatus: UpdatableIncidentStatus) => {
 		setSelectedStatus(newStatus);
 		setStatusMessage("");
 		setStatusDialogOpen(true);
@@ -302,12 +307,19 @@ function IncidentHeader(props: { incident: Accessor<IS> }) {
 				<DialogContent>
 					<DialogHeader>
 						<DialogTitle>
-							Update Status to <span class="capitalize">{selectedStatus()}</span>
+							Update Status to <span>{selectedStatusConfig()?.label ?? ""}</span>
 						</DialogTitle>
-						<DialogDescription>Please provide a message explaining this status change.</DialogDescription>
+						<DialogDescription>
+							{selectedStatus() === "declined" ? "Please provide a reason for declining this incident." : "Please provide a message explaining this status change."}
+						</DialogDescription>
 					</DialogHeader>
 					<div class="py-4">
-						<Textarea placeholder="Describe what changed..." value={statusMessage()} onInput={(e) => setStatusMessage(e.currentTarget.value)} class="min-h-25" />
+						<Textarea
+							placeholder={selectedStatus() === "declined" ? "Describe why this incident is being declined..." : "Describe what changed..."}
+							value={statusMessage()}
+							onInput={(e) => setStatusMessage(e.currentTarget.value)}
+							class="min-h-25"
+						/>
 					</div>
 					<DialogFooter>
 						<Button variant="outline" onClick={() => setStatusDialogOpen(false)}>
@@ -425,7 +437,7 @@ function IncidentAffectionSection(props: { incidentId: string; incidentStatus: I
 	const [servicesOpen, setServicesOpen] = createSignal(false);
 
 	const affection = () => affectionQuery.data ?? null;
-	const isLive = () => props.incidentStatus !== "resolved";
+	const isLive = () => props.incidentStatus !== "resolved" && props.incidentStatus !== "declined";
 
 	const services = () => servicesQuery.data ?? [];
 
@@ -507,7 +519,7 @@ function IncidentAffectionSection(props: { incidentId: string; incidentStatus: I
 					</div>
 				</Show>
 				<Show when={!isLive()}>
-					<span class="text-xs text-muted-foreground">Incident is resolved. Affection updates are read-only.</span>
+					<span class="text-xs text-muted-foreground">Incident is resolved or declined. Affection updates are read-only.</span>
 				</Show>
 			</CardFooter>
 

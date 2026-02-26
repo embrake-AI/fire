@@ -2206,7 +2206,7 @@ export async function getIncidentsDemo() {
 export async function getIncidentByIdDemo(data: { id: string }) {
 	const state = await loadState();
 	const incident = state.incidents.find((item) => item.id === data.id);
-	if (!incident || incident.state.status === "resolved") {
+	if (!incident || incident.state.status === "resolved" || incident.state.status === "declined") {
 		return { error: "NOT_FOUND" as const };
 	}
 	return {
@@ -2256,7 +2256,7 @@ export async function updateSeverityDemo(data: { id: string; severity: IS["sever
 	});
 }
 
-export async function updateStatusDemo(data: { id: string; status: "mitigating" | "resolved"; message: string }) {
+export async function updateStatusDemo(data: { id: string; status: Exclude<IS["status"], "open">; message: string }) {
 	return withState(async (state) => {
 		const incident = state.incidents.find((item) => item.id === data.id);
 		if (!incident) {
@@ -2272,7 +2272,7 @@ export async function updateStatusDemo(data: { id: string; status: "mitigating" 
 		});
 
 		const analysis = ensureIncidentAnalysis(state, incident);
-		if (data.status === "resolved") {
+		if (data.status === "resolved" || data.status === "declined") {
 			analysis.resolvedAt = new Date();
 		}
 	});

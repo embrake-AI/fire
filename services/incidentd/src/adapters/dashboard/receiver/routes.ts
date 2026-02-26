@@ -103,9 +103,9 @@ dashboardRoutes.post("/:id/status", async (c) => {
 	if (!id) {
 		return c.json({ error: "ID is required" }, 400);
 	}
-	const { status, message } = await c.req.json<{ status: "mitigating" | "resolved"; message: string }>();
+	const { status, message } = await c.req.json<{ status: "mitigating" | "resolved" | "declined"; message: string }>();
 
-	if (!["mitigating", "resolved"].includes(status)) {
+	if (!["mitigating", "resolved", "declined"].includes(status)) {
 		return c.json({ error: "Invalid status" }, 400);
 	}
 
