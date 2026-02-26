@@ -18,6 +18,9 @@ type IntercomCanvasRequest = {
 type IntercomCanvasInitializeResponse = {
 	canvas: {
 		content_url?: string;
+		content?: {
+			components: IntercomCanvasComponent[];
+		};
 	};
 };
 
@@ -63,6 +66,12 @@ type IntercomCanvasComponent =
 export type IntercomCanvasInitializeBuildResult = { status: 200; response: IntercomCanvasInitializeResponse } | { status: 404 };
 export type IntercomCanvasContentBuildResult = { status: 200; response: IntercomCanvasContentResponse } | { status: 404 };
 
+type IntercomWorkspaceAndStatusPageResolution = {
+	payload: IntercomCanvasRequest;
+	installation: { clientId: string; data: IntercomIntegrationData };
+	statusPageId: string | null;
+};
+
 function getIntercomData(data: IntegrationData): IntercomIntegrationData {
 	if (!isIntercomIntegrationData(data)) {
 		throw new Error("Intercom integration has invalid data shape");
@@ -102,6 +111,19 @@ function isCustomerFacingLocation(payload: IntercomCanvasRequest): boolean {
 		return true;
 	}
 	return location === "home" || location === "conversation" || location === "message";
+}
+
+function buildFireWorkspaceIntegrationsUrl(): string | null {
+	const appUrl = process.env.VITE_APP_URL?.trim();
+	if (!appUrl) {
+		return null;
+	}
+
+	try {
+		return new URL("/settings/workspace/integrations", appUrl).toString();
+	} catch {
+		return null;
+	}
 }
 
 function buildStatusPageBaseUrl(page: { slug: string; customDomain: string | null }): string | null {
@@ -161,6 +183,43 @@ function buildActiveAffectionResponse(affectionTitle: string, incidentUrl: strin
 					},
 				},
 			],
+		},
+	};
+}
+
+function buildSetupHintResponse(): IntercomCanvasContentResponse {
+	const fireIntegrationsUrl = buildFireWorkspaceIntegrationsUrl();
+	const components: IntercomCanvasComponent[] = [
+		{
+			type: "text",
+			id: "setup-title",
+			text: "Finish Fire setup",
+			style: "header",
+		},
+		{
+			type: "text",
+			id: "setup-body",
+			text: "Select a status page in Fire to show status updates in Intercom conversation details.",
+			style: "paragraph",
+		},
+	];
+
+	if (fireIntegrationsUrl) {
+		components.push({
+			type: "button",
+			id: "setup-link",
+			label: "Open Fire integrations",
+			style: "secondary",
+			action: {
+				type: "url",
+				url: fireIntegrationsUrl,
+			},
+		});
+	}
+
+	return {
+		content: {
+			components,
 		},
 	};
 }
@@ -242,6 +301,18 @@ async function buildIssueCanvasResponse(statusPageId: string): Promise<IntercomC
 	};
 }
 
+export async function buildStatusComponentsByStatusPageId(statusPageId: string): Promise<{ status: 200; components: IntercomCanvasComponent[] } | { status: 404 }> {
+	const response = await buildIssueCanvasResponse(statusPageId);
+	if (response.status !== 200) {
+		return { status: 404 };
+	}
+
+	return {
+		status: 200,
+		components: response.response.content.components,
+	};
+}
+
 export function verifyIntercomSignature(rawBody: string, signatureHeader: string | null): boolean {
 	if (!signatureHeader) {
 		return false;
@@ -267,13 +338,9 @@ export function verifyIntercomSignature(rawBody: string, signatureHeader: string
 	}
 }
 
-export async function resolveIntercomStatusPageId(rawBody: string): Promise<string | null> {
+export async function resolveWorkspaceAndStatusPage(rawBody: string): Promise<IntercomWorkspaceAndStatusPageResolution | null> {
 	const payload = parseIntercomCanvasRequest(rawBody);
 	if (!payload) {
-		return null;
-	}
-
-	if (!isCustomerFacingLocation(payload)) {
 		return null;
 	}
 
@@ -287,7 +354,24 @@ export async function resolveIntercomStatusPageId(rawBody: string): Promise<stri
 		return null;
 	}
 
-	return normalizeStatusPageId(installation.data.statusPageId);
+	return {
+		payload,
+		installation,
+		statusPageId: normalizeStatusPageId(installation.data.statusPageId),
+	};
+}
+
+export async function resolveIntercomStatusPageId(rawBody: string): Promise<string | null> {
+	const resolved = await resolveWorkspaceAndStatusPage(rawBody);
+	if (!resolved) {
+		return null;
+	}
+
+	if (!isCustomerFacingLocation(resolved.payload)) {
+		return null;
+	}
+
+	return resolved.statusPageId;
 }
 
 export async function buildIntercomLiveCanvasInitializeResponse(rawBody: string): Promise<IntercomCanvasInitializeBuildResult> {
@@ -312,11 +396,57 @@ export async function buildIntercomLiveCanvasInitializeResponse(rawBody: string)
 	};
 }
 
+export async function buildIntercomInboxCanvasInitializeResponse(rawBody: string): Promise<IntercomCanvasInitializeBuildResult> {
+	const resolved = await resolveWorkspaceAndStatusPage(rawBody);
+	if (!resolved) {
+		return { status: 404 };
+	}
+
+	if (!resolved.statusPageId) {
+		return {
+			status: 200,
+			response: {
+				canvas: {
+					content: buildSetupHintResponse().content,
+				},
+			},
+		};
+	}
+
+	const statusComponents = await buildStatusComponentsByStatusPageId(resolved.statusPageId);
+	if (statusComponents.status !== 200) {
+		return { status: 404 };
+	}
+
+	return {
+		status: 200,
+		response: {
+			canvas: {
+				content: {
+					components: statusComponents.components,
+				},
+			},
+		},
+	};
+}
+
 export async function buildIntercomCanvasContentResponseByStatusPageId(statusPageId: string): Promise<IntercomCanvasContentBuildResult> {
 	const normalizedStatusPageId = normalizeStatusPageId(statusPageId);
 	if (!normalizedStatusPageId) {
 		return { status: 404 };
 	}
 
-	return buildIssueCanvasResponse(normalizedStatusPageId);
+	const statusComponents = await buildStatusComponentsByStatusPageId(normalizedStatusPageId);
+	if (statusComponents.status !== 200) {
+		return { status: 404 };
+	}
+
+	return {
+		status: 200,
+		response: {
+			content: {
+				components: statusComponents.components,
+			},
+		},
+	};
 }
