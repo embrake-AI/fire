@@ -1,6 +1,6 @@
 import type { SlackIntegrationData } from "@fire/db/schema";
-import { integration, rotation, rotationMember, rotationOverride, user } from "@fire/db/schema";
-import { and, desc, eq, gt, inArray } from "drizzle-orm";
+import { integration, user } from "@fire/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { createHook, sleep } from "workflow";
 import { db } from "~/lib/db";
 import { postSlackMessage } from "~/lib/slack";
@@ -134,43 +134,52 @@ export async function rotationScheduleWorkflow(input: { rotationId: string }) {
 async function loadRotationState(rotationId: string, now: Date): Promise<RotationState | null> {
 	"use step";
 
-	const [rotationRow] = await db
-		.select({
-			id: rotation.id,
-			clientId: rotation.clientId,
-			name: rotation.name,
-			slackChannelId: rotation.slackChannelId,
-			anchorAt: rotation.anchorAt,
-			shiftLength: rotation.shiftLength,
-		})
-		.from(rotation)
-		.where(eq(rotation.id, rotationId))
-		.limit(1);
+	const rotationRow = await db.query.rotation.findFirst({
+		where: {
+			id: rotationId,
+		},
+		columns: {
+			id: true,
+			clientId: true,
+			name: true,
+			slackChannelId: true,
+			anchorAt: true,
+			shiftLength: true,
+		},
+		with: {
+			members: {
+				columns: {
+					assigneeId: true,
+					position: true,
+				},
+				orderBy: {
+					position: "asc",
+				},
+			},
+			overrides: {
+				where: {
+					endAt: {
+						gt: now,
+					},
+				},
+				columns: {
+					id: true,
+					assigneeId: true,
+					startAt: true,
+					endAt: true,
+					createdAt: true,
+				},
+				orderBy: {
+					createdAt: "desc",
+					id: "desc",
+				},
+			},
+		},
+	});
 
 	if (!rotationRow) {
 		return null;
 	}
-
-	const members = await db
-		.select({
-			assigneeId: rotationMember.assigneeId,
-			position: rotationMember.position,
-		})
-		.from(rotationMember)
-		.where(eq(rotationMember.rotationId, rotationId))
-		.orderBy(rotationMember.position);
-
-	const overrides = await db
-		.select({
-			id: rotationOverride.id,
-			assigneeId: rotationOverride.assigneeId,
-			startAt: rotationOverride.startAt,
-			endAt: rotationOverride.endAt,
-			createdAt: rotationOverride.createdAt,
-		})
-		.from(rotationOverride)
-		.where(and(eq(rotationOverride.rotationId, rotationId), gt(rotationOverride.endAt, now)))
-		.orderBy(desc(rotationOverride.createdAt), desc(rotationOverride.id));
 
 	return {
 		rotationId: rotationRow.id,
@@ -179,8 +188,8 @@ async function loadRotationState(rotationId: string, now: Date): Promise<Rotatio
 		slackChannelId: rotationRow.slackChannelId,
 		anchorAt: rotationRow.anchorAt,
 		shiftLengthMs: parseIntervalToMs(rotationRow.shiftLength),
-		members,
-		overrides,
+		members: rotationRow.members,
+		overrides: rotationRow.overrides,
 	};
 }
 
