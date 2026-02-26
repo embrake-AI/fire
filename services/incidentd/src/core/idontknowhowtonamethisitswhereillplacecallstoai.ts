@@ -181,10 +181,19 @@ export async function generateIncidentPostmortem(
 	events: Array<{ event_type: IS_Event["event_type"]; event_data: IS_Event["event_data"]; created_at: string }>,
 	openaiApiKey: string,
 ): Promise<IncidentPostmortem> {
-	const startedAt = events[0]?.created_at ?? null;
-	const firstResponseAt = events.find((event) => isHumanMessageEvent(event))?.created_at ?? null;
-	const mitigatedAt = events.find((event) => extractStatus(event) === "mitigating")?.created_at ?? null;
-	const resolvedAt = [...events].reverse().find((event) => extractStatus(event) === "resolved")?.created_at ?? null;
+	const startedAt = events.find((event) => event.event_type === "INCIDENT_CREATED")?.created_at ?? events[0]?.created_at ?? null;
+	const startedAtMs = startedAt ? new Date(startedAt).getTime() : NaN;
+	const isOnOrAfterStart = (createdAt: string) => {
+		if (Number.isNaN(startedAtMs)) {
+			return true;
+		}
+		const eventMs = new Date(createdAt).getTime();
+		return !Number.isNaN(eventMs) && eventMs >= startedAtMs;
+	};
+
+	const firstResponseAt = events.find((event) => isHumanMessageEvent(event) && isOnOrAfterStart(event.created_at))?.created_at ?? null;
+	const mitigatedAt = events.find((event) => extractStatus(event) === "mitigating" && isOnOrAfterStart(event.created_at))?.created_at ?? null;
+	const resolvedAt = [...events].reverse().find((event) => extractStatus(event) === "resolved" && isOnOrAfterStart(event.created_at))?.created_at ?? null;
 
 	const eventDescriptions = events.map((e) => `[${e.created_at}] ${e.event_type}: ${JSON.stringify(e.event_data)}`).join("\n");
 

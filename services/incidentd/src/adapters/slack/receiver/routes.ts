@@ -7,6 +7,8 @@ import { addReaction, incidentChannelIdentifier, slackThreadIdentifier } from ".
 import { ASSERT_NEVER } from "../../../lib/utils";
 import { verifySlackRequestMiddleware } from "./middleware";
 import {
+	buildThreadIncidentPrompt,
+	fetchSlackThreadMessages,
 	getIncidentIdFromIdentifier,
 	getIncidentIdFromMessageMetadata,
 	getSlackIntegration,
@@ -61,7 +63,7 @@ slackRoutes.post("/events", async (c) => {
 					}),
 					getIncidentIdFromIdentifier({
 						incidents: c.env.incidents,
-						identifier: incidentChannelIdentifier(channel),
+						identifiers: [incidentChannelIdentifier(channel)],
 					}),
 				]);
 
@@ -89,10 +91,9 @@ slackRoutes.post("/events", async (c) => {
 					return c.text("OK");
 				}
 				if (isThread) {
-					const identifier = slackThreadIdentifier(channel, promptThread);
 					const incidentId = await getIncidentIdFromIdentifier({
 						incidents: c.env.incidents,
-						identifier,
+						identifiers: [slackThreadIdentifier(channel, promptThread), promptThread],
 					});
 					if (incidentId) {
 						await addPrompt({
@@ -105,7 +106,59 @@ slackRoutes.post("/events", async (c) => {
 							threadTs: promptThread,
 							adapter: "slack",
 						});
+						return c.text("OK");
 					}
+
+					if (!slackIntegration.entryPoints.length) {
+						console.error(`No entry points found for client ${slackIntegration.clientId}`);
+						return c.text("OK");
+					}
+
+					const threadMessages = await fetchSlackThreadMessages({
+						botToken,
+						channel,
+						threadTs: promptThread,
+					});
+					if (!threadMessages?.length) {
+						await addReaction(botToken, channel, event.ts, "warning");
+						return c.text("OK");
+					}
+
+					const threadPrompt = buildThreadIncidentPrompt({
+						channel,
+						threadTs: promptThread,
+						mentionTs: event.ts,
+						mentionUserId: user,
+						mentionCommandText: prompt,
+						messages: threadMessages,
+					});
+
+					const threadForIncident = promptThread;
+					const isRetry = c.req.header("x-slack-retry-num") !== undefined;
+					if (!isRetry) {
+						c.executionCtx.waitUntil(addReaction(botToken, channel, threadForIncident, "fire"));
+					}
+
+					await startIncident({
+						c: c as Context<AuthContext>,
+						identifier: threadForIncident,
+						prompt: threadPrompt,
+						createdBy: user,
+						source: "slack",
+						m: {
+							botToken,
+							channel,
+							thread: threadForIncident,
+						},
+						entryPoints: slackIntegration.entryPoints,
+						services,
+						bootstrapMessages: threadMessages.map((message) => ({
+							message: message.text,
+							userId: message.userId,
+							messageId: message.messageId,
+							createdAt: message.createdAtIso,
+						})),
+					});
 					return c.text("OK");
 				}
 
@@ -211,7 +264,7 @@ slackRoutes.post("/events", async (c) => {
 				} else {
 					const incidentId = await getIncidentIdFromIdentifier({
 						incidents: c.env.incidents,
-						identifier: incidentChannelIdentifier(channel),
+						identifiers: [incidentChannelIdentifier(channel)],
 					});
 					if (incidentId) {
 						await addMessage({

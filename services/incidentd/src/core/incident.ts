@@ -16,6 +16,7 @@ const STATE_KEY = "S";
 const EVENTLOGVERSION_KEY = "ELV";
 const ENTRYPOINT_KEY = "EP";
 const SERVICES_KEY = "SV";
+const BOOTSTRAP_MESSAGES_KEY = "BM";
 const AGENT_STATE_KEY = "AG";
 const ALARM_INTERVAL_MS = 200;
 const MAX_ATTEMPTS = 3;
@@ -35,6 +36,7 @@ type AffectionImpact = "partial" | "major";
 type AffectionUpdateData = Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
 type IncidentService = { id: string; name: string; prompt: string | null };
 type SuggestionLogInput = { message: string; suggestionId: string; messageId: string; suggestion?: Record<string, unknown> };
+type BootstrapMessage = { message: string; userId: string; messageId: string; createdAt: string };
 
 function getAffectionStatusIndex(status: AffectionStatus) {
 	return AFFECTION_STATUS_ORDER.indexOf(status);
@@ -49,6 +51,36 @@ function normalizeIncidentServices(services: IncidentService[]) {
 		}
 	}
 	return Array.from(serviceMap.values());
+}
+
+function normalizeBootstrapMessages(messages: BootstrapMessage[]) {
+	const normalized = messages
+		.filter((message) => message?.messageId && message?.createdAt)
+		.map((message) => {
+			const parsed = new Date(message.createdAt);
+			if (Number.isNaN(parsed.getTime())) {
+				return null;
+			}
+			return {
+				message: message.message ?? "",
+				userId: message.userId || "unknown",
+				messageId: message.messageId,
+				createdAt: parsed.toISOString(),
+			} satisfies BootstrapMessage;
+		})
+		.filter((message): message is BootstrapMessage => !!message)
+		.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+	const deduped: BootstrapMessage[] = [];
+	const seen = new Set<string>();
+	for (const message of normalized) {
+		if (seen.has(message.messageId)) {
+			continue;
+		}
+		seen.add(message.messageId);
+		deduped.push(message);
+	}
+	return deduped;
 }
 
 /**
@@ -394,6 +426,7 @@ export class Incident extends DurableObject<Env> {
 		if (!entryPoints?.length) {
 			throw new Error("No entry points found");
 		}
+		const bootstrapMessages = this.ctx.storage.kv.get<BootstrapMessage[]>(BOOTSTRAP_MESSAGES_KEY) ?? [];
 		const { selectedEntryPoint, severity, title, description } = await calculateIncidentInfo(prompt, entryPoints, this.env.OPENAI_API_KEY);
 		const assignee = selectedEntryPoint.assignee;
 		const entryPointId = selectedEntryPoint.id;
@@ -432,6 +465,14 @@ export class Incident extends DurableObject<Env> {
 			CREATE INDEX idx_event_log_published_at ON event_log(published_at);
 			`);
 			this.ctx.storage.kv.put(EVENTLOGVERSION_KEY, "1");
+			for (const message of bootstrapMessages) {
+				this.ctx.storage.sql.exec(
+					"INSERT INTO event_log (event_type, event_data, created_at, published_at, adapter) VALUES ('MESSAGE_ADDED', ?, ?, ?, 'slack')",
+					JSON.stringify({ message: message.message, userId: message.userId, messageId: message.messageId }),
+					message.createdAt,
+					message.createdAt,
+				);
+			}
 			await this.commit(
 				{
 					state: payload,
@@ -444,6 +485,7 @@ export class Incident extends DurableObject<Env> {
 				{ skipAlarm: true },
 			);
 			this.ctx.storage.kv.delete(ENTRYPOINT_KEY);
+			this.ctx.storage.kv.delete(BOOTSTRAP_MESSAGES_KEY);
 		});
 		return payload;
 	}
@@ -486,11 +528,13 @@ export class Incident extends DurableObject<Env> {
 		{ id, prompt, createdBy, source, metadata }: Pick<DOState, "id" | "prompt" | "createdBy" | "source" | "metadata">,
 		entryPoints: EntryPoint[],
 		services: IncidentService[],
+		bootstrapMessages: BootstrapMessage[] = [],
 	) {
 		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY);
 		if (!state) {
 			await this.ctx.storage.transaction(async () => {
 				const normalizedServices = normalizeIncidentServices(services);
+				const normalizedBootstrapMessages = normalizeBootstrapMessages(bootstrapMessages);
 				this.ctx.storage.kv.put<DOState>(STATE_KEY, {
 					id,
 					prompt,
@@ -512,6 +556,11 @@ export class Incident extends DurableObject<Env> {
 				});
 				this.ctx.storage.kv.put(ENTRYPOINT_KEY, entryPoints);
 				this.ctx.storage.kv.put(SERVICES_KEY, normalizedServices);
+				if (normalizedBootstrapMessages.length) {
+					this.ctx.storage.kv.put(BOOTSTRAP_MESSAGES_KEY, normalizedBootstrapMessages);
+				} else {
+					this.ctx.storage.kv.delete(BOOTSTRAP_MESSAGES_KEY);
+				}
 				await this.ctx.storage.setAlarm(Date.now());
 			});
 		}

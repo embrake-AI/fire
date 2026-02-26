@@ -4,6 +4,7 @@ import type { Context } from "hono";
 export type BasicContext = { Bindings: Env };
 export type AuthContext = BasicContext & { Variables: { auth: { clientId: string } } };
 export type Metadata = Record<string, string> & { clientId: string; identifier: string };
+type BootstrapMessage = { message: string; userId: string; messageId: string; createdAt: string };
 
 // identifier -> idFromName
 // id -> idFromString
@@ -17,12 +18,14 @@ export async function startIncident<E extends AuthContext>({
 	identifier,
 	entryPoints,
 	services,
+	bootstrapMessages,
 }: {
 	c: Context<E>;
 	m: Omit<Metadata, "clientId">;
 	identifier: string;
 	entryPoints: EntryPoint[];
 	services: { id: string; name: string; prompt: string | null }[];
+	bootstrapMessages?: BootstrapMessage[];
 } & Pick<IS, "prompt" | "createdBy" | "source">) {
 	const clientId = c.var.auth.clientId;
 	const metadata = { ...m, clientId, identifier };
@@ -38,6 +41,7 @@ export async function startIncident<E extends AuthContext>({
 		},
 		entryPoints,
 		services,
+		bootstrapMessages,
 	);
 	return incidentId.toString();
 }

@@ -366,8 +366,8 @@ export function computeIncidentMetrics(analysis: IncidentAnalysisRow) {
 		};
 	}
 
-	// assumes events are ordered
-	const startedAt = new Date(events[0].created_at).getTime();
+	const incidentCreatedEvent = events.find((event) => event.event_type === "INCIDENT_CREATED");
+	const startedAt = new Date(incidentCreatedEvent?.created_at ?? events[0].created_at).getTime();
 
 	let timeToFirstResponse: number | null = null;
 	let timeToAssigneeResponse: number | null = null;
@@ -377,6 +377,11 @@ export function computeIncidentMetrics(analysis: IncidentAnalysisRow) {
 	const isSystemMessage = (event: (typeof events)[number]) => event.event_type === "MESSAGE_ADDED" && (!event.event_data.userId || event.event_data.userId === "fire");
 
 	for (const event of events) {
+		const eventTimestamp = new Date(event.created_at).getTime();
+		if (Number.isNaN(eventTimestamp) || eventTimestamp < startedAt) {
+			continue;
+		}
+
 		if (event.event_type === "INCIDENT_CREATED") {
 			assignees.add(event.event_data.assignee);
 		} else if (event.event_type === "MESSAGE_ADDED") {
@@ -384,17 +389,17 @@ export function computeIncidentMetrics(analysis: IncidentAnalysisRow) {
 				continue;
 			}
 			if (timeToFirstResponse === null) {
-				timeToFirstResponse = new Date(event.created_at).getTime() - startedAt;
+				timeToFirstResponse = eventTimestamp - startedAt;
 			}
 			if (timeToAssigneeResponse === null && assignees.has(event.event_data.userId)) {
 				assignees.add(event.event_data.userId);
-				timeToAssigneeResponse = new Date(event.created_at).getTime() - startedAt;
+				timeToAssigneeResponse = eventTimestamp - startedAt;
 			}
 		} else if (event.event_type === "STATUS_UPDATE") {
 			if (event.event_data.status === "mitigating") {
-				timeToMitigate = new Date(event.created_at).getTime() - startedAt;
+				timeToMitigate = eventTimestamp - startedAt;
 			} else if (event.event_data.status === "resolved") {
-				totalDuration = new Date(event.created_at).getTime() - startedAt;
+				totalDuration = eventTimestamp - startedAt;
 			}
 		} else if (event.event_type === "ASSIGNEE_UPDATE") {
 			assignees.add(event.event_data.assignee.slackId);

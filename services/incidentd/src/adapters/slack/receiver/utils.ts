@@ -113,6 +113,13 @@ export type SlackViewSubmissionPayload = {
 
 export type SlackInteractionPayload = SlackBlockActionPayload | SlackViewSubmissionPayload;
 
+export type SlackThreadMessage = {
+	messageId: string;
+	userId: string;
+	text: string;
+	createdAtIso: string;
+};
+
 // ============================================================================
 // Handlers
 // ============================================================================
@@ -323,6 +330,147 @@ async function openStatusUpdateModal({
 // Utilities
 // ============================================================================
 
+type SlackRepliesMessage = {
+	ts?: string;
+	user?: string;
+	bot_id?: string;
+	text?: string;
+	subtype?: string;
+};
+
+type SlackRepliesResponse = {
+	ok: boolean;
+	error?: string;
+	messages?: SlackRepliesMessage[];
+	response_metadata?: {
+		next_cursor?: string;
+	};
+};
+
+function tsToIso(ts: string): string | null {
+	const parsed = Number(ts);
+	if (!Number.isFinite(parsed)) {
+		return null;
+	}
+	const date = new Date(parsed * 1000);
+	if (Number.isNaN(date.getTime())) {
+		return null;
+	}
+	return date.toISOString();
+}
+
+function normalizeSlackThreadMessage(message: SlackRepliesMessage): SlackThreadMessage | null {
+	if (!message.ts) {
+		return null;
+	}
+	const createdAtIso = tsToIso(message.ts);
+	if (!createdAtIso) {
+		return null;
+	}
+	const userId =
+		(typeof message.user === "string" && message.user) ||
+		(typeof message.bot_id === "string" && message.bot_id) ||
+		(typeof message.subtype === "string" && message.subtype ? `system:${message.subtype}` : "unknown");
+	const text =
+		typeof message.text === "string" && message.text.length > 0
+			? message.text
+			: typeof message.subtype === "string" && message.subtype
+				? `[subtype:${message.subtype}]`
+				: "[no-text-message]";
+
+	return {
+		messageId: message.ts,
+		userId,
+		text,
+		createdAtIso,
+	};
+}
+
+export async function fetchSlackThreadMessages({ botToken, channel, threadTs }: { botToken: string; channel: string; threadTs: string }): Promise<SlackThreadMessage[] | null> {
+	const allMessages: SlackRepliesMessage[] = [];
+	let cursor: string | undefined;
+
+	try {
+		do {
+			const params = new URLSearchParams({
+				channel,
+				ts: threadTs,
+				limit: "200",
+			});
+			if (cursor) {
+				params.set("cursor", cursor);
+			}
+
+			const response = await fetch(`https://slack.com/api/conversations.replies?${params.toString()}`, {
+				headers: {
+					Authorization: `Bearer ${botToken}`,
+				},
+			});
+			const data = await response.json<SlackRepliesResponse>().catch(() => null);
+			if (!response.ok || !data?.ok || !Array.isArray(data.messages)) {
+				return null;
+			}
+			allMessages.push(...data.messages);
+			const nextCursor = data.response_metadata?.next_cursor?.trim();
+			cursor = nextCursor || undefined;
+		} while (cursor);
+	} catch (error) {
+		console.error("Failed to fetch Slack thread messages", error);
+		return null;
+	}
+
+	const normalized = allMessages
+		.map(normalizeSlackThreadMessage)
+		.filter((message): message is SlackThreadMessage => !!message)
+		.sort((a, b) => Number(a.messageId) - Number(b.messageId));
+
+	const deduped: SlackThreadMessage[] = [];
+	const seen = new Set<string>();
+	for (const message of normalized) {
+		if (seen.has(message.messageId)) {
+			continue;
+		}
+		seen.add(message.messageId);
+		deduped.push(message);
+	}
+
+	if (!deduped.length) {
+		return null;
+	}
+
+	return deduped;
+}
+
+export function buildThreadIncidentPrompt({
+	channel,
+	threadTs,
+	mentionTs,
+	mentionUserId,
+	mentionCommandText,
+	messages,
+}: {
+	channel: string;
+	threadTs: string;
+	mentionTs: string;
+	mentionUserId: string;
+	mentionCommandText: string;
+	messages: SlackThreadMessage[];
+}): string {
+	const escapedCommand = mentionCommandText.trim() || "(empty)";
+	const transcript = messages.map((message) => `[${message.createdAtIso}] (${message.messageId}) ${message.userId}: ${message.text.replace(/\r?\n/g, "\\n")}`).join("\n");
+
+	return [
+		"Slack thread incident bootstrap",
+		`Channel: ${channel}`,
+		`Thread: ${threadTs}`,
+		`Mention ts: ${mentionTs}`,
+		`Mention user: ${mentionUserId}`,
+		`Mention command: ${escapedCommand}`,
+		"Transcript:",
+		transcript,
+	].join("\n");
+}
+
 /**
  * Look up a Slack integration by workspace (team_id).
  *
@@ -503,11 +651,17 @@ export async function getIncidentIdFromMessageMetadata({ botToken, channel, mess
 	}
 }
 
-export async function getIncidentIdFromIdentifier({ incidents, identifier }: { incidents: Env["incidents"]; identifier: string }): Promise<string | null> {
+export async function getIncidentIdFromIdentifier({ incidents, identifiers }: { incidents: Env["incidents"]; identifiers: string[] }): Promise<string | null> {
+	const normalizedIdentifiers = Array.from(new Set(identifiers.filter((identifier) => identifier)));
+	if (!normalizedIdentifiers.length) {
+		return null;
+	}
+
 	try {
+		const placeholders = normalizedIdentifiers.map(() => "?").join(", ");
 		const result = await incidents
-			.prepare("SELECT id FROM incident WHERE EXISTS (SELECT 1 FROM json_each(identifier) WHERE value = ?) LIMIT 1")
-			.bind(identifier)
+			.prepare(`SELECT id FROM incident WHERE EXISTS (SELECT 1 FROM json_each(identifier) WHERE value IN (${placeholders})) LIMIT 1`)
+			.bind(...normalizedIdentifiers)
 			.all<{ id: string }>();
 		return result.results[0]?.id ?? null;
 	} catch (error) {
