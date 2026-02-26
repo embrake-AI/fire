@@ -621,8 +621,8 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 }
 
 export async function affectionUpdated(params: SenderParams["affectionUpdated"]) {
-	const { step: stepDo, metadata, event, eventMetadata } = params;
-	const { botToken, incidentChannelId } = metadata;
+	const { step: stepDo, metadata, incident, event, eventMetadata } = params;
+	const { botToken, channel, thread, incidentChannelId } = metadata;
 	if (!botToken) {
 		return;
 	}
@@ -631,15 +631,34 @@ export async function affectionUpdated(params: SenderParams["affectionUpdated"])
 		await stepDo("slack.add-prompt-reaction", () => addReaction(botToken, eventMetadata.promptChannel, eventMetadata.promptTs, "white_check_mark"));
 	}
 
-	if (!incidentChannelId) {
-		return;
+	const statusEmoji = event.status === "resolved" ? "✅" : event.status === "mitigating" ? "🟡" : event.status === "investigating" ? "🔍" : "📣";
+	const statusText = event.status ? `Status page update: ${statusEmoji} *${event.status}*` : "Status page update";
+	const messageText = event.message ? `\n${event.message}` : "";
+	const affectionUpdateText = `${statusText}${messageText}`;
+
+	if (channel) {
+		const shouldBroadcast = incident.severity === "high" && !!thread;
+		await stepDo(
+			"slack.post-affection-update.source",
+			{
+				retries: {
+					limit: 3,
+					delay: "1 second",
+				},
+			},
+			() =>
+				postSlackMessage({
+					botToken,
+					channel,
+					threadTs: thread ?? undefined,
+					replyBroadcast: shouldBroadcast,
+					text: affectionUpdateText,
+				}),
+		);
 	}
 
-	if (!isSuggestionAppliedEvent(eventMetadata)) {
-		const statusEmoji = event.status === "resolved" ? "✅" : event.status === "mitigating" ? "🟡" : event.status === "investigating" ? "🔍" : "📣";
-		const statusText = event.status ? `Status page update: ${statusEmoji} *${event.status}*` : "Status page update";
-		const messageText = event.message ? `\n${event.message}` : "";
-		await postToChannel(stepDo, botToken, incidentChannelId, `${statusText}${messageText}`, "slack.post-affection-update");
+	if (incidentChannelId && !isSuggestionAppliedEvent(eventMetadata)) {
+		await postToChannel(stepDo, botToken, incidentChannelId, affectionUpdateText, "slack.post-affection-update");
 	}
 	await maybeUpdateSuggestionMessage(stepDo, botToken, eventMetadata);
 }
