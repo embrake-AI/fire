@@ -1,45 +1,25 @@
-import type { incidentAffection, incidentAffectionService, incidentAffectionUpdate, service, statusPage } from "@fire/db/schema";
-import { type InferSelectModel, sql } from "drizzle-orm";
+import {
+	client as clientTable,
+	incidentAffectionService as incidentAffectionServiceTable,
+	incidentAffection as incidentAffectionTable,
+	type incidentAffectionUpdate as incidentAffectionUpdateTable,
+	service as serviceTable,
+	statusPageService as statusPageServiceTable,
+	statusPage as statusPageTable,
+} from "@fire/db/schema";
+import { and, eq, type InferSelectModel, sql } from "drizzle-orm";
 import { cacheLife } from "next/cache";
 import { db } from "./db";
 import { normalizeDomain } from "./status-pages.utils";
 
-type StatusPageRow = InferSelectModel<typeof statusPage>;
-type ServiceRow = InferSelectModel<typeof service>;
-type IncidentAffectionRow = InferSelectModel<typeof incidentAffection>;
-type IncidentAffectionServiceRow = InferSelectModel<typeof incidentAffectionService>;
-type IncidentAffectionUpdateRow = InferSelectModel<typeof incidentAffectionUpdate>;
+type StatusPageRow = InferSelectModel<typeof statusPageTable>;
+type ServiceRow = InferSelectModel<typeof serviceTable>;
+type IncidentAffectionRow = InferSelectModel<typeof incidentAffectionTable>;
+type IncidentAffectionServiceRow = InferSelectModel<typeof incidentAffectionServiceTable>;
+type IncidentAffectionUpdateRow = InferSelectModel<typeof incidentAffectionUpdateTable>;
 
-const PUBLIC_PAGE_COLUMNS = {
-	id: true,
-	clientId: true,
-	name: true,
-	slug: true,
-	logoUrl: true,
-	faviconUrl: true,
-	serviceDisplayMode: true,
-	customDomain: true,
-	privacyPolicyUrl: true,
-	supportUrl: true,
-	termsOfServiceUrl: true,
-	createdAt: true,
-	updatedAt: true,
-} as const;
-
-const INCIDENT_DETAIL_PAGE_COLUMNS = {
-	id: true,
-	clientId: true,
-	name: true,
-	slug: true,
-	logoUrl: true,
-	faviconUrl: true,
-	serviceDisplayMode: true,
-	supportUrl: true,
-	privacyPolicyUrl: true,
-	termsOfServiceUrl: true,
-	createdAt: true,
-	updatedAt: true,
-} as const;
+const STANDARD_CACHE_LIFE = { revalidate: 30, expire: 60 } as const;
+const SNAPSHOT_CACHE_LIFE = { revalidate: 10, expire: 30 } as const;
 
 const SNAPSHOT_PAGE_COLUMNS = {
 	id: true,
@@ -48,6 +28,16 @@ const SNAPSHOT_PAGE_COLUMNS = {
 	createdAt: true,
 	updatedAt: true,
 } as const;
+
+type StatusPageLookup = { slug: string } | { domain: string };
+
+type StatusPageContentRow = Pick<
+	StatusPageRow,
+	"id" | "clientId" | "name" | "slug" | "logoUrl" | "faviconUrl" | "serviceDisplayMode" | "privacyPolicyUrl" | "supportUrl" | "termsOfServiceUrl" | "createdAt" | "updatedAt"
+>;
+
+type SnapshotStatusPageRow = Pick<StatusPageRow, "id" | "name" | "slug" | "createdAt" | "updatedAt">;
+type StatusPageContentWithClientRow = StatusPageContentRow & { clientImage: string | null };
 
 export type StatusPageService = Pick<ServiceRow, "id" | "name" | "imageUrl"> & {
 	position: number | null;
@@ -87,26 +77,8 @@ function sortStatusPageServices(services: StatusPageService[]) {
 	});
 }
 
-async function buildStatusPagePublicData(pageRow: StatusPageRow): Promise<StatusPagePublicData> {
-	// Phase 1: load page metadata and linked services.
-	const [client, serviceLinks] = await Promise.all([
-		db.query.client.findFirst({
-			where: { id: pageRow.clientId },
-			columns: { image: true },
-		}),
-		db.query.statusPageService.findMany({
-			where: { statusPageId: pageRow.id },
-			columns: { position: true, description: true },
-			with: {
-				service: {
-					columns: { id: true, name: true, imageUrl: true, createdAt: true },
-				},
-			},
-			orderBy: (table, { asc }) => [asc(table.position)],
-		}),
-	]);
-
-	const page: StatusPageSummary = {
+function buildStatusPageSummary(pageRow: StatusPageContentRow, clientImage: string | null): StatusPageSummary {
+	return {
 		id: pageRow.id,
 		name: pageRow.name,
 		slug: pageRow.slug,
@@ -118,8 +90,87 @@ async function buildStatusPagePublicData(pageRow: StatusPageRow): Promise<Status
 		termsOfServiceUrl: pageRow.termsOfServiceUrl,
 		createdAt: pageRow.createdAt,
 		updatedAt: pageRow.updatedAt,
-		clientImage: client?.image ?? null,
+		clientImage,
 	};
+}
+
+function resolveStatusPageLookupFilter(lookup: StatusPageLookup) {
+	if ("slug" in lookup) {
+		return eq(statusPageTable.slug, lookup.slug);
+	}
+
+	const normalizedDomain = normalizeDomain(lookup.domain);
+	if (!normalizedDomain) {
+		return null;
+	}
+
+	return eq(statusPageTable.customDomain, normalizedDomain);
+}
+
+async function findStatusPageContentWithClientRow(lookup: StatusPageLookup): Promise<StatusPageContentWithClientRow | null> {
+	const whereFilter = resolveStatusPageLookupFilter(lookup);
+	if (!whereFilter) {
+		return null;
+	}
+
+	const rows = await db
+		.select({
+			id: statusPageTable.id,
+			clientId: statusPageTable.clientId,
+			name: statusPageTable.name,
+			slug: statusPageTable.slug,
+			logoUrl: statusPageTable.logoUrl,
+			faviconUrl: statusPageTable.faviconUrl,
+			serviceDisplayMode: statusPageTable.serviceDisplayMode,
+			privacyPolicyUrl: statusPageTable.privacyPolicyUrl,
+			supportUrl: statusPageTable.supportUrl,
+			termsOfServiceUrl: statusPageTable.termsOfServiceUrl,
+			createdAt: statusPageTable.createdAt,
+			updatedAt: statusPageTable.updatedAt,
+			clientImage: clientTable.image,
+		})
+		.from(statusPageTable)
+		.leftJoin(clientTable, eq(clientTable.id, statusPageTable.clientId))
+		.where(whereFilter)
+		.limit(1);
+
+	return rows[0] ?? null;
+}
+
+async function findSnapshotStatusPageRow(lookup: StatusPageLookup): Promise<SnapshotStatusPageRow | null> {
+	if ("slug" in lookup) {
+		const pageRow = await db.query.statusPage.findFirst({
+			where: { slug: lookup.slug },
+			columns: SNAPSHOT_PAGE_COLUMNS,
+		});
+		return pageRow ?? null;
+	}
+
+	const normalizedDomain = normalizeDomain(lookup.domain);
+	if (!normalizedDomain) {
+		return null;
+	}
+
+	const pageRow = await db.query.statusPage.findFirst({
+		where: { customDomain: normalizedDomain },
+		columns: SNAPSHOT_PAGE_COLUMNS,
+	});
+	return pageRow ?? null;
+}
+
+async function buildStatusPagePublicData(pageRow: StatusPageContentWithClientRow): Promise<StatusPagePublicData> {
+	const serviceLinks = await db.query.statusPageService.findMany({
+		where: { statusPageId: pageRow.id },
+		columns: { position: true, description: true },
+		with: {
+			service: {
+				columns: { id: true, name: true, imageUrl: true, createdAt: true },
+			},
+		},
+		orderBy: (table, { asc }) => [asc(table.position)],
+	});
+
+	const page = buildStatusPageSummary(pageRow, pageRow.clientImage);
 
 	const mappedServices: StatusPageService[] = [];
 	for (const link of serviceLinks) {
@@ -189,15 +240,8 @@ async function buildStatusPagePublicData(pageRow: StatusPageRow): Promise<Status
 	return { page, services, affections, updates };
 }
 
-export async function fetchPublicStatusPageBySlug(slug: string): Promise<StatusPagePublicData | null> {
-	"use cache";
-	cacheLife({ revalidate: 30, expire: 60 });
-
-	const pageRow = await db.query.statusPage.findFirst({
-		where: { slug },
-		columns: PUBLIC_PAGE_COLUMNS,
-	});
-
+async function fetchPublicStatusPageByLookup(lookup: StatusPageLookup): Promise<StatusPagePublicData | null> {
+	const pageRow = await findStatusPageContentWithClientRow(lookup);
 	if (!pageRow) {
 		return null;
 	}
@@ -205,25 +249,18 @@ export async function fetchPublicStatusPageBySlug(slug: string): Promise<StatusP
 	return buildStatusPagePublicData(pageRow);
 }
 
+export async function fetchPublicStatusPageBySlug(slug: string): Promise<StatusPagePublicData | null> {
+	"use cache";
+	cacheLife(STANDARD_CACHE_LIFE);
+
+	return fetchPublicStatusPageByLookup({ slug });
+}
+
 export async function fetchPublicStatusPageByDomain(domain: string): Promise<StatusPagePublicData | null> {
 	"use cache";
-	cacheLife({ revalidate: 30, expire: 60 });
+	cacheLife(STANDARD_CACHE_LIFE);
 
-	const normalizedDomain = normalizeDomain(domain);
-	if (!normalizedDomain) {
-		return null;
-	}
-
-	const pageRow = await db.query.statusPage.findFirst({
-		where: { customDomain: normalizedDomain },
-		columns: PUBLIC_PAGE_COLUMNS,
-	});
-
-	if (!pageRow) {
-		return null;
-	}
-
-	return buildStatusPagePublicData(pageRow);
+	return fetchPublicStatusPageByLookup({ domain });
 }
 
 export type IncidentHistoryItem = {
@@ -244,19 +281,82 @@ export type IncidentHistoryData = {
 	incidents: IncidentHistoryItem[];
 };
 
-function buildIncidentHistoryData(data: StatusPagePublicData): IncidentHistoryData {
-	const incidents: IncidentHistoryItem[] = data.affections
-		.map((affection) => {
-			const severity: "partial" | "major" = affection.services.some((s) => s.impact === "major") ? "major" : "partial";
-			const affectionUpdates = data.updates.filter((u) => u.affectionId === affection.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-			const lastUpdate = affectionUpdates[0] ?? null;
+function getLatestAffectionUpdates<T extends { affectionId: string; createdAt: Date }>(updates: T[]): Map<string, T> {
+	const latestByAffectionId = new Map<string, T>();
+	for (const update of updates) {
+		const current = latestByAffectionId.get(update.affectionId);
+		if (!current || update.createdAt.getTime() > current.createdAt.getTime()) {
+			latestByAffectionId.set(update.affectionId, update);
+		}
+	}
+	return latestByAffectionId;
+}
 
+async function fetchIncidentHistoryByLookup(lookup: StatusPageLookup): Promise<IncidentHistoryData | null> {
+	const pageRow = await findStatusPageContentWithClientRow(lookup);
+	if (!pageRow) {
+		return null;
+	}
+
+	const page = buildStatusPageSummary(pageRow, pageRow.clientImage);
+	const serviceAffectionRows = await db
+		.select({
+			affectionId: incidentAffectionTable.id,
+			title: incidentAffectionTable.title,
+			createdAt: incidentAffectionTable.createdAt,
+			resolvedAt: incidentAffectionTable.resolvedAt,
+			impact: incidentAffectionServiceTable.impact,
+		})
+		.from(statusPageServiceTable)
+		.innerJoin(incidentAffectionServiceTable, eq(incidentAffectionServiceTable.serviceId, statusPageServiceTable.serviceId))
+		.innerJoin(incidentAffectionTable, eq(incidentAffectionTable.id, incidentAffectionServiceTable.affectionId))
+		.where(eq(statusPageServiceTable.statusPageId, pageRow.id));
+
+	if (serviceAffectionRows.length === 0) {
+		return { page, incidents: [] };
+	}
+
+	const incidentMap = new Map<
+		string,
+		{
+			id: string;
+			title: string;
+			severity: "partial" | "major";
+			createdAt: Date;
+			resolvedAt: Date | null;
+		}
+	>();
+	for (const row of serviceAffectionRows) {
+		const existing = incidentMap.get(row.affectionId);
+		if (existing) {
+			if (row.impact === "major") {
+				existing.severity = "major";
+			}
+			continue;
+		}
+
+		incidentMap.set(row.affectionId, {
+			id: row.affectionId,
+			title: row.title,
+			severity: row.impact === "major" ? "major" : "partial",
+			createdAt: row.createdAt,
+			resolvedAt: row.resolvedAt,
+		});
+	}
+
+	const affectionIds = Array.from(incidentMap.keys());
+	const updates = await db.query.incidentAffectionUpdate.findMany({
+		where: { affectionId: { in: affectionIds } },
+		columns: { affectionId: true, status: true, message: true, createdAt: true },
+		orderBy: (table, { desc }) => [desc(table.createdAt)],
+	});
+	const latestUpdatesByAffectionId = getLatestAffectionUpdates(updates);
+
+	const incidents: IncidentHistoryItem[] = Array.from(incidentMap.values())
+		.map((incident) => {
+			const lastUpdate = latestUpdatesByAffectionId.get(incident.id) ?? null;
 			return {
-				id: affection.id,
-				title: affection.title,
-				severity,
-				createdAt: affection.createdAt,
-				resolvedAt: affection.resolvedAt,
+				...incident,
 				lastUpdate: lastUpdate
 					? {
 							status: lastUpdate.status,
@@ -266,33 +366,21 @@ function buildIncidentHistoryData(data: StatusPagePublicData): IncidentHistoryDa
 					: null,
 			};
 		})
-		.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+		.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-	return { page: data.page, incidents };
+	return { page, incidents };
 }
 
 export async function fetchIncidentHistoryByDomain(domain: string): Promise<IncidentHistoryData | null> {
 	"use cache";
-	cacheLife({ revalidate: 30, expire: 60 });
-
-	const data = await fetchPublicStatusPageByDomain(domain);
-	if (!data) {
-		return null;
-	}
-
-	return buildIncidentHistoryData(data);
+	cacheLife(STANDARD_CACHE_LIFE);
+	return fetchIncidentHistoryByLookup({ domain });
 }
 
 export async function fetchIncidentHistoryBySlug(slug: string): Promise<IncidentHistoryData | null> {
 	"use cache";
-	cacheLife({ revalidate: 30, expire: 60 });
-
-	const data = await fetchPublicStatusPageBySlug(slug);
-	if (!data) {
-		return null;
-	}
-
-	return buildIncidentHistoryData(data);
+	cacheLife(STANDARD_CACHE_LIFE);
+	return fetchIncidentHistoryByLookup({ slug });
 }
 
 export type IncidentDetailUpdate = {
@@ -315,80 +403,48 @@ export type IncidentDetailData = {
 	};
 };
 
-async function fetchIncidentDetailDirect(
-	pageRow: Pick<
-		StatusPageRow,
-		"id" | "clientId" | "name" | "slug" | "logoUrl" | "faviconUrl" | "serviceDisplayMode" | "supportUrl" | "privacyPolicyUrl" | "termsOfServiceUrl" | "createdAt" | "updatedAt"
-	>,
-	incidentId: string,
-): Promise<IncidentDetailData | null> {
-	// Phase 1: load page metadata and service IDs for this status page.
-	const [client, pageServices] = await Promise.all([
-		db.query.client.findFirst({
-			where: { id: pageRow.clientId },
-			columns: { image: true },
-		}),
-		db.query.statusPageService.findMany({
-			where: { statusPageId: pageRow.id },
-			columns: { serviceId: true },
-		}),
-	]);
+async function fetchIncidentDetailDirect(pageRow: StatusPageContentWithClientRow, incidentId: string): Promise<IncidentDetailData | null> {
+	const page = buildStatusPageSummary(pageRow, pageRow.clientImage);
 
-	const page: StatusPageSummary = {
-		id: pageRow.id,
-		name: pageRow.name,
-		slug: pageRow.slug,
-		logoUrl: pageRow.logoUrl,
-		faviconUrl: pageRow.faviconUrl,
-		serviceDisplayMode: pageRow.serviceDisplayMode,
-		supportUrl: pageRow.supportUrl,
-		privacyPolicyUrl: pageRow.privacyPolicyUrl,
-		termsOfServiceUrl: pageRow.termsOfServiceUrl,
-		createdAt: pageRow.createdAt,
-		updatedAt: pageRow.updatedAt,
-		clientImage: client?.image ?? null,
-	};
-
-	const serviceIds = pageServices.map((serviceLink) => serviceLink.serviceId);
-	if (serviceIds.length === 0) {
-		return null;
-	}
-
-	// Phase 2: load the requested incident (scoped to page services) plus its updates.
-	const [serviceAffections, updateRows] = await Promise.all([
-		db.query.incidentAffectionService.findMany({
-			where: { affectionId: incidentId, serviceId: { in: serviceIds } },
-			columns: { serviceId: true, impact: true },
-			with: {
-				service: {
-					columns: { id: true, name: true },
-				},
-				affection: {
-					columns: { id: true, title: true, createdAt: true, resolvedAt: true },
-				},
-			},
-		}),
-		db.query.incidentAffectionUpdate.findMany({
-			where: { affectionId: incidentId },
-			columns: { id: true, status: true, message: true, createdAt: true },
-			orderBy: (table, { desc }) => [desc(table.createdAt)],
-		}),
-	]);
+	const serviceAffections = await db
+		.select({
+			affectionId: incidentAffectionTable.id,
+			affectionTitle: incidentAffectionTable.title,
+			affectionCreatedAt: incidentAffectionTable.createdAt,
+			affectionResolvedAt: incidentAffectionTable.resolvedAt,
+			serviceId: incidentAffectionServiceTable.serviceId,
+			impact: incidentAffectionServiceTable.impact,
+			serviceName: serviceTable.name,
+		})
+		.from(statusPageServiceTable)
+		.innerJoin(incidentAffectionServiceTable, eq(incidentAffectionServiceTable.serviceId, statusPageServiceTable.serviceId))
+		.innerJoin(incidentAffectionTable, eq(incidentAffectionTable.id, incidentAffectionServiceTable.affectionId))
+		.innerJoin(serviceTable, eq(serviceTable.id, incidentAffectionServiceTable.serviceId))
+		.where(and(eq(statusPageServiceTable.statusPageId, pageRow.id), eq(incidentAffectionServiceTable.affectionId, incidentId)));
 	if (serviceAffections.length === 0) {
 		return null;
 	}
 
-	const affection = serviceAffections[0]?.affection;
-	if (!affection) {
-		return null;
-	}
+	const updateRows = await db.query.incidentAffectionUpdate.findMany({
+		where: { affectionId: incidentId },
+		columns: { id: true, status: true, message: true, createdAt: true },
+		orderBy: (table, { desc }) => [desc(table.createdAt)],
+	});
 
-	const severity: "partial" | "major" = serviceAffections.some((service) => service.impact === "major") ? "major" : "partial";
-	const affectedServices = serviceAffections.map((service) => ({
-		id: service.serviceId,
-		name: service.service?.name ?? "Unknown Service",
-		impact: service.impact,
-	}));
+	const affection = serviceAffections[0];
+
+	const severity: "partial" | "major" = serviceAffections.some((serviceAffection) => serviceAffection.impact === "major") ? "major" : "partial";
+	const affectedServiceMap = new Map<string, { id: string; name: string; impact: "partial" | "major" }>();
+	for (const serviceAffection of serviceAffections) {
+		if (!affectedServiceMap.has(serviceAffection.serviceId)) {
+			affectedServiceMap.set(serviceAffection.serviceId, {
+				id: serviceAffection.serviceId,
+				name: serviceAffection.serviceName ?? "Unknown Service",
+				impact: serviceAffection.impact,
+			});
+		}
+	}
+	const affectedServices = Array.from(affectedServiceMap.values());
 
 	const updates = updateRows.map((update) => ({
 		id: update.id,
@@ -400,30 +456,19 @@ async function fetchIncidentDetailDirect(
 	return {
 		page,
 		incident: {
-			id: affection.id,
-			title: affection.title,
+			id: affection.affectionId,
+			title: affection.affectionTitle,
 			severity,
-			createdAt: affection.createdAt,
-			resolvedAt: affection.resolvedAt,
+			createdAt: affection.affectionCreatedAt,
+			resolvedAt: affection.affectionResolvedAt,
 			affectedServices,
 			updates,
 		},
 	};
 }
 
-export async function fetchIncidentDetailByDomain(domain: string, incidentId: string): Promise<IncidentDetailData | null> {
-	"use cache";
-	cacheLife({ revalidate: 30, expire: 60 });
-
-	const normalizedDomain = normalizeDomain(domain);
-	if (!normalizedDomain) {
-		return null;
-	}
-
-	const pageRow = await db.query.statusPage.findFirst({
-		where: { customDomain: normalizedDomain },
-		columns: INCIDENT_DETAIL_PAGE_COLUMNS,
-	});
+async function fetchIncidentDetailByLookup(lookup: StatusPageLookup, incidentId: string): Promise<IncidentDetailData | null> {
+	const pageRow = await findStatusPageContentWithClientRow(lookup);
 	if (!pageRow) {
 		return null;
 	}
@@ -431,19 +476,16 @@ export async function fetchIncidentDetailByDomain(domain: string, incidentId: st
 	return fetchIncidentDetailDirect(pageRow, incidentId);
 }
 
+export async function fetchIncidentDetailByDomain(domain: string, incidentId: string): Promise<IncidentDetailData | null> {
+	"use cache";
+	cacheLife(STANDARD_CACHE_LIFE);
+	return fetchIncidentDetailByLookup({ domain }, incidentId);
+}
+
 export async function fetchIncidentDetailBySlug(slug: string, incidentId: string): Promise<IncidentDetailData | null> {
 	"use cache";
-	cacheLife({ revalidate: 30, expire: 60 });
-
-	const pageRow = await db.query.statusPage.findFirst({
-		where: { slug },
-		columns: INCIDENT_DETAIL_PAGE_COLUMNS,
-	});
-	if (!pageRow) {
-		return null;
-	}
-
-	return fetchIncidentDetailDirect(pageRow, incidentId);
+	cacheLife(STANDARD_CACHE_LIFE);
+	return fetchIncidentDetailByLookup({ slug }, incidentId);
 }
 
 export type StatusSnapshotData = {
@@ -516,7 +558,7 @@ type SnapshotAggregateRow = {
 	max_event_ts: string | null;
 };
 
-async function fetchStatusSnapshotDirect(pageRow: Pick<StatusPageRow, "id" | "name" | "slug" | "createdAt" | "updatedAt">): Promise<StatusSnapshotData> {
+async function fetchStatusSnapshotDirect(pageRow: SnapshotStatusPageRow): Promise<StatusSnapshotData> {
 	const { rows } = await db.execute<SnapshotAggregateRow>(sql`
 		WITH page_affections AS (
 			SELECT DISTINCT ia.id, ia.created_at, ia.updated_at, ia.resolved_at,
@@ -568,19 +610,8 @@ async function fetchStatusSnapshotDirect(pageRow: Pick<StatusPageRow, "id" | "na
 	};
 }
 
-export async function fetchStatusSnapshotByDomain(domain: string): Promise<StatusSnapshotData | null> {
-	"use cache";
-	cacheLife({ revalidate: 10, expire: 30 });
-
-	const normalizedDomain = normalizeDomain(domain);
-	if (!normalizedDomain) {
-		return null;
-	}
-
-	const pageRow = await db.query.statusPage.findFirst({
-		where: { customDomain: normalizedDomain },
-		columns: SNAPSHOT_PAGE_COLUMNS,
-	});
+async function fetchStatusSnapshotByLookup(lookup: StatusPageLookup): Promise<StatusSnapshotData | null> {
+	const pageRow = await findSnapshotStatusPageRow(lookup);
 	if (!pageRow) {
 		return null;
 	}
@@ -588,17 +619,14 @@ export async function fetchStatusSnapshotByDomain(domain: string): Promise<Statu
 	return fetchStatusSnapshotDirect(pageRow);
 }
 
+export async function fetchStatusSnapshotByDomain(domain: string): Promise<StatusSnapshotData | null> {
+	"use cache";
+	cacheLife(SNAPSHOT_CACHE_LIFE);
+	return fetchStatusSnapshotByLookup({ domain });
+}
+
 export async function fetchStatusSnapshotBySlug(slug: string): Promise<StatusSnapshotData | null> {
 	"use cache";
-	cacheLife({ revalidate: 10, expire: 30 });
-
-	const pageRow = await db.query.statusPage.findFirst({
-		where: { slug },
-		columns: SNAPSHOT_PAGE_COLUMNS,
-	});
-	if (!pageRow) {
-		return null;
-	}
-
-	return fetchStatusSnapshotDirect(pageRow);
+	cacheLife(SNAPSHOT_CACHE_LIFE);
+	return fetchStatusSnapshotByLookup({ slug });
 }
