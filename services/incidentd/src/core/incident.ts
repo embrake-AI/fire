@@ -53,6 +53,17 @@ function normalizeIncidentServices(services: IncidentService[]) {
 	return Array.from(serviceMap.values());
 }
 
+function formatSqliteTimestampUtc(date: Date): string {
+	const year = date.getUTCFullYear();
+	const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+	const day = String(date.getUTCDate()).padStart(2, "0");
+	const hours = String(date.getUTCHours()).padStart(2, "0");
+	const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+	const seconds = String(date.getUTCSeconds()).padStart(2, "0");
+	const milliseconds = String(date.getUTCMilliseconds()).padStart(3, "0");
+	return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`;
+}
+
 function normalizeBootstrapMessages(messages: BootstrapMessage[]) {
 	const normalized = messages
 		.filter((message) => message?.messageId && message?.createdAt)
@@ -65,7 +76,7 @@ function normalizeBootstrapMessages(messages: BootstrapMessage[]) {
 				message: message.message ?? "",
 				userId: message.userId || "unknown",
 				messageId: message.messageId,
-				createdAt: parsed.toISOString(),
+				createdAt: formatSqliteTimestampUtc(parsed),
 			} satisfies BootstrapMessage;
 		})
 		.filter((message): message is BootstrapMessage => !!message)
