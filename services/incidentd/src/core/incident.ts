@@ -6,6 +6,10 @@ import type { IncidentAnalysisWorkflowPayload } from "../dispatcher/analysis-wor
 import { INCIDENT_WORKFLOW_EVENT_TYPE, type IncidentWorkflowPayload } from "../dispatcher/workflow";
 import type { Metadata } from "../handler";
 import { calculateIncidentInfo } from "./idontknowhowtonamethisitswhereillplacecallstoai";
+import { type AffectionImpact, type AffectionStatus, filterAffectionServices, normalizeAffectionStatus, validateAffectionUpdate } from "./incident/affection";
+import { type AgentState, computeAgentNextAt, decideAlarmAction, shouldStartAgentTurn } from "./incident/alarm";
+import { mapAgentEventRow, mapAnalysisEventRow } from "./incident/event-log";
+import { createWorkflowIfMissing } from "./incident/workflow";
 
 export type DOState = IS & {
 	metadata: Metadata;
@@ -20,18 +24,6 @@ const BOOTSTRAP_MESSAGES_KEY = "BM";
 const AGENT_STATE_KEY = "AG";
 const ALARM_INTERVAL_MS = 200;
 const MAX_ATTEMPTS = 3;
-const AGENT_INITIAL_DEBOUNCE_MS = 60_000;
-const AGENT_DEBOUNCE_MS = 13_000;
-
-type AgentState = {
-	lastProcessedEventId: number;
-	toEventId: number | null;
-	nextAt?: number;
-};
-
-const AFFECTION_STATUS_ORDER = ["investigating", "mitigating", "resolved"] as const;
-type AffectionStatus = "investigating" | "mitigating" | "resolved";
-type AffectionImpact = "partial" | "major";
 
 type AffectionUpdateData = Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
 type IncidentService = { id: string; name: string; prompt: string | null };
@@ -40,10 +32,6 @@ type BootstrapMessage = { message: string; userId: string; messageId: string; cr
 
 function isTerminalIncidentStatus(status: IS["status"]) {
 	return status === "resolved" || status === "declined";
-}
-
-function getAffectionStatusIndex(status: AffectionStatus) {
-	return AFFECTION_STATUS_ORDER.indexOf(status);
 }
 
 function normalizeIncidentServices(services: IncidentService[]) {
@@ -157,22 +145,22 @@ export class Incident extends DurableObject<Env> {
 		this.ctx.storage.kv.put(AGENT_STATE_KEY, state);
 	}
 
-	private getAgentEventsUpTo(toId: number): AgentEvent[] {
-		const rows = this.ctx.storage.sql
-			.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "created_at" | "adapter" | "event_metadata">>(
-				"SELECT id, event_type, event_data, created_at, adapter, event_metadata FROM event_log WHERE id <= ? ORDER BY id ASC",
-				toId,
-			)
-			.toArray();
+	private listAgentEvents({ toId }: { toId?: number } = {}): AgentEvent[] {
+		const rows =
+			typeof toId === "number"
+				? this.ctx.storage.sql
+						.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "created_at" | "adapter" | "event_metadata">>(
+							"SELECT id, event_type, event_data, created_at, adapter, event_metadata FROM event_log WHERE id <= ? ORDER BY id ASC",
+							toId,
+						)
+						.toArray()
+				: this.ctx.storage.sql
+						.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "created_at" | "adapter" | "event_metadata">>(
+							"SELECT id, event_type, event_data, created_at, adapter, event_metadata FROM event_log ORDER BY id ASC",
+						)
+						.toArray();
 
-		return rows.map((event) => ({
-			id: event.id,
-			event_type: event.event_type,
-			event_data: JSON.parse(event.event_data),
-			created_at: event.created_at,
-			adapter: event.adapter,
-			event_metadata: event.event_metadata ? JSON.parse(event.event_metadata) : null,
-		}));
+		return rows.map(mapAgentEventRow);
 	}
 
 	private buildAgentIncidentSnapshot(state: DOState): AgentIncidentSnapshot {
@@ -192,7 +180,7 @@ export class Incident extends DurableObject<Env> {
 	private buildAgentTurnPayload(params: { state: DOState; fromEventId: number; toEventId: number; events: AgentEvent[]; affection: AgentAffectionInfo; services: AgentService[] }) {
 		const { state, fromEventId, toEventId, events, affection, services } = params;
 		const turnId = `${toEventId}`;
-		const payload: AgentTurnPayload = {
+		return {
 			incidentId: state.id,
 			turnId,
 			fromEventId,
@@ -202,8 +190,7 @@ export class Incident extends DurableObject<Env> {
 			services,
 			affection,
 			events,
-		};
-		return payload;
+		} satisfies AgentTurnPayload;
 	}
 
 	private getAffectionInfoFromLog(): AgentAffectionInfo {
@@ -227,14 +214,7 @@ export class Incident extends DurableObject<Env> {
 
 	private async startAgentTurnWorkflow(payload: AgentTurnPayload) {
 		const workflowId = `agent-turn-${payload.incidentId}-${payload.turnId}`;
-		try {
-			await this.env.INCIDENT_AGENT_WORKFLOW.create({ id: workflowId, params: payload });
-		} catch (error) {
-			if (error instanceof Error && /already.*exist/i.test(error.message)) {
-				return;
-			}
-			throw error;
-		}
+		await createWorkflowIfMissing(() => this.env.INCIDENT_AGENT_WORKFLOW.create({ id: workflowId, params: payload }));
 	}
 
 	private buildWorkflowPayload(event: EventLog, state: DOState): IncidentWorkflowPayload {
@@ -259,35 +239,12 @@ export class Incident extends DurableObject<Env> {
 		};
 	}
 
-	private async ensureWorkflowStarted(workflowId: string, payload: IncidentWorkflowPayload) {
-		try {
-			await this.env.INCIDENT_WORKFLOW.create({ id: workflowId, params: payload });
-		} catch (error) {
-			if (error instanceof Error && /already.*exist/i.test(error.message)) {
-				return;
-			}
-			throw error;
-		}
-	}
-
-	private async sendWorkflowEvent(workflowId: string, payload: IncidentWorkflowPayload) {
-		const instance = await this.env.INCIDENT_WORKFLOW.get(workflowId);
-		await instance.sendEvent({ type: INCIDENT_WORKFLOW_EVENT_TYPE, payload });
-	}
-
 	private async startAnalysisWorkflow() {
 		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
-		const events = this.ctx.storage.sql
+		const eventsForStorage = this.ctx.storage.sql
 			.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "adapter" | "created_at">>("SELECT id, event_type, event_data, adapter, created_at FROM event_log ORDER BY id ASC")
-			.toArray();
-
-		const eventsForStorage: IncidentEventData[] = events.map((event) => ({
-			id: event.id,
-			event_type: event.event_type,
-			event_data: JSON.parse(event.event_data),
-			adapter: event.adapter,
-			created_at: event.created_at,
-		}));
+			.toArray()
+			.map(mapAnalysisEventRow) as IncidentEventData[];
 
 		const createdAt = state.createdAt instanceof Date ? state.createdAt.toISOString() : new Date(state.createdAt).toISOString();
 
@@ -311,34 +268,24 @@ export class Incident extends DurableObject<Env> {
 		};
 
 		const workflowId = `analysis-${state.id}`;
-		try {
-			await this.env.INCIDENT_ANALYSIS_WORKFLOW.create({ id: workflowId, params: payload });
-		} catch (error) {
-			if (error instanceof Error && /already.*exist/i.test(error.message)) {
-				return;
-			}
-			throw error;
-		}
+		await createWorkflowIfMissing(() => this.env.INCIDENT_ANALYSIS_WORKFLOW.create({ id: workflowId, params: payload }));
 	}
 
 	private async dispatchToWorkflow(event: EventLog, state: DOState) {
 		const payload = this.buildWorkflowPayload(event, state);
 		const workflowId = state.id;
 		if (event.event_type === "INCIDENT_CREATED") {
-			await this.ensureWorkflowStarted(workflowId, payload);
+			await createWorkflowIfMissing(() => this.env.INCIDENT_WORKFLOW.create({ id: workflowId, params: payload }));
 		} else {
-			await this.sendWorkflowEvent(workflowId, payload);
+			const instance = await this.env.INCIDENT_WORKFLOW.get(workflowId);
+			await instance.sendEvent({ type: INCIDENT_WORKFLOW_EVENT_TYPE, payload });
 		}
 	}
 
-	/**
-	 * Either succeeds and there is no unpublished event
-	 * or fails throwing an error (and retries)
-	 */
-	async alarm() {
+	private async ensureInitializedState(): Promise<DOState | null> {
 		let state = this.ctx.storage.kv.get<DOState>(STATE_KEY);
 		if (!state) {
-			return;
+			return null;
 		}
 		if (!state._initialized) {
 			const uninitializedState = state;
@@ -353,84 +300,115 @@ export class Incident extends DurableObject<Env> {
 			);
 			state = this.ctx.storage.kv.get<DOState>(STATE_KEY)!;
 		}
-		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log WHERE published_at IS NULL AND attempts < ? ORDER BY id ASC LIMIT 100", MAX_ATTEMPTS).toArray();
-		let eventError: unknown;
-		if (events.length > 0) {
-			for (const event of events) {
-				try {
-					await this.dispatchToWorkflow(event, state);
-					this.ctx.storage.sql.exec("UPDATE event_log SET published_at = CURRENT_TIMESTAMP WHERE id = ? AND published_at IS NULL", event.id);
-				} catch (error) {
-					const attempts = event.attempts + 1;
-					if (attempts >= MAX_ATTEMPTS) {
-						console.error("Event failed after MAX_ATTEMPTS attempts, giving up", MAX_ATTEMPTS, event, error);
-					} else {
-						console.warn("Error forwarding event to workflow", event, error);
-					}
-					this.ctx.storage.sql.exec("UPDATE event_log SET attempts = ? WHERE id = ?", attempts, event.id);
-					eventError = error;
-					break;
-				}
-			}
-		}
+		return state;
+	}
 
-		if (eventError) {
-			throw eventError;
-		}
-
-		const now = Date.now();
-		let agentState = this.getAgentState();
-		const lastDispatchedEventId = events.at(-1)?.id ?? null;
-		const toEventId = lastDispatchedEventId ?? agentState.toEventId;
-		if (lastDispatchedEventId !== null) {
-			agentState.toEventId = lastDispatchedEventId;
-			// First agent turn waits longer; afterwards use trailing-edge debounce.
-			if (agentState.lastProcessedEventId === 0) {
-				agentState.nextAt = now + AGENT_INITIAL_DEBOUNCE_MS;
-			} else {
-				agentState.nextAt = now + AGENT_DEBOUNCE_MS;
-			}
-			this.setAgentState(agentState);
-		}
-
-		if (agentState.nextAt && toEventId && now >= agentState.nextAt && toEventId > agentState.lastProcessedEventId) {
+	private async forwardEvents(state: DOState, events: EventLog[]) {
+		for (const event of events) {
 			try {
-				const fromEventId = agentState.lastProcessedEventId;
-				const events = this.getAgentEventsUpTo(toEventId);
-				const services = (this.ctx.storage.kv.get<AgentService[]>(SERVICES_KEY) ?? []).map((service) => ({ id: service.id, name: service.name, prompt: service.prompt ?? null }));
-				const affection = this.getAffectionInfoFromLog();
-				if (events.length) {
-					const payload = this.buildAgentTurnPayload({
-						state,
-						fromEventId,
-						toEventId,
-						events,
-						affection,
-						services,
-					});
-					await this.startAgentTurnWorkflow(payload);
-				}
-				agentState = {
-					lastProcessedEventId: toEventId,
-					toEventId,
-					nextAt: undefined,
-				};
-				this.setAgentState(agentState);
+				await this.dispatchToWorkflow(event, state);
+				this.ctx.storage.sql.exec("UPDATE event_log SET published_at = CURRENT_TIMESTAMP WHERE id = ? AND published_at IS NULL", event.id);
 			} catch (error) {
-				console.error("Failed to start agent turn workflow", error);
-				await this.scheduleAlarmAtMost(Date.now() + ALARM_INTERVAL_MS);
+				const attempts = event.attempts + 1;
+				if (attempts >= MAX_ATTEMPTS) {
+					console.error("Event failed after MAX_ATTEMPTS attempts, giving up", MAX_ATTEMPTS, event, error);
+				} else {
+					console.warn("Error forwarding event to workflow", event, error);
+				}
+				this.ctx.storage.sql.exec("UPDATE event_log SET attempts = ? WHERE id = ?", attempts, event.id);
+				throw error;
 			}
 		}
+	}
 
-		const remainingEvents = this.ctx.storage.sql.exec<{ id: number }>("SELECT id FROM event_log WHERE published_at IS NULL AND attempts < ? LIMIT 1", MAX_ATTEMPTS).toArray();
-		const shouldScheduleForAgent = !!agentState.nextAt && !!agentState.toEventId && agentState.toEventId > agentState.lastProcessedEventId;
-		if (remainingEvents.length) {
-			await this.scheduleAlarmAtMost(Date.now() + ALARM_INTERVAL_MS);
-		} else if (shouldScheduleForAgent && agentState.nextAt) {
-			await this.scheduleAlarmAtMost(agentState.nextAt);
-		} else if (isTerminalIncidentStatus(state.status) && !agentState.nextAt) {
-			await this.destroy();
+	private refreshAgentDebounceState(events: EventLog[], now: number) {
+		const agentState = this.getAgentState();
+		const lastDispatchedEventId = events.at(-1)?.id ?? null;
+		if (lastDispatchedEventId === null) {
+			return agentState;
 		}
+
+		agentState.toEventId = lastDispatchedEventId;
+		agentState.nextAt = computeAgentNextAt(agentState, now);
+		this.setAgentState(agentState);
+		return agentState;
+	}
+
+	private async maybeStartAgentTurn(state: DOState, agentState: AgentState, now: number) {
+		const toEventId = agentState.toEventId;
+		if (!toEventId || !shouldStartAgentTurn(agentState, now)) {
+			return agentState;
+		}
+
+		try {
+			const fromEventId = agentState.lastProcessedEventId;
+			const events = this.listAgentEvents({ toId: toEventId });
+			const services = (this.ctx.storage.kv.get<AgentService[]>(SERVICES_KEY) ?? []).map((service) => ({ id: service.id, name: service.name, prompt: service.prompt ?? null }));
+			const affection = this.getAffectionInfoFromLog();
+			if (events.length) {
+				const payload = this.buildAgentTurnPayload({
+					state,
+					fromEventId,
+					toEventId,
+					events,
+					affection,
+					services,
+				});
+				await this.startAgentTurnWorkflow(payload);
+			}
+			const nextAgentState = {
+				lastProcessedEventId: toEventId,
+				toEventId,
+				nextAt: undefined,
+			} as const;
+			this.setAgentState(nextAgentState);
+			return nextAgentState;
+		} catch (error) {
+			console.error("Failed to start agent turn workflow", error);
+			await this.scheduleAlarmAtMost(Date.now() + ALARM_INTERVAL_MS);
+			return agentState;
+		}
+	}
+
+	private async scheduleNextAlarmOrCleanup(state: DOState, agentState: AgentState) {
+		const hasForwardableUnpublishedEvents =
+			this.ctx.storage.sql.exec<{ id: number }>("SELECT id FROM event_log WHERE published_at IS NULL AND attempts < ? LIMIT 1", MAX_ATTEMPTS).toArray().length > 0;
+		const action = decideAlarmAction({
+			now: Date.now() + ALARM_INTERVAL_MS,
+			hasForwardableUnpublishedEvents,
+			agentState,
+			status: state.status,
+		});
+
+		switch (action.type) {
+			case "retry-events":
+			case "run-agent":
+				await this.scheduleAlarmAtMost(action.at);
+				return;
+			case "cleanup":
+				await this.destroy();
+				return;
+			case "none":
+				return;
+		}
+	}
+
+	/**
+	 * Either succeeds and there is no unpublished event
+	 * or fails throwing an error (and retries)
+	 */
+	async alarm() {
+		const state = await this.ensureInitializedState();
+		if (!state) {
+			return;
+		}
+
+		const events = this.ctx.storage.sql.exec<EventLog>("SELECT * FROM event_log WHERE published_at IS NULL AND attempts < ? ORDER BY id ASC LIMIT 100", MAX_ATTEMPTS).toArray();
+		await this.forwardEvents(state, events);
+		const now = Date.now();
+		let agentState = this.refreshAgentDebounceState(events, now);
+		agentState = await this.maybeStartAgentTurn(state, agentState, now);
+		await this.scheduleNextAlarmOrCleanup(state, agentState);
 	}
 
 	/**
@@ -547,6 +525,10 @@ export class Incident extends DurableObject<Env> {
 	) {
 		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY);
 		if (!state) {
+			if (!entryPoints.length) {
+				throw new Error("At least one entry point is required");
+			}
+
 			await this.ctx.storage.transaction(async () => {
 				const normalizedServices = normalizeIncidentServices(services);
 				const normalizedBootstrapMessages = normalizeBootstrapMessages(bootstrapMessages);
@@ -643,45 +625,35 @@ export class Incident extends DurableObject<Env> {
 		}
 
 		const trimmedMessage = message.trim();
-		if (!trimmedMessage) {
-			return { error: "MESSAGE_REQUIRED" };
-		}
-
-		const normalizedStatus = status && AFFECTION_STATUS_ORDER.includes(status) ? status : undefined;
+		const normalizedStatus = normalizeAffectionStatus(status);
 		const existingAffection = this.ctx.storage.sql.exec<{ id: number }>("SELECT id FROM event_log WHERE event_type = 'AFFECTION_UPDATE' LIMIT 1").toArray();
 		const hasAffection = existingAffection.length > 0;
 
 		const trimmedTitle = title?.trim() ?? "";
 		const hasTitle = trimmedTitle.length > 0;
 		const allowedServices = this.ctx.storage.kv.get<IncidentService[]>(SERVICES_KEY) ?? [];
-		const serviceIds = new Set(allowedServices.map((service) => service.id));
-		const filteredServices = Array.isArray(services) ? services.filter((service) => serviceIds.has(service.id)) : [];
+		const filteredServices = filterAffectionServices(services, new Set(allowedServices.map((service) => service.id)));
 		const hasServices = filteredServices.length > 0;
 
-		if (!hasAffection) {
-			if (!hasTitle) {
-				return { error: "TITLE_REQUIRED" };
-			}
-			if (!hasServices) {
-				return { error: "SERVICES_REQUIRED" };
-			}
-			if (normalizedStatus !== "investigating") {
-				return { error: "INITIAL_STATUS_REQUIRED" };
-			}
-		}
+		const [lastStatusRow] =
+			normalizedStatus && hasAffection
+				? this.ctx.storage.sql
+						.exec<{ status: AffectionStatus | null }>(
+							"SELECT json_extract(event_data, '$.status') AS status FROM event_log WHERE event_type = 'AFFECTION_UPDATE' AND json_extract(event_data, '$.status') IS NOT NULL ORDER BY id DESC LIMIT 1",
+						)
+						.toArray()
+				: [];
 
-		if (normalizedStatus) {
-			const [lastStatusRow] = this.ctx.storage.sql
-				.exec<{ status: AffectionStatus | null }>(
-					"SELECT json_extract(event_data, '$.status') AS status FROM event_log WHERE event_type = 'AFFECTION_UPDATE' AND json_extract(event_data, '$.status') IS NOT NULL ORDER BY id DESC LIMIT 1",
-				)
-				.toArray();
-			const currentStatus = lastStatusRow?.status ?? "investigating";
-			const currentIndex = getAffectionStatusIndex(currentStatus);
-			const nextIndex = getAffectionStatusIndex(normalizedStatus);
-			if (nextIndex <= currentIndex && hasAffection) {
-				return { error: "STATUS_CAN_ONLY_MOVE_FORWARD" };
-			}
+		const validationError = validateAffectionUpdate({
+			trimmedMessage,
+			hasAffection,
+			hasTitle,
+			hasServices,
+			normalizedStatus,
+			currentStatus: lastStatusRow?.status,
+		});
+		if (validationError) {
+			return validationError;
 		}
 
 		const eventData: AffectionUpdateData = {
@@ -703,19 +675,7 @@ export class Incident extends DurableObject<Env> {
 			return { error: "INITIALIZING" };
 		}
 
-		const events = this.ctx.storage.sql
-			.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "created_at" | "adapter" | "event_metadata">>(
-				"SELECT id, event_type, event_data, created_at, adapter, event_metadata FROM event_log ORDER BY id ASC",
-			)
-			.toArray()
-			.map((event) => ({
-				id: event.id,
-				event_type: event.event_type,
-				event_data: JSON.parse(event.event_data),
-				created_at: event.created_at,
-				adapter: event.adapter,
-				event_metadata: event.event_metadata ? JSON.parse(event.event_metadata) : null,
-			}));
+		const events = this.listAgentEvents();
 
 		const services = (this.ctx.storage.kv.get<AgentService[]>(SERVICES_KEY) ?? []).map((service) => ({
 			id: service.id,
