@@ -3,7 +3,6 @@ import { createFileRoute, Link } from "@tanstack/solid-router";
 import { ChevronRight, CircleCheck, Flame, Settings } from "lucide-solid";
 import type { JSX } from "solid-js";
 import { createMemo, createSignal, For, onMount, Show, Suspense } from "solid-js";
-import { ResolvedIncidents } from "~/components/ResolvedIncidents";
 import StartIncidentButton from "~/components/StartIncidentButton";
 import { Card } from "~/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
@@ -75,21 +74,15 @@ function IncidentsContent() {
 	const noActiveIncidents = () => openIncidents().length === 0 && mitigatingIncidents().length === 0;
 
 	return (
-		<>
-			<div class="space-y-8 flex-1 overflow-y-auto pr-1">
-				<Show when={noActiveIncidents()}>
-					<NoIncidents />
-				</Show>
+		<div class="space-y-8 flex-1 overflow-y-auto pr-1">
+			<Show when={noActiveIncidents()}>
+				<NoIncidents />
+			</Show>
 
-				<Show when={onlyMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
-				<Show when={openIncidents().length > 0}>{OpenIncidentsSection()}</Show>
-				<Show when={openAndMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
-			</div>
-
-			<Suspense>
-				<ResolvedIncidents />
-			</Suspense>
-		</>
+			<Show when={onlyMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
+			<Show when={openIncidents().length > 0}>{OpenIncidentsSection()}</Show>
+			<Show when={openAndMitigatingIncidents()}>{MitigatingIncidentsSection()}</Show>
+		</div>
 	);
 }
 

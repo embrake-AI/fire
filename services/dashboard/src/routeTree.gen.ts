@@ -16,6 +16,7 @@ import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
 import { Route as AuthErrorRouteImport } from './routes/auth.error'
 import { Route as ApiUploadRouteImport } from './routes/api/upload'
 import { Route as AuthedSettingsRouteImport } from './routes/_authed.settings'
+import { Route as AuthedPostIncidentsRouteImport } from './routes/_authed.post-incidents'
 import { Route as AuthedCatalogRouteImport } from './routes/_authed.catalog'
 import { Route as ApiMetricsIndexRouteImport } from './routes/api/metrics/index'
 import { Route as AuthedMetricsIndexRouteImport } from './routes/_authed.metrics/index'
@@ -80,6 +81,11 @@ const ApiUploadRoute = ApiUploadRouteImport.update({
 const AuthedSettingsRoute = AuthedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedPostIncidentsRoute = AuthedPostIncidentsRouteImport.update({
+  id: '/post-incidents',
+  path: '/post-incidents',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedCatalogRoute = AuthedCatalogRouteImport.update({
@@ -258,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/catalog': typeof AuthedCatalogRouteWithChildren
+  '/post-incidents': typeof AuthedPostIncidentsRoute
   '/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
@@ -297,6 +304,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/catalog': typeof AuthedCatalogRouteWithChildren
+  '/post-incidents': typeof AuthedPostIncidentsRoute
   '/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
@@ -338,6 +346,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/_authed/catalog': typeof AuthedCatalogRouteWithChildren
+  '/_authed/post-incidents': typeof AuthedPostIncidentsRoute
   '/_authed/settings': typeof AuthedSettingsRouteWithChildren
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
@@ -379,6 +388,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/unauthorized'
     | '/catalog'
+    | '/post-incidents'
     | '/settings'
     | '/api/upload'
     | '/auth/error'
@@ -418,6 +428,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/unauthorized'
     | '/catalog'
+    | '/post-incidents'
     | '/settings'
     | '/api/upload'
     | '/auth/error'
@@ -458,6 +469,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/unauthorized'
     | '/_authed/catalog'
+    | '/_authed/post-incidents'
     | '/_authed/settings'
     | '/api/upload'
     | '/auth/error'
@@ -558,6 +570,13 @@ declare module '@tanstack/solid-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AuthedSettingsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/post-incidents': {
+      id: '/_authed/post-incidents'
+      path: '/post-incidents'
+      fullPath: '/post-incidents'
+      preLoaderRoute: typeof AuthedPostIncidentsRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/catalog': {
@@ -845,6 +864,7 @@ const AuthedTeamsTeamIdRouteWithChildren =
 
 interface AuthedRouteChildren {
   AuthedCatalogRoute: typeof AuthedCatalogRouteWithChildren
+  AuthedPostIncidentsRoute: typeof AuthedPostIncidentsRoute
   AuthedSettingsRoute: typeof AuthedSettingsRouteWithChildren
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedIncidentsIncidentIdRoute: typeof AuthedIncidentsIncidentIdRoute
@@ -858,6 +878,7 @@ interface AuthedRouteChildren {
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedCatalogRoute: AuthedCatalogRouteWithChildren,
+  AuthedPostIncidentsRoute: AuthedPostIncidentsRoute,
   AuthedSettingsRoute: AuthedSettingsRouteWithChildren,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedIncidentsIncidentIdRoute: AuthedIncidentsIncidentIdRoute,

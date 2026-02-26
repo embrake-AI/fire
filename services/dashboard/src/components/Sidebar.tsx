@@ -14,6 +14,7 @@ import {
 	Plug,
 	RefreshCw,
 	Settings,
+	ShieldAlert,
 	User,
 	Users,
 } from "lucide-solid";
@@ -43,6 +44,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
 	{ label: "Incidents", to: "/", icon: Flame, exact: true },
+	{ label: "Post-Incidents", to: "/post-incidents", icon: ShieldAlert },
 	{ label: "Catalog", to: "/catalog/teams", icon: BookOpen, match: "/catalog" },
 	{ label: "Metrics", to: "/metrics", icon: BarChart3 },
 ];
