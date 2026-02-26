@@ -14,12 +14,13 @@ let emojiMap: Map<string, string> | null = null;
 let customEmojiMap: Map<string, string> | null = null;
 let loadingPromise: Promise<void> | null = null;
 const EMOJI_SHORTCODE_REGEX = /:[\w\-+]+:/g;
+const LINK_TOKEN_REGEX = /<https?:\/\/[^>\s]+(?:\|[^>]+)?>|https?:\/\/[^\s<]+/g;
 
 function escapeHtml(text: string): string {
 	return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
-function sanitizeCustomEmojiUrl(url: string): string | null {
+function sanitizeHttpUrl(url: string): string | null {
 	try {
 		const parsedUrl = new URL(url);
 		if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
@@ -107,7 +108,7 @@ export function searchEmojis(query: string, limit = 20): Array<{ shortcode: stri
 	return results;
 }
 
-export function replaceEmojis(text: string): string {
+function replaceEmojiShortcodes(text: string): string {
 	let result = "";
 	let lastIndex = 0;
 
@@ -125,7 +126,7 @@ export function replaceEmojis(text: string): string {
 
 		const cleanShortcode = shortcode.replace(/^:+|:+$/g, "");
 		if (customEmojiMap?.has(cleanShortcode)) {
-			const sanitizedUrl = sanitizeCustomEmojiUrl(emoji);
+			const sanitizedUrl = sanitizeHttpUrl(emoji);
 			if (!sanitizedUrl) {
 				result += escapeHtml(shortcode);
 			} else {
@@ -139,6 +140,79 @@ export function replaceEmojis(text: string): string {
 	}
 
 	result += escapeHtml(text.slice(lastIndex));
+	return result;
+}
+
+function trimTrailingUrlPunctuation(url: string): { url: string; trailing: string } {
+	let end = url.length;
+	while (end > 0) {
+		const char = url[end - 1];
+		const shouldTrim = char === "." || char === "," || char === ";" || char === "!" || char === "?";
+		if (!shouldTrim) break;
+		end -= 1;
+	}
+
+	const candidateUrl = url.slice(0, end);
+	const trailing = url.slice(end);
+	return { url: candidateUrl, trailing };
+}
+
+function formatLinkLabel(url: string, explicitLabel?: string): string {
+	if (explicitLabel && explicitLabel.trim().length > 0) {
+		return explicitLabel.trim();
+	}
+
+	try {
+		const parsedUrl = new URL(url);
+		const display = `${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
+		if (display.length > 90) {
+			return `${display.slice(0, 87)}...`;
+		}
+		return display;
+	} catch {
+		return url;
+	}
+}
+
+function renderLink(url: string, explicitLabel?: string): string {
+	const sanitizedUrl = sanitizeHttpUrl(url);
+	if (!sanitizedUrl) {
+		return replaceEmojiShortcodes(explicitLabel ? `<${url}|${explicitLabel}>` : url);
+	}
+
+	const label = formatLinkLabel(sanitizedUrl, explicitLabel);
+	return `<a href="${escapeHtml(sanitizedUrl)}" target="_blank" rel="noopener noreferrer" class="text-primary hover:text-primary/80 underline underline-offset-2 break-all">${replaceEmojiShortcodes(label)}</a>`;
+}
+
+export function replaceEmojis(text: string): string {
+	let result = "";
+	let lastIndex = 0;
+
+	for (const match of text.matchAll(LINK_TOKEN_REGEX)) {
+		const token = match[0];
+		const start = match.index ?? 0;
+		result += replaceEmojiShortcodes(text.slice(lastIndex, start));
+
+		if (token.startsWith("<") && token.endsWith(">")) {
+			const inner = token.slice(1, -1);
+			const pipeIndex = inner.indexOf("|");
+			if (pipeIndex === -1) {
+				result += renderLink(inner);
+			} else {
+				const url = inner.slice(0, pipeIndex);
+				const label = inner.slice(pipeIndex + 1);
+				result += renderLink(url, label);
+			}
+		} else {
+			const { url, trailing } = trimTrailingUrlPunctuation(token);
+			result += renderLink(url);
+			result += replaceEmojiShortcodes(trailing);
+		}
+
+		lastIndex = start + token.length;
+	}
+
+	result += replaceEmojiShortcodes(text.slice(lastIndex));
 	return result;
 }
 

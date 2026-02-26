@@ -50,7 +50,7 @@ export function Timeline(props: { events: IncidentEvent[] }) {
 				</CardTitle>
 			</CardHeader>
 			<CardContent>
-				<div>
+				<div class="max-h-[70vh] overflow-y-auto pr-2">
 					<div class="relative">
 						<div class="absolute left-4 top-0 bottom-0 w-px bg-border" />
 						<div class="space-y-6">

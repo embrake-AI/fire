@@ -148,9 +148,9 @@ export const eventRegistry: EventConfigMap = {
 			const isSystemUser = () => !data.userId || data.userId === "fire";
 			const displayUser = () => (isSystemUser() ? { name: "Fire" } : user());
 			return (
-				<div class="flex items-center gap-2">
+				<div class="flex items-start gap-2">
 					<UserDisplay user={displayUser} />
-					<EmojiText text={data.message} class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap" />
+					<EmojiText text={data.message} class="min-w-0 flex-1 text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-words" />
 				</div>
 			);
 		},
