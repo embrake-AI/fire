@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { Link } from "@tanstack/solid-router";
-import { ChevronDown, SendHorizontal } from "lucide-solid";
+import { SendHorizontal } from "lucide-solid";
 import { createEffect, createMemo, createSignal, onMount, Show } from "solid-js";
 import { runDemoAware } from "~/lib/demo/runtime";
 import { sendSlackMessageDemo } from "~/lib/demo/store";
@@ -10,7 +10,6 @@ import { useIntegrations, useSlackEmojis } from "~/lib/integrations/integrations
 import { EmojiPicker } from "./EmojiPicker";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Textarea } from "./ui/textarea";
 
 interface SlackMessageInputProps {
@@ -23,8 +22,6 @@ export function SlackMessageInput(props: SlackMessageInputProps) {
 	const [emojiQuery, setEmojiQuery] = createSignal("");
 	const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
 	const [emojiStartPos, setEmojiStartPos] = createSignal(0);
-	const [sendAsBot, setSendAsBot] = createSignal(false);
-	const [senderPopoverOpen, setSenderPopoverOpen] = createSignal(false);
 	const [draftMessageId, setDraftMessageId] = createSignal<string | null>(null);
 	const queryClient = useQueryClient();
 	const integrationsQuery = useIntegrations({ type: "user" });
@@ -32,7 +29,7 @@ export function SlackMessageInput(props: SlackMessageInputProps) {
 	let textareaRef: HTMLTextAreaElement | undefined;
 
 	const isUserConnected = () => integrationsQuery.data?.some((i) => i.platform === "slack") ?? false;
-	const canSend = createMemo(() => (props.hasSlackContext ? isUserConnected() || sendAsBot() : true));
+	const canSend = createMemo(() => (props.hasSlackContext ? isUserConnected() : true));
 	const updateMessage = (nextMessage: string) => {
 		if (nextMessage !== message()) {
 			setDraftMessageId(null);
@@ -59,7 +56,7 @@ export function SlackMessageInput(props: SlackMessageInputProps) {
 						id: props.incidentId,
 						message: payload.message,
 						messageId: payload.messageId,
-						sendAsBot: sendAsBot(),
+						sendAsBot: false,
 					}),
 				remote: () =>
 					sendSlackMessage({
@@ -67,7 +64,7 @@ export function SlackMessageInput(props: SlackMessageInputProps) {
 							id: props.incidentId,
 							message: payload.message,
 							messageId: payload.messageId,
-							sendAsBot: sendAsBot(),
+							sendAsBot: false,
 							dashboardOnly: !props.hasSlackContext,
 						},
 					}),
@@ -156,43 +153,6 @@ export function SlackMessageInput(props: SlackMessageInputProps) {
 							class="min-h-25 pr-12 focus-visible:ring-1"
 						/>
 						<div class="absolute right-3 bottom-3 flex items-center gap-2">
-							<Show when={props.hasSlackContext}>
-								<Popover open={senderPopoverOpen()} onOpenChange={setSenderPopoverOpen}>
-									<PopoverTrigger as={Button} variant="ghost" size="sm" class="h-8 px-2 text-xs text-muted-foreground hover:text-foreground">
-										{sendAsBot() ? "Bot" : "You"}
-										<ChevronDown class="ml-1 h-3 w-3" />
-									</PopoverTrigger>
-									<PopoverContent class="w-48 p-2">
-										<div class="space-y-1">
-											<p class="text-xs text-muted-foreground px-2 py-1">Send as:</p>
-											<button
-												type="button"
-												class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors cursor-pointer text-left disabled:opacity-50 disabled:cursor-not-allowed"
-												disabled={!isUserConnected()}
-												onClick={() => {
-													setSendAsBot(false);
-													setSenderPopoverOpen(false);
-												}}
-											>
-												<span class="text-sm">Yourself</span>
-												<Show when={!isUserConnected()}>
-													<span class="text-xs text-muted-foreground">(not connected)</span>
-												</Show>
-											</button>
-											<button
-												type="button"
-												class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors cursor-pointer text-left"
-												onClick={() => {
-													setSendAsBot(true);
-													setSenderPopoverOpen(false);
-												}}
-											>
-												<span class="text-sm">Bot</span>
-											</button>
-										</div>
-									</PopoverContent>
-								</Popover>
-							</Show>
 							<Button
 								size="icon"
 								variant="ghost"

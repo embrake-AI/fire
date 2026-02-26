@@ -924,18 +924,19 @@ export async function messageAdded(params: SenderParams["messageAdded"]) {
 		return;
 	}
 
-	const { botToken, channel, postedMessageTs, incidentChannelId, incidentChannelMessageTs } = metadata;
+	const { botToken, channel, postedMessageTs, incidentChannelId } = metadata;
 
 	const promptChannel = eventMetadata?.promptChannel;
 	const promptThreadTs = eventMetadata?.promptThreadTs;
 	const promptTs = eventMetadata?.promptTs;
 	const hasPromptReply = !!promptChannel && !!promptTs;
 
-	// Determine target: if this message is a prompt response, reply in that thread; otherwise prefer inc-xxx channel
+	// Determine target: if this message is a prompt response, reply in that thread.
+	// For incident channels, post as a top-level message instead of threading under the pinned incident post.
 	const targetChannel = hasPromptReply ? promptChannel : (incidentChannelId ?? channel);
-	const targetThreadTs = hasPromptReply ? (promptThreadTs ?? promptTs) : incidentChannelId ? incidentChannelMessageTs : postedMessageTs;
+	const targetThreadTs = hasPromptReply ? (promptThreadTs ?? promptTs) : incidentChannelId ? undefined : postedMessageTs;
 
-	if (!targetChannel || !targetThreadTs) {
+	if (!targetChannel) {
 		return;
 	}
 

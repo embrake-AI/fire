@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { ArrowLeft, ChartColumn, Clock, ExternalLink, FileText, LoaderCircle, Plus, Trash2 } from "lucide-solid";
+import { ArrowLeft, ChartColumn, Clock, ExternalLink, FileText, LoaderCircle, Plus, RefreshCw, Trash2 } from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, Show, Suspense, Switch } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
@@ -165,10 +165,14 @@ function AnalysisDetail() {
 									<div class="text-center space-y-3">
 										<h3 class="text-xl font-semibold text-foreground">Analysis Not Found</h3>
 										<p class="text-muted-foreground max-w-sm mx-auto">We couldn't find the analysis for this incident. It might still be calculating or it doesn't exist.</p>
-										<Link to="/" class="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium pt-2">
-											<ArrowLeft class="w-4 h-4" />
-											Go back to incidents
-										</Link>
+										<div class="pt-2">
+											<Button variant="outline" class="gap-2" onClick={() => void analysisQuery.refetch()} disabled={analysisQuery.isFetching}>
+												<Show when={analysisQuery.isFetching} fallback={<RefreshCw class="w-4 h-4" />}>
+													<LoaderCircle class="w-4 h-4 animate-spin" />
+												</Show>
+												Reload analysis
+											</Button>
+										</div>
 									</div>
 								</CardContent>
 							</Card>
