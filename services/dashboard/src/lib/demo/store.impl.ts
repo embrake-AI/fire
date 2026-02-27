@@ -223,6 +223,7 @@ function makeId(prefix: string): string {
 
 function makeInitialState(): DemoState {
 	const now = new Date();
+	const minute = 60 * 1000;
 	const demoUserId = "demo-user";
 	const teamWebId = "team-web";
 	const teamPlatformId = "team-platform";
@@ -234,10 +235,280 @@ function makeInitialState(): DemoState {
 	const serviceJobsId = "service-jobs";
 	const statusPageId = "status-page-main";
 	const ongoingIncidentId = "incident-demo-ongoing";
+	const resolvedApiIncidentId = "incident-demo-api-auth-resolved";
+	const resolvedJobsIncidentId = "incident-demo-jobs-backlog-resolved";
+	const resolvedWebIncidentId = "incident-demo-web-timeout-resolved";
+	const declinedResetIncidentId = "incident-demo-password-reset-declined";
+	const declinedLatencyIncidentId = "incident-demo-api-latency-declined";
 	const ongoingIncidentCreatedAt = new Date(now.getTime() - 45 * 60 * 1000);
 	const ongoingIncidentAckAt = new Date(now.getTime() - 38 * 60 * 1000);
 	const ongoingIncidentMitigatingAt = new Date(now.getTime() - 27 * 60 * 1000);
 	const ongoingIncidentUpdateAt = new Date(now.getTime() - 12 * 60 * 1000);
+	const resolvedApiCreatedAt = new Date(now.getTime() - 400 * minute);
+	const resolvedApiAckAt = new Date(now.getTime() - 388 * minute);
+	const resolvedApiMitigatingAt = new Date(now.getTime() - 362 * minute);
+	const resolvedApiResolvedAt = new Date(now.getTime() - 335 * minute);
+	const resolvedJobsCreatedAt = new Date(now.getTime() - 1700 * minute);
+	const resolvedJobsAckAt = new Date(now.getTime() - 1685 * minute);
+	const resolvedJobsMitigatingAt = new Date(now.getTime() - 1660 * minute);
+	const resolvedJobsUpdateAt = new Date(now.getTime() - 1630 * minute);
+	const resolvedJobsResolvedAt = new Date(now.getTime() - 1605 * minute);
+	const resolvedWebCreatedAt = new Date(now.getTime() - 4300 * minute);
+	const resolvedWebAckAt = new Date(now.getTime() - 4280 * minute);
+	const resolvedWebMitigatingAt = new Date(now.getTime() - 4245 * minute);
+	const resolvedWebResolvedAt = new Date(now.getTime() - 4210 * minute);
+	const declinedResetCreatedAt = new Date(now.getTime() - 960 * minute);
+	const declinedResetAckAt = new Date(now.getTime() - 945 * minute);
+	const declinedResetAt = new Date(now.getTime() - 920 * minute);
+	const declinedLatencyCreatedAt = new Date(now.getTime() - 2980 * minute);
+	const declinedLatencyAckAt = new Date(now.getTime() - 2958 * minute);
+	const declinedLatencyAt = new Date(now.getTime() - 2930 * minute);
+	const resolvedApiEvents: IncidentEvent[] = [
+		{
+			id: 5,
+			event_type: "INCIDENT_CREATED",
+			event_data: {
+				status: "open",
+				severity: "high",
+				createdBy: "UDEMO005",
+				title: "API auth token refresh failures",
+				description: "Token refresh requests were failing for a subset of API clients, causing forced logouts.",
+				prompt: "Customers are getting signed out repeatedly because auth token refresh is failing.",
+				source: "slack",
+				entryPointId: "entry-point-platform",
+				rotationId: rotationPlatformId,
+				assignee: "UDEMO005",
+			},
+			created_at: resolvedApiCreatedAt.toISOString(),
+			adapter: "slack",
+		},
+		{
+			id: 6,
+			event_type: "MESSAGE_ADDED",
+			event_data: {
+				message: "On it. Looking at auth gateway logs and recent deploy changes.",
+				userId: "UDEMO005",
+				messageId: "1700000100.000100",
+			},
+			created_at: resolvedApiAckAt.toISOString(),
+			adapter: "slack",
+		},
+		{
+			id: 7,
+			event_type: "STATUS_UPDATE",
+			event_data: {
+				status: "mitigating",
+				message: "Mitigating by rolling back the auth cache config and draining stale sessions.",
+			},
+			created_at: resolvedApiMitigatingAt.toISOString(),
+			adapter: "dashboard",
+		},
+		{
+			id: 8,
+			event_type: "STATUS_UPDATE",
+			event_data: {
+				status: "resolved",
+				message: "Resolved after rollback. Token refresh success rate is back to baseline.",
+			},
+			created_at: resolvedApiResolvedAt.toISOString(),
+			adapter: "dashboard",
+		},
+	];
+	const resolvedJobsEvents: IncidentEvent[] = [
+		{
+			id: 9,
+			event_type: "INCIDENT_CREATED",
+			event_data: {
+				status: "open",
+				severity: "medium",
+				createdBy: "UDEMO006",
+				title: "Background job backlog delaying customer emails",
+				description: "Queue depth spiked and transactional emails were delayed by up to 40 minutes.",
+				prompt: "Email receipts and notifications are delayed due to a growing background jobs queue.",
+				source: "dashboard",
+				entryPointId: "entry-point-platform",
+				rotationId: rotationPlatformId,
+				assignee: "UDEMO006",
+			},
+			created_at: resolvedJobsCreatedAt.toISOString(),
+			adapter: "dashboard",
+		},
+		{
+			id: 10,
+			event_type: "MESSAGE_ADDED",
+			event_data: {
+				message: "Confirmed worker saturation. Increasing concurrency and pausing non-critical jobs.",
+				userId: "UDEMO006",
+				messageId: "1700000200.000100",
+			},
+			created_at: resolvedJobsAckAt.toISOString(),
+			adapter: "dashboard",
+		},
+		{
+			id: 11,
+			event_type: "STATUS_UPDATE",
+			event_data: {
+				status: "mitigating",
+				message: "Mitigating with temporary worker autoscale and queue priority rebalancing.",
+			},
+			created_at: resolvedJobsMitigatingAt.toISOString(),
+			adapter: "dashboard",
+		},
+		{
+			id: 12,
+			event_type: "MESSAGE_ADDED",
+			event_data: {
+				message: "Backlog is clearing quickly. Monitoring until queue delay returns to normal.",
+				userId: "UDEMO006",
+				messageId: "1700000200.000200",
+			},
+			created_at: resolvedJobsUpdateAt.toISOString(),
+			adapter: "dashboard",
+		},
+		{
+			id: 13,
+			event_type: "STATUS_UPDATE",
+			event_data: {
+				status: "resolved",
+				message: "Resolved. Queue latency is healthy and delayed jobs have been drained.",
+			},
+			created_at: resolvedJobsResolvedAt.toISOString(),
+			adapter: "dashboard",
+		},
+	];
+	const resolvedWebEvents: IncidentEvent[] = [
+		{
+			id: 14,
+			event_type: "INCIDENT_CREATED",
+			event_data: {
+				status: "open",
+				severity: "high",
+				createdBy: "UDEMO002",
+				title: "Intermittent checkout timeouts in EU region",
+				description: "EU checkout requests were timing out intermittently during peak traffic.",
+				prompt: "Customers in EU are reporting intermittent checkout timeouts and retry loops.",
+				source: "slack",
+				entryPointId: "entry-point-web",
+				rotationId: rotationWebId,
+				assignee: "UDEMO003",
+			},
+			created_at: resolvedWebCreatedAt.toISOString(),
+			adapter: "slack",
+		},
+		{
+			id: 15,
+			event_type: "MESSAGE_ADDED",
+			event_data: {
+				message: "Investigating edge POP health and checkout API round-trip latency.",
+				userId: "UDEMO003",
+				messageId: "1700000300.000100",
+			},
+			created_at: resolvedWebAckAt.toISOString(),
+			adapter: "slack",
+		},
+		{
+			id: 16,
+			event_type: "STATUS_UPDATE",
+			event_data: {
+				status: "mitigating",
+				message: "Mitigating by shifting traffic away from the degraded edge region.",
+			},
+			created_at: resolvedWebMitigatingAt.toISOString(),
+			adapter: "dashboard",
+		},
+		{
+			id: 17,
+			event_type: "STATUS_UPDATE",
+			event_data: {
+				status: "resolved",
+				message: "Resolved after traffic shift and edge cache reset.",
+			},
+			created_at: resolvedWebResolvedAt.toISOString(),
+			adapter: "dashboard",
+		},
+	];
+	const declinedResetEvents: IncidentEvent[] = [
+		{
+			id: 18,
+			event_type: "INCIDENT_CREATED",
+			event_data: {
+				status: "open",
+				severity: "medium",
+				createdBy: "UDEMO002",
+				title: "Suspected spike in password reset failures",
+				description: "Alert indicated elevated reset failures, but user support volume stayed normal.",
+				prompt: "Password reset failure alerts spiked and we need to verify if this is customer-impacting.",
+				source: "slack",
+				entryPointId: "entry-point-web",
+				rotationId: rotationWebId,
+				assignee: "UDEMO004",
+			},
+			created_at: declinedResetCreatedAt.toISOString(),
+			adapter: "slack",
+		},
+		{
+			id: 19,
+			event_type: "MESSAGE_ADDED",
+			event_data: {
+				message: "No correlated customer reports. Digging into monitoring and reset endpoint logs.",
+				userId: "UDEMO004",
+				messageId: "1700000400.000100",
+			},
+			created_at: declinedResetAckAt.toISOString(),
+			adapter: "slack",
+		},
+		{
+			id: 20,
+			event_type: "STATUS_UPDATE",
+			event_data: {
+				status: "declined",
+				message: "Declined: reset alert threshold was misconfigured after a monitor rollout.",
+			},
+			created_at: declinedResetAt.toISOString(),
+			adapter: "dashboard",
+		},
+	];
+	const declinedLatencyEvents: IncidentEvent[] = [
+		{
+			id: 21,
+			event_type: "INCIDENT_CREATED",
+			event_data: {
+				status: "open",
+				severity: "low",
+				createdBy: "UDEMO005",
+				title: "Suspected API latency regression after release",
+				description: "Synthetic monitor flagged a latency jump that needed investigation.",
+				prompt: "A regression alert fired for API latency shortly after release and may be a false positive.",
+				source: "dashboard",
+				entryPointId: "entry-point-platform",
+				rotationId: rotationPlatformId,
+				assignee: "UDEMO007",
+			},
+			created_at: declinedLatencyCreatedAt.toISOString(),
+			adapter: "dashboard",
+		},
+		{
+			id: 22,
+			event_type: "MESSAGE_ADDED",
+			event_data: {
+				message: "Sampling production traces now. Live traffic latency looks stable so far.",
+				userId: "UDEMO007",
+				messageId: "1700000500.000100",
+			},
+			created_at: declinedLatencyAckAt.toISOString(),
+			adapter: "dashboard",
+		},
+		{
+			id: 23,
+			event_type: "STATUS_UPDATE",
+			event_data: {
+				status: "declined",
+				message: "Declined: issue isolated to one synthetic probe region; production latency was normal.",
+			},
+			created_at: declinedLatencyAt.toISOString(),
+			adapter: "dashboard",
+		},
+	];
 
 	return {
 		version: 1,
@@ -572,6 +843,121 @@ function makeInitialState(): DemoState {
 					},
 				],
 			},
+			{
+				id: resolvedApiIncidentId,
+				state: {
+					id: resolvedApiIncidentId,
+					createdAt: resolvedApiCreatedAt,
+					status: "resolved",
+					prompt: "Customers are getting signed out repeatedly because auth token refresh is failing.",
+					severity: "high",
+					createdBy: "UDEMO005",
+					assignee: { slackId: "UDEMO005" },
+					source: "slack",
+					title: "API auth token refresh failures",
+					description: "Token refresh requests were failing for a subset of API clients, causing forced logouts.",
+					entryPointId: "entry-point-platform",
+					rotationId: rotationPlatformId,
+					teamId: teamPlatformId,
+				},
+				context: {
+					channel: "CDEMO002",
+					thread: "1700000100.000000",
+				},
+				events: [...resolvedApiEvents],
+			},
+			{
+				id: resolvedJobsIncidentId,
+				state: {
+					id: resolvedJobsIncidentId,
+					createdAt: resolvedJobsCreatedAt,
+					status: "resolved",
+					prompt: "Email receipts and notifications are delayed due to a growing background jobs queue.",
+					severity: "medium",
+					createdBy: "UDEMO006",
+					assignee: { slackId: "UDEMO006" },
+					source: "dashboard",
+					title: "Background job backlog delaying customer emails",
+					description: "Queue depth spiked and transactional emails were delayed by up to 40 minutes.",
+					entryPointId: "entry-point-platform",
+					rotationId: rotationPlatformId,
+					teamId: teamPlatformId,
+				},
+				context: {
+					channel: "CDEMO004",
+					thread: "1700000200.000000",
+				},
+				events: [...resolvedJobsEvents],
+			},
+			{
+				id: resolvedWebIncidentId,
+				state: {
+					id: resolvedWebIncidentId,
+					createdAt: resolvedWebCreatedAt,
+					status: "resolved",
+					prompt: "Customers in EU are reporting intermittent checkout timeouts and retry loops.",
+					severity: "high",
+					createdBy: "UDEMO002",
+					assignee: { slackId: "UDEMO003" },
+					source: "slack",
+					title: "Intermittent checkout timeouts in EU region",
+					description: "EU checkout requests were timing out intermittently during peak traffic.",
+					entryPointId: "entry-point-web",
+					rotationId: rotationWebId,
+					teamId: teamWebId,
+				},
+				context: {
+					channel: "CDEMO001",
+					thread: "1700000300.000000",
+				},
+				events: [...resolvedWebEvents],
+			},
+			{
+				id: declinedResetIncidentId,
+				state: {
+					id: declinedResetIncidentId,
+					createdAt: declinedResetCreatedAt,
+					status: "declined",
+					prompt: "Password reset failure alerts spiked and we need to verify if this is customer-impacting.",
+					severity: "medium",
+					createdBy: "UDEMO002",
+					assignee: { slackId: "UDEMO004" },
+					source: "slack",
+					title: "Suspected spike in password reset failures",
+					description: "Alert indicated elevated reset failures, but user support volume stayed normal.",
+					entryPointId: "entry-point-web",
+					rotationId: rotationWebId,
+					teamId: teamWebId,
+				},
+				context: {
+					channel: "CDEMO001",
+					thread: "1700000400.000000",
+				},
+				events: [...declinedResetEvents],
+			},
+			{
+				id: declinedLatencyIncidentId,
+				state: {
+					id: declinedLatencyIncidentId,
+					createdAt: declinedLatencyCreatedAt,
+					status: "declined",
+					prompt: "A regression alert fired for API latency shortly after release and may be a false positive.",
+					severity: "low",
+					createdBy: "UDEMO005",
+					assignee: { slackId: "UDEMO007" },
+					source: "dashboard",
+					title: "Suspected API latency regression after release",
+					description: "Synthetic monitor flagged a latency jump that needed investigation.",
+					entryPointId: "entry-point-platform",
+					rotationId: rotationPlatformId,
+					teamId: teamPlatformId,
+				},
+				context: {
+					channel: "CDEMO004",
+					thread: "1700000500.000000",
+				},
+				events: [...declinedLatencyEvents],
+			},
 		],
 		analyses: [
 			{
@@ -647,9 +1033,119 @@ function makeInitialState(): DemoState {
 				teamId: teamWebId,
 				notionPageId: null,
 			},
+			{
+				id: resolvedApiIncidentId,
+				clientId: "demo-client",
+				title: "API auth token refresh failures",
+				description: "Token refresh requests were failing for a subset of API clients, causing forced logouts.",
+				severity: "high",
+				assignee: "UDEMO005",
+				createdBy: "UDEMO005",
+				source: "slack",
+				prompt: "Customers are getting signed out repeatedly because auth token refresh is failing.",
+				createdAt: resolvedApiCreatedAt,
+				resolvedAt: resolvedApiResolvedAt,
+				events: [...resolvedApiEvents],
+				timeline: null,
+				impact: null,
+				rootCause: null,
+				actions: [],
+				entryPointId: "entry-point-platform",
+				rotationId: rotationPlatformId,
+				teamId: teamPlatformId,
+				notionPageId: null,
+			},
+			{
+				id: resolvedJobsIncidentId,
+				clientId: "demo-client",
+				title: "Background job backlog delaying customer emails",
+				description: "Queue depth spiked and transactional emails were delayed by up to 40 minutes.",
+				severity: "medium",
+				assignee: "UDEMO006",
+				createdBy: "UDEMO006",
+				source: "dashboard",
+				prompt: "Email receipts and notifications are delayed due to a growing background jobs queue.",
+				createdAt: resolvedJobsCreatedAt,
+				resolvedAt: resolvedJobsResolvedAt,
+				events: [...resolvedJobsEvents],
+				timeline: null,
+				impact: null,
+				rootCause: null,
+				actions: [],
+				entryPointId: "entry-point-platform",
+				rotationId: rotationPlatformId,
+				teamId: teamPlatformId,
+				notionPageId: null,
+			},
+			{
+				id: resolvedWebIncidentId,
+				clientId: "demo-client",
+				title: "Intermittent checkout timeouts in EU region",
+				description: "EU checkout requests were timing out intermittently during peak traffic.",
+				severity: "high",
+				assignee: "UDEMO003",
+				createdBy: "UDEMO002",
+				source: "slack",
+				prompt: "Customers in EU are reporting intermittent checkout timeouts and retry loops.",
+				createdAt: resolvedWebCreatedAt,
+				resolvedAt: resolvedWebResolvedAt,
+				events: [...resolvedWebEvents],
+				timeline: null,
+				impact: null,
+				rootCause: null,
+				actions: [],
+				entryPointId: "entry-point-web",
+				rotationId: rotationWebId,
+				teamId: teamWebId,
+				notionPageId: null,
+			},
+			{
+				id: declinedResetIncidentId,
+				clientId: "demo-client",
+				title: "Suspected spike in password reset failures",
+				description: "Alert indicated elevated reset failures, but user support volume stayed normal.",
+				severity: "medium",
+				assignee: "UDEMO004",
+				createdBy: "UDEMO002",
+				source: "slack",
+				prompt: "Password reset failure alerts spiked and we need to verify if this is customer-impacting.",
+				createdAt: declinedResetCreatedAt,
+				resolvedAt: declinedResetAt,
+				events: [...declinedResetEvents],
+				timeline: null,
+				impact: null,
+				rootCause: null,
+				actions: [],
+				entryPointId: "entry-point-web",
+				rotationId: rotationWebId,
+				teamId: teamWebId,
+				notionPageId: null,
+			},
+			{
+				id: declinedLatencyIncidentId,
+				clientId: "demo-client",
+				title: "Suspected API latency regression after release",
+				description: "Synthetic monitor flagged a latency jump that needed investigation.",
+				severity: "low",
+				assignee: "UDEMO007",
+				createdBy: "UDEMO005",
+				source: "dashboard",
+				prompt: "A regression alert fired for API latency shortly after release and may be a false positive.",
+				createdAt: declinedLatencyCreatedAt,
+				resolvedAt: declinedLatencyAt,
+				events: [...declinedLatencyEvents],
+				timeline: null,
+				impact: null,
+				rootCause: null,
+				actions: [],
+				entryPointId: "entry-point-platform",
+				rotationId: rotationPlatformId,
+				teamId: teamPlatformId,
+				notionPageId: null,
+			},
 		],
 		affections: [],
-		eventSeq: 5,
+		eventSeq: 24,
 	};
 }
 
