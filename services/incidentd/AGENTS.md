@@ -18,6 +18,24 @@ bun run type-check
 Notes:
 - Service `lint` is a placeholder; lint/check run from repo root (`bun run check`).
 
+## Tests
+
+```bash
+bun run test                # all tests (vitest + cloudflare pool workers)
+bun run type-check          # tsc --noEmit
+```
+
+Eval harness (requires live OpenAI key, not part of `bun run test`):
+
+```bash
+OPENAI_API_KEY=... bun services/incidentd/src/agent/eval.similar-incidents.test.ts
+OPENAI_API_KEY=... bun services/incidentd/src/agent/eval.similar-incidents.test.ts --section=summarization --runs=3
+OPENAI_API_KEY=... bun services/incidentd/src/agent/eval.similar-incidents.test.ts --section=provider-decision --runs=3
+OPENAI_API_KEY=... bun services/incidentd/src/agent/eval.similar-incidents.test.ts --out=/tmp/sim-eval.json
+```
+
+Eval sections: `all` (default), `provider-decision`, `ranking`, `deep-dive`, `summarization`.
+
 ## Core Principles
 
 1. Data flow follows structure: `receiver -> handler -> core -> dispatcher/workflow -> sender`.

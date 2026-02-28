@@ -189,4 +189,221 @@ describe("Incident DO core contracts", () => {
 		expect(affectionEvents).toHaveLength(1);
 		expect(eventData<{ services?: Array<{ id: string; impact: string }> }>(affectionEvents[0]!).services).toEqual([{ id: "svc-api", impact: "major" }]);
 	});
+
+	it("stores SIMILAR_INCIDENTS_DISCOVERED as auto-published internal event", async () => {
+		const { stub, id, identifier } = createIncidentHandle();
+		await seedInitializedIncident(stub, id, identifier);
+
+		const first = await stub.recordSimilarIncidentsDiscovered({
+			runId: "run-1",
+			searchedAt: "2026-02-27T12:00:00.000Z",
+			contextSnapshot: "Customers see elevated 5xx on API endpoints.",
+			gateDecision: "insufficient_context",
+			gateReason: "Need clearer scope confirmation.",
+			openCandidateCount: 0,
+			closedCandidateCount: 0,
+			rankedIncidentIds: [],
+			selectedIncidentIds: [],
+		});
+
+		expect(first).toBeDefined();
+		expect(first).not.toEqual({ error: "NOT_FOUND" });
+		expect(first).not.toEqual({ error: "NOT_INITIALIZED" });
+		expect(first).not.toEqual({ error: "RESOLVED" });
+
+		const second = await stub.recordSimilarIncidentsDiscovered({
+			runId: "run-1",
+			searchedAt: "2026-02-27T12:00:00.000Z",
+			contextSnapshot: "Customers see elevated 5xx on API endpoints.",
+			gateDecision: "insufficient_context",
+			gateReason: "Need clearer scope confirmation.",
+			openCandidateCount: 0,
+			closedCandidateCount: 0,
+			rankedIncidentIds: [],
+			selectedIncidentIds: [],
+		});
+		expect(second).toBeDefined();
+		if (first && second && "eventId" in first && "eventId" in second) {
+			expect(second.eventId).toBe(first.eventId);
+		}
+
+		const result = assertReady(await stub.get());
+		const discoveryEvents = result.events.filter((event) => event.event_type === "SIMILAR_INCIDENTS_DISCOVERED");
+		expect(discoveryEvents).toHaveLength(1);
+		const discoveryEvent = discoveryEvents[0];
+		expect(discoveryEvent).toBeDefined();
+		expect(discoveryEvent?.adapter).toBe("fire");
+		expect(discoveryEvent?.published_at).not.toBeNull();
+		expect(eventData<{ runId: string; gateDecision: string }>(discoveryEvent!)).toMatchObject({
+			runId: "run-1",
+			gateDecision: "insufficient_context",
+		});
+	});
+
+	it("stores SIMILAR_INCIDENT as unpublished outbox event and deduplicates by run+incident", async () => {
+		const { stub, id, identifier } = createIncidentHandle();
+		await seedInitializedIncident(stub, id, identifier);
+
+		const first = await stub.recordSimilarIncident({
+			originRunId: "run-2",
+			similarIncidentId: "inc-previous-1",
+			sourceIncidentIds: ["inc-previous-1"],
+			summary: "Very similar symptom pattern.",
+			evidence: "Both incidents show API 503 spikes after deploy.",
+			comparisonContext: "shared edge routing regression pattern",
+		});
+		expect(first).toBeDefined();
+		expect(first).not.toEqual({ error: "NOT_FOUND" });
+		expect(first).not.toEqual({ error: "NOT_INITIALIZED" });
+		expect(first).not.toEqual({ error: "RESOLVED" });
+		if (first && "eventId" in first) {
+			expect(first.deduped).toBe(false);
+		}
+
+		const second = await stub.recordSimilarIncident({
+			originRunId: "run-2",
+			similarIncidentId: "inc-previous-1",
+			sourceIncidentIds: ["inc-previous-1"],
+			summary: "Very similar symptom pattern.",
+			evidence: "Both incidents show API 503 spikes after deploy.",
+			comparisonContext: "shared edge routing regression pattern",
+		});
+		expect(second).toBeDefined();
+		if (first && second && "eventId" in first && "eventId" in second) {
+			expect(second.eventId).toBe(first.eventId);
+			expect(second.deduped).toBe(true);
+		}
+
+		const result = assertReady(await stub.get());
+		const similarEvents = result.events.filter((event) => event.event_type === "SIMILAR_INCIDENT");
+		expect(similarEvents).toHaveLength(1);
+		expect(similarEvents[0]?.adapter).toBe("fire");
+		expect(similarEvents[0]?.published_at).toBeNull();
+		expect(eventData<{ similarIncidentId: string; originRunId: string }>(similarEvents[0]!)).toMatchObject({
+			originRunId: "run-2",
+			similarIncidentId: "inc-previous-1",
+		});
+	});
+
+	it("stores generic agent context and insight events with dedupe key semantics", async () => {
+		const { stub, id, identifier } = createIncidentHandle();
+		await seedInitializedIncident(stub, id, identifier);
+
+		const contextEvent = {
+			runId: "run-generic-1",
+			searchedAt: "2026-02-27T12:05:00.000Z",
+			contextSnapshot: "Search context snapshot",
+			gateDecision: "run" as const,
+			openCandidateCount: 3,
+			closedCandidateCount: 2,
+			rankedIncidentIds: ["inc-a", "inc-b"],
+			selectedIncidentIds: ["inc-a"],
+		};
+		const contextFirst = await stub.recordAgentContextEvent({
+			eventType: "SIMILAR_INCIDENTS_DISCOVERED",
+			eventData: contextEvent,
+			dedupeKey: "generic-discovery-key",
+		});
+		const contextSecond = await stub.recordAgentContextEvent({
+			eventType: "SIMILAR_INCIDENTS_DISCOVERED",
+			eventData: contextEvent,
+			dedupeKey: "generic-discovery-key",
+		});
+		if (contextFirst && contextSecond && "eventId" in contextFirst && "eventId" in contextSecond) {
+			expect(contextSecond.eventId).toBe(contextFirst.eventId);
+		}
+
+		const insightEvent = {
+			originRunId: "run-generic-2",
+			similarIncidentId: "inc-previous-42",
+			sourceIncidentIds: ["inc-previous-42"],
+			summary: "Matched outage pattern.",
+			evidence: "Shared trigger and same rollback mitigation path.",
+			comparisonContext: "same deployment edge case",
+		};
+		const insightFirst = await stub.recordAgentInsightEvent({
+			eventType: "SIMILAR_INCIDENT",
+			eventData: insightEvent,
+			dedupeKey: "generic-match-key",
+		});
+		const insightSecond = await stub.recordAgentInsightEvent({
+			eventType: "SIMILAR_INCIDENT",
+			eventData: insightEvent,
+			dedupeKey: "generic-match-key",
+		});
+		if (insightFirst && insightSecond && "eventId" in insightFirst && "eventId" in insightSecond) {
+			expect(insightSecond.eventId).toBe(insightFirst.eventId);
+			expect(insightSecond.deduped).toBe(true);
+		}
+
+		const result = assertReady(await stub.get());
+		const discoveryEvents = result.events.filter((event) => event.event_type === "SIMILAR_INCIDENTS_DISCOVERED");
+		const similarEvents = result.events.filter((event) => event.event_type === "SIMILAR_INCIDENT");
+		expect(discoveryEvents).toHaveLength(1);
+		expect(similarEvents).toHaveLength(1);
+		expect(discoveryEvents[0]?.published_at).not.toBeNull();
+		expect(similarEvents[0]?.published_at).toBeNull();
+	});
+
+	it("returns bounded event ranges for provider context ingestion", async () => {
+		const { stub, id, identifier } = createIncidentHandle();
+		await seedInitializedIncident(stub, id, identifier);
+
+		await stub.setSeverity("high", "dashboard");
+		await stub.addMessage("Context message A", "U_TEST_1", "msg-range-1", "dashboard");
+		await stub.addMessage("Context message B", "U_TEST_1", "msg-range-2", "dashboard");
+
+		const full = await stub.getAgentContext();
+		expect("error" in full).toBe(false);
+		if ("error" in full) {
+			return;
+		}
+		const lastEventId = full.events.at(-1)?.id ?? 0;
+		const fromEventId = Math.max(0, lastEventId - 1);
+		const range = await stub.getAgentContextRange({
+			fromEventIdExclusive: fromEventId,
+			toEventIdInclusive: lastEventId,
+		});
+
+		expect("error" in range).toBe(false);
+		if ("error" in range) {
+			return;
+		}
+
+		expect(range.fromEventIdExclusive).toBe(fromEventId);
+		expect(range.toEventIdInclusive).toBe(lastEventId);
+		expect(range.events.every((event) => event.id > fromEventId && event.id <= lastEventId)).toBe(true);
+		expect(range.events.length).toBeGreaterThanOrEqual(1);
+	});
+
+	// TODO: @Miquel =>  Prob remove this behavior
+	it("does not trigger a new agent turn from SIMILAR_INCIDENT-only updates", async () => {
+		const { stub, id, identifier } = createIncidentHandle();
+		await seedInitializedIncident(stub, id, identifier);
+
+		await stub.recordSimilarIncident({
+			originRunId: "run-3",
+			similarIncidentId: "inc-previous-2",
+			sourceIncidentIds: ["inc-previous-2"],
+			summary: "Comparable elevated API error spikes.",
+			evidence: "Same error class, similar timeline around deploy.",
+			comparisonContext: "similar mitigation path expected",
+		});
+
+		const alarmResult = await runInDurableObject(stub, async (instance, state) => {
+			let startedAgentTurnCount = 0;
+			(instance as { dispatchToWorkflow?: (event: unknown, state: unknown) => Promise<void> }).dispatchToWorkflow = async () => {};
+			(instance as { startAgentTurnWorkflow?: (payload: unknown) => Promise<void> }).startAgentTurnWorkflow = async () => {
+				startedAgentTurnCount += 1;
+			};
+			const incident = instance as import("./incident").Incident;
+			await incident.alarm();
+			const agentState = state.storage.kv.get<{ lastProcessedEventId: number; toEventId: number | null; nextAt?: number }>("AG");
+			return { startedAgentTurnCount, agentState };
+		});
+
+		expect(alarmResult.startedAgentTurnCount).toBe(0);
+		expect(alarmResult.agentState?.lastProcessedEventId ?? 0).toBe(0);
+		expect(alarmResult.agentState?.toEventId ?? null).toBeNull();
+	});
 });

@@ -86,6 +86,17 @@ export type SenderParams = {
 		eventId: number;
 		eventMetadata?: Record<string, string>;
 	};
+	similarIncident: {
+		step: StepDo;
+		env: Env;
+		id: string;
+		incident: Incident;
+		metadata: Metadata;
+		sourceAdapter: "slack" | "dashboard" | "fire";
+		event: Extract<IS_Event, { event_type: "SIMILAR_INCIDENT" }>["event_data"];
+		eventId: number;
+		eventMetadata?: Record<string, string>;
+	};
 };
 
 interface Sender {
@@ -95,6 +106,7 @@ interface Sender {
 	incidentStatusUpdated: ((params: SenderParams["incidentStatusUpdated"]) => Promise<void>) | undefined;
 	messageAdded: ((params: SenderParams["messageAdded"]) => Promise<void>) | undefined;
 	affectionUpdated: ((params: SenderParams["affectionUpdated"]) => Promise<void>) | undefined;
+	similarIncident: ((params: SenderParams["similarIncident"]) => Promise<void>) | undefined;
 }
 
 const senders: Sender[] = [dashboardSender, slackSender, statusPageDispatcher];
@@ -152,6 +164,10 @@ async function dispatchAffectionUpdatedEvent(params: SenderParams["affectionUpda
 	await settleDispatch("affection-updated", [...senders.map((sender) => sender.affectionUpdated?.(params))]);
 }
 
+async function dispatchSimilarIncidentEvent(params: SenderParams["similarIncident"]) {
+	await settleDispatch("similar-incident", [...senders.map((sender) => sender.similarIncident?.(params))]);
+}
+
 type WorkflowEventPayload = Extract<IncidentWorkflowPayload, { kind: "event" }>;
 
 async function dispatchEvent(step: WorkflowStep, env: Env, payload: WorkflowEventPayload) {
@@ -184,6 +200,19 @@ async function dispatchEvent(step: WorkflowStep, env: Env, payload: WorkflowEven
 		}
 		case "AFFECTION_UPDATE": {
 			return dispatchAffectionUpdatedEvent({
+				...baseParams,
+				event: payload.event.event_data,
+				eventId: payload.event.event_id,
+				eventMetadata: payload.eventMetadata,
+			});
+		}
+		case "SIMILAR_INCIDENTS_DISCOVERED":
+		case "CONTEXT_AGENT_TRIGGERED": {
+			// Internal capability trace. Persisted in timeline context but never dispatched to senders.
+			return;
+		}
+		case "SIMILAR_INCIDENT": {
+			return dispatchSimilarIncidentEvent({
 				...baseParams,
 				event: payload.event.event_data,
 				eventId: payload.event.event_id,

@@ -12,12 +12,20 @@
 			"new_sqlite_classes": ["Incident"],
 			"tag": "v1",
 		},
+		{
+			"new_sqlite_classes": ["SimilarIncidentsAgent"],
+			"tag": "v2-similar-provider-agent",
+		},
 	],
 	"durable_objects": {
 		"bindings": [
 			{
 				"class_name": "Incident",
 				"name": "INCIDENT",
+			},
+			{
+				"class_name": "SimilarIncidentsAgent",
+				"name": "SIMILAR_INCIDENTS_AGENT",
 			},
 		],
 	},

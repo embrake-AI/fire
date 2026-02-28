@@ -1,4 +1,5 @@
 import type { EntryPoint, IS, IS_Event } from "@fire/common";
+import OpenAI from "openai";
 import { ASSERT } from "../lib/utils";
 
 type IncidentInfo = {
@@ -62,6 +63,7 @@ const RESPONSE_SCHEMA = (indices: number[]) =>
 
 export async function calculateIncidentInfo(prompt: string, entryPoints: EntryPoint[], openaiApiKey: string): Promise<IncidentInfo> {
 	ASSERT(entryPoints.length > 0, "At least one entry point is required");
+	const client = new OpenAI({ apiKey: openaiApiKey });
 
 	const entryPointsDescription = entryPoints
 		.map((ep, i) => `Index ${i}: Assignee: ${ep.assignee.id}\n   Choose when: ${ep.prompt}${ep.isFallback ? " (FALLBACK - Choose if no others match)" : ""}`)
@@ -75,50 +77,28 @@ ${prompt}
 
 Select the most appropriate entry point and provide the incident details.`;
 
-	const response = await fetch("https://api.openai.com/v1/chat/completions", {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			Authorization: `Bearer ${openaiApiKey}`,
-		},
-		body: JSON.stringify({
-			model: "gpt-5.2",
-			messages: [
-				{ role: "system", content: SYSTEM_PROMPT },
-				{ role: "user", content: userMessage },
-			],
-			response_format: {
+	const response = await client.responses.create({
+		model: "gpt-5.2",
+		input: [
+			{ role: "system", content: SYSTEM_PROMPT },
+			{ role: "user", content: userMessage },
+		],
+		text: {
+			format: {
 				type: "json_schema",
-				json_schema: {
-					name: "incident_info",
-					strict: true,
-					schema: RESPONSE_SCHEMA(entryPoints.map((_, i) => i)),
-				},
+				name: "incident_info",
+				schema: RESPONSE_SCHEMA(entryPoints.map((_, i) => i)) as Record<string, unknown>,
+				strict: true,
 			},
-		}),
+			verbosity: "low",
+		},
 	});
-
-	if (!response.ok) {
-		const error = await response.text();
-		throw new Error(`OpenAI API error: ${response.status} - ${error}`);
-	}
-
-	const data = (await response.json()) as {
-		id?: string;
-		model?: string;
-		usage?: {
-			prompt_tokens?: number;
-			completion_tokens?: number;
-			total_tokens?: number;
-			prompt_tokens_details?: { cached_tokens?: number };
-		};
-		choices: Array<{ message: { content: string } }>;
-	};
-	const content = data.choices[0]?.message?.content;
+	const content = response.output_text.trim();
 	ASSERT(content, "No response content from OpenAI");
 
 	const { entryPointIndex, severity, title, description } = JSON.parse(content);
 	const selectedEntryPoint = entryPoints[entryPointIndex];
+	ASSERT(selectedEntryPoint, `Invalid entry point index selected by model: ${String(entryPointIndex)}`);
 	return { selectedEntryPoint, severity, title, description };
 }
 
@@ -181,6 +161,7 @@ export async function generateIncidentPostmortem(
 	events: Array<{ event_type: IS_Event["event_type"]; event_data: IS_Event["event_data"]; created_at: string }>,
 	openaiApiKey: string,
 ): Promise<IncidentPostmortem> {
+	const client = new OpenAI({ apiKey: openaiApiKey });
 	const startedAt = events.find((event) => event.event_type === "INCIDENT_CREATED")?.created_at ?? events[0]?.created_at ?? null;
 	const startedAtMs = startedAt ? new Date(startedAt).getTime() : NaN;
 	const isOnOrAfterStart = (createdAt: string) => {
@@ -214,46 +195,23 @@ ${eventDescriptions}
 
 Generate the post-mortem.`;
 
-	const response = await fetch("https://api.openai.com/v1/chat/completions", {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			Authorization: `Bearer ${openaiApiKey}`,
-		},
-		body: JSON.stringify({
-			model: "gpt-5.2",
-			messages: [
-				{ role: "system", content: POSTMORTEM_SYSTEM_PROMPT },
-				{ role: "user", content: userMessage },
-			],
-			response_format: {
+	const response = await client.responses.create({
+		model: "gpt-5.2",
+		input: [
+			{ role: "system", content: POSTMORTEM_SYSTEM_PROMPT },
+			{ role: "user", content: userMessage },
+		],
+		text: {
+			format: {
 				type: "json_schema",
-				json_schema: {
-					name: "incident_postmortem",
-					strict: true,
-					schema: POSTMORTEM_RESPONSE_SCHEMA,
-				},
+				name: "incident_postmortem",
+				schema: POSTMORTEM_RESPONSE_SCHEMA as Record<string, unknown>,
+				strict: true,
 			},
-		}),
+			verbosity: "low",
+		},
 	});
-
-	if (!response.ok) {
-		const error = await response.text();
-		throw new Error(`OpenAI API error: ${response.status} - ${error}`);
-	}
-
-	const data = (await response.json()) as {
-		id?: string;
-		model?: string;
-		usage?: {
-			prompt_tokens?: number;
-			completion_tokens?: number;
-			total_tokens?: number;
-			prompt_tokens_details?: { cached_tokens?: number };
-		};
-		choices: Array<{ message: { content: string } }>;
-	};
-	const content = data.choices[0]?.message?.content;
+	const content = response.output_text.trim();
 	ASSERT(content, "No response content from OpenAI");
 
 	const parsed = JSON.parse(content) as IncidentPostmortem;

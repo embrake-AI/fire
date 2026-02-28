@@ -1,4 +1,5 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
+import { getSimilarIncidentsProvider } from "../agent/providers/registry";
 import { buildAgentSuggestionMessages, postAgentSuggestionMessage } from "../agent/slack";
 import { generateIncidentSuggestions, getValidStatusTransitions, normalizeSuggestions } from "../agent/suggestions";
 import type { AgentSuggestionContext, AgentTurnPayload } from "../agent/types";
@@ -7,7 +8,7 @@ export class IncidentAgentTurnWorkflow extends WorkflowEntrypoint<Env, AgentTurn
 	async run(event: WorkflowEvent<AgentTurnPayload>, step: WorkflowStep) {
 		const payload = event.payload;
 		const { incident, metadata, services, affection, events, turnId } = payload;
-
+		const stepDo = <T extends Rpc.Serializable<T>>(name: string, callback: () => Promise<T>): Promise<T> => step.do(name, { retries: { limit: 3, delay: "5 seconds" } }, callback);
 		const context: AgentSuggestionContext = {
 			incident,
 			services,
@@ -17,11 +18,9 @@ export class IncidentAgentTurnWorkflow extends WorkflowEntrypoint<Env, AgentTurn
 			validStatusTransitions: getValidStatusTransitions(incident.status),
 		};
 
-		const stepDo = <T extends Rpc.Serializable<T>>(name: string, callback: () => Promise<T>): Promise<T> => step.do(name, { retries: { limit: 3, delay: "5 seconds" } }, callback);
+		const result = await generateIncidentSuggestions(context, this.env.OPENAI_API_KEY, stepDo, turnId);
 
-		const suggestions = await generateIncidentSuggestions(context, this.env.OPENAI_API_KEY, stepDo, turnId);
-
-		const normalized = normalizeSuggestions(suggestions, context);
+		const normalized = normalizeSuggestions(result.suggestions, context);
 		if (!normalized.length) {
 			return;
 		}
@@ -54,6 +53,30 @@ export class IncidentAgentTurnWorkflow extends WorkflowEntrypoint<Env, AgentTurn
 			await incidentStub.addSuggestions(loggedSuggestions);
 			return null;
 		});
+
+		if (result.similarIncidentsRequest) {
+			const { evidence, reason } = result.similarIncidentsRequest;
+			const triggeredAt = new Date().toISOString();
+
+			await stepDo(`agent-similar.trigger:${turnId}:${payload.toEventId}`, async () => {
+				const incidentStub = this.env.INCIDENT.get(this.env.INCIDENT.idFromString(payload.incidentId));
+				await incidentStub.recordAgentContextEvent({
+					eventType: "CONTEXT_AGENT_TRIGGERED",
+					eventData: { agent: "similar-incidents", turnId, evidence, reason, triggeredAt },
+					dedupeKey: `context-trigger:${turnId}`,
+				});
+
+				const provider = getSimilarIncidentsProvider(this.env, payload.incidentId);
+				await provider.addContext({
+					incidentId: payload.incidentId,
+					toEventId: payload.toEventId,
+					events,
+					trigger: "agent-turn",
+					requestedAt: triggeredAt,
+				});
+				return null;
+			});
+		}
 
 		for (const [index, message] of messages.entries()) {
 			await step.do(`agent-turn.post:${turnId}:${index + 1}`, { retries: { limit: 3, delay: "2 seconds" } }, () =>

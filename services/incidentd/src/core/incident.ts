@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { EntryPoint, EventLog, IS, IS_Event } from "@fire/common";
 import type { IncidentEventData } from "@fire/db/schema";
-import type { AgentAffectionInfo, AgentEvent, AgentIncidentSnapshot, AgentService, AgentTurnPayload } from "../agent/types";
+import type { AgentAffectionInfo, AgentContextRangeResponse, AgentEvent, AgentIncidentSnapshot, AgentService, AgentTurnPayload } from "../agent/types";
 import type { IncidentAnalysisWorkflowPayload } from "../dispatcher/analysis-workflow";
 import { INCIDENT_WORKFLOW_EVENT_TYPE, type IncidentWorkflowPayload } from "../dispatcher/workflow";
 import type { Metadata } from "../handler";
@@ -26,12 +26,35 @@ const ALARM_INTERVAL_MS = 200;
 const MAX_ATTEMPTS = 3;
 
 type AffectionUpdateData = Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
+type SimilarIncidentsDiscoveredData = Extract<IS_Event, { event_type: "SIMILAR_INCIDENTS_DISCOVERED" }>["event_data"];
+type SimilarIncidentData = Extract<IS_Event, { event_type: "SIMILAR_INCIDENT" }>["event_data"];
+type ContextAgentTriggeredData = Extract<IS_Event, { event_type: "CONTEXT_AGENT_TRIGGERED" }>["event_data"];
+type AgentContextEventPayload =
+	| {
+			eventType: "SIMILAR_INCIDENTS_DISCOVERED";
+			eventData: SimilarIncidentsDiscoveredData;
+			dedupeKey: string;
+	  }
+	| {
+			eventType: "CONTEXT_AGENT_TRIGGERED";
+			eventData: ContextAgentTriggeredData;
+			dedupeKey: string;
+	  };
+type AgentInsightEventPayload = {
+	eventType: "SIMILAR_INCIDENT";
+	eventData: SimilarIncidentData;
+	dedupeKey: string;
+};
 type IncidentService = { id: string; name: string; prompt: string | null };
 type SuggestionLogInput = { message: string; suggestionId: string; messageId: string; suggestion?: Record<string, unknown> };
 type BootstrapMessage = { message: string; userId: string; messageId: string; createdAt: string };
 
 function isTerminalIncidentStatus(status: IS["status"]) {
 	return status === "resolved" || status === "declined";
+}
+
+function shouldTriggerAgentTurnForEvent(eventType: IS_Event["event_type"]) {
+	return eventType !== "SIMILAR_INCIDENT" && eventType !== "SIMILAR_INCIDENTS_DISCOVERED";
 }
 
 function normalizeIncidentServices(services: IncidentService[]) {
@@ -177,6 +200,14 @@ export class Incident extends DurableObject<Env> {
 		};
 	}
 
+	private getAgentServicesFromStorage(): AgentService[] {
+		return (this.ctx.storage.kv.get<AgentService[]>(SERVICES_KEY) ?? []).map((service) => ({
+			id: service.id,
+			name: service.name,
+			prompt: service.prompt ?? null,
+		}));
+	}
+
 	private buildAgentTurnPayload(params: { state: DOState; fromEventId: number; toEventId: number; events: AgentEvent[]; affection: AgentAffectionInfo; services: AgentService[] }) {
 		const { state, fromEventId, toEventId, events, affection, services } = params;
 		const turnId = `${toEventId}`;
@@ -194,22 +225,33 @@ export class Incident extends DurableObject<Env> {
 	}
 
 	private getAffectionInfoFromLog(): AgentAffectionInfo {
-		const rows = this.ctx.storage.sql
-			.exec<Pick<EventLog, "event_data" | "created_at">>("SELECT event_data, created_at FROM event_log WHERE event_type = 'AFFECTION_UPDATE' ORDER BY id ASC")
+		const [row] = this.ctx.storage.sql
+			.exec<{ last_update_at: string | null; last_status: string | null }>(
+				`
+				SELECT
+					(SELECT created_at FROM event_log WHERE event_type = 'AFFECTION_UPDATE' ORDER BY id DESC LIMIT 1) AS last_update_at,
+					(
+						SELECT json_extract(event_data, '$.status')
+						FROM event_log
+						WHERE event_type = 'AFFECTION_UPDATE' AND json_extract(event_data, '$.status') IS NOT NULL
+						ORDER BY id DESC
+						LIMIT 1
+					) AS last_status
+				`,
+			)
 			.toArray();
 
-		const hasAffection = rows.length > 0;
-		let lastStatus: AgentAffectionInfo["lastStatus"];
-		let lastUpdateAt: string | undefined;
-		for (const row of rows) {
-			const data = JSON.parse(row.event_data) as { status?: AgentAffectionInfo["lastStatus"] };
-			if (data?.status) {
-				lastStatus = data.status;
-			}
-			lastUpdateAt = row.created_at;
+		if (!row?.last_update_at) {
+			return { hasAffection: false };
 		}
 
-		return { hasAffection, lastStatus, lastUpdateAt };
+		const lastStatus = row.last_status === "investigating" || row.last_status === "mitigating" || row.last_status === "resolved" ? row.last_status : undefined;
+
+		return {
+			hasAffection: true,
+			lastStatus,
+			lastUpdateAt: row.last_update_at,
+		};
 	}
 
 	private async startAgentTurnWorkflow(payload: AgentTurnPayload) {
@@ -323,7 +365,7 @@ export class Incident extends DurableObject<Env> {
 
 	private refreshAgentDebounceState(events: EventLog[], now: number) {
 		const agentState = this.getAgentState();
-		const lastDispatchedEventId = events.at(-1)?.id ?? null;
+		const lastDispatchedEventId = [...events].reverse().find((event) => shouldTriggerAgentTurnForEvent(event.event_type))?.id ?? null;
 		if (lastDispatchedEventId === null) {
 			return agentState;
 		}
@@ -343,7 +385,7 @@ export class Incident extends DurableObject<Env> {
 		try {
 			const fromEventId = agentState.lastProcessedEventId;
 			const events = this.listAgentEvents({ toId: toEventId });
-			const services = (this.ctx.storage.kv.get<AgentService[]>(SERVICES_KEY) ?? []).map((service) => ({ id: service.id, name: service.name, prompt: service.prompt ?? null }));
+			const services = this.getAgentServicesFromStorage();
 			const affection = this.getAffectionInfoFromLog();
 			if (events.length) {
 				const payload = this.buildAgentTurnPayload({
@@ -456,6 +498,9 @@ export class Incident extends DurableObject<Env> {
 				adapter TEXT NOT NULL
 			);
 			CREATE INDEX idx_event_log_published_at ON event_log(published_at);
+			CREATE INDEX idx_event_log_type_id ON event_log(event_type, id);
+			CREATE INDEX idx_event_log_message_id ON event_log(event_type, json_extract(event_data, '$.messageId'));
+			CREATE INDEX idx_event_log_agent_dedupe ON event_log(event_type, json_extract(event_metadata, '$.agentDedupeKey'));
 			`);
 			this.ctx.storage.kv.put(EVENTLOGVERSION_KEY, "1");
 			for (const message of bootstrapMessages) {
@@ -676,12 +721,7 @@ export class Incident extends DurableObject<Env> {
 		}
 
 		const events = this.listAgentEvents();
-
-		const services = (this.ctx.storage.kv.get<AgentService[]>(SERVICES_KEY) ?? []).map((service) => ({
-			id: service.id,
-			name: service.name,
-			prompt: service.prompt ?? null,
-		}));
+		const services = this.getAgentServicesFromStorage();
 
 		return {
 			incident: this.buildAgentIncidentSnapshot(state),
@@ -689,6 +729,37 @@ export class Incident extends DurableObject<Env> {
 			services,
 			affection: this.getAffectionInfoFromLog(),
 			events,
+		};
+	}
+
+	async getAgentContextRange(params: { fromEventIdExclusive: number; toEventIdInclusive: number }): Promise<AgentContextRangeResponse> {
+		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY);
+		if (!state) {
+			return { error: "NOT_FOUND" };
+		} else if (!state._initialized) {
+			return { error: "INITIALIZING" };
+		}
+
+		const fromEventId = Math.max(0, Math.floor(params.fromEventIdExclusive));
+		const toEventId = Math.max(fromEventId, Math.floor(params.toEventIdInclusive));
+
+		const rows = this.ctx.storage.sql
+			.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "created_at" | "adapter" | "event_metadata">>(
+				"SELECT id, event_type, event_data, created_at, adapter, event_metadata FROM event_log WHERE id > ? AND id <= ? ORDER BY id ASC",
+				fromEventId,
+				toEventId,
+			)
+			.toArray();
+		const services = this.getAgentServicesFromStorage();
+
+		return {
+			incident: this.buildAgentIncidentSnapshot(state),
+			metadata: state.metadata,
+			services,
+			affection: this.getAffectionInfoFromLog(),
+			events: rows.map(mapAgentEventRow),
+			fromEventIdExclusive: fromEventId,
+			toEventIdInclusive: toEventId,
 		};
 	}
 
@@ -744,6 +815,90 @@ export class Incident extends DurableObject<Env> {
 					JSON.stringify({ kind: "suggestion", agentSuggestionId: suggestionId }),
 				);
 			}
+		});
+	}
+
+	async recordAgentContextEvent(params: AgentContextEventPayload) {
+		const state = this.getState();
+		if ("error" in state) {
+			return state;
+		}
+
+		let inserted: { id: number; created_at: string } | undefined;
+		await this.ctx.storage.transaction(async () => {
+			const [existing] = this.ctx.storage.sql
+				.exec<{ id: number; created_at: string }>(
+					"SELECT id, created_at FROM event_log WHERE event_type = ? AND json_extract(event_metadata, '$.agentDedupeKey') = ? LIMIT 1",
+					params.eventType,
+					params.dedupeKey,
+				)
+				.toArray();
+			if (existing) {
+				inserted = existing;
+				return;
+			}
+			this.ctx.storage.sql.exec(
+				"INSERT INTO event_log (event_type, event_data, event_metadata, adapter, published_at) VALUES (?, ?, ?, 'fire', CURRENT_TIMESTAMP)",
+				params.eventType,
+				JSON.stringify(params.eventData),
+				JSON.stringify({ agentDedupeKey: params.dedupeKey }),
+			);
+			[inserted] = this.ctx.storage.sql.exec<{ id: number; created_at: string }>("SELECT id, created_at FROM event_log WHERE id = last_insert_rowid()").toArray();
+		});
+		if (!inserted) {
+			return;
+		}
+		return { eventId: inserted.id, createdAt: inserted.created_at };
+	}
+
+	async recordAgentInsightEvent(params: AgentInsightEventPayload) {
+		const state = this.getState();
+		if ("error" in state) {
+			return state;
+		}
+
+		const existing = this.ctx.storage.sql
+			.exec<{ id: number; created_at: string }>(
+				"SELECT id, created_at FROM event_log WHERE event_type = ? AND json_extract(event_metadata, '$.agentDedupeKey') = ? LIMIT 1",
+				params.eventType,
+				params.dedupeKey,
+			)
+			.toArray();
+		if (existing.length) {
+			return { eventId: existing[0]!.id, createdAt: existing[0]!.created_at, deduped: true };
+		}
+
+		let inserted: { id: number; created_at: string } | undefined;
+		await this.ctx.storage.transaction(async () => {
+			this.ctx.storage.sql.exec(
+				"INSERT INTO event_log (event_type, event_data, event_metadata, adapter) VALUES (?, ?, ?, 'fire')",
+				params.eventType,
+				JSON.stringify(params.eventData),
+				JSON.stringify({ agentDedupeKey: params.dedupeKey }),
+			);
+			await this.scheduleAlarmAtMost(Date.now());
+			[inserted] = this.ctx.storage.sql.exec<{ id: number; created_at: string }>("SELECT id, created_at FROM event_log WHERE id = last_insert_rowid()").toArray();
+		});
+
+		if (!inserted) {
+			return;
+		}
+		return { eventId: inserted.id, createdAt: inserted.created_at, deduped: false };
+	}
+
+	async recordSimilarIncidentsDiscovered(eventData: SimilarIncidentsDiscoveredData) {
+		return this.recordAgentContextEvent({
+			eventType: "SIMILAR_INCIDENTS_DISCOVERED",
+			eventData,
+			dedupeKey: eventData.runId,
+		});
+	}
+
+	async recordSimilarIncident(eventData: SimilarIncidentData) {
+		return this.recordAgentInsightEvent({
+			eventType: "SIMILAR_INCIDENT",
+			eventData,
+			dedupeKey: `${eventData.originRunId}:${eventData.similarIncidentId}`,
 		});
 	}
 

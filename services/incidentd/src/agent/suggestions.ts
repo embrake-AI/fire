@@ -1,4 +1,7 @@
 import type { IS } from "@fire/common";
+import OpenAI from "openai";
+import { formatAgentEventForPrompt, isInternalAgentEvent } from "./event-format";
+import { isResponsesFunctionToolCall, parseJsonObject } from "./openai";
 import type { AgentAffectionInfo, AgentAffectionStatus, AgentEvent, AgentSuggestion, AgentSuggestionContext } from "./types";
 
 export const SYSTEM_PROMPT = `You are an incident operations agent. You may suggest actions for a human dispatcher by calling tools. Tool calls are suggestions only (not auto-executed). If no action is clearly warranted, call no tools.
@@ -61,6 +64,12 @@ Output constraints:
 - Suggest at most 3 actions total.
 - If uncertain, suggest nothing.
 
+Similarity lookup guidance:
+- If the similar_incidents tool is available, call it when historical incidents are likely to materially improve decision quality. You may call it alongside other tools in the same response.
+- First search: require concrete and stable understanding (specific failure mechanism or error class, affected surface, and impact scope).
+- Re-search: require material understanding change since the latest CONTEXT_AGENT_TRIGGERED or SIMILAR_INCIDENTS_DISCOVERED event (new mechanism, subsystem shift, or invalidated prior model).
+- Do NOT call similar_incidents for monitoring chatter, reworded updates, or ambiguous context.
+
 Allowed actions (use tools):
 1) update_status: move to mitigating or resolved. Must include a concise message. Updating to resolved terminates (closes) the incident.
 2) update_severity: change severity to low/medium/high.
@@ -69,10 +78,15 @@ Allowed actions (use tools):
 export const VOLATILE_EVENT_KEYS = new Set(["created_at", "createdAt", "ts", "timestamp", "messageId", "promptTs", "promptThreadTs"]);
 const AFFECTION_STATUSES: AgentAffectionStatus[] = ["investigating", "mitigating", "resolved"];
 
-type SuggestionMessage = { role: "system" | "user" | "assistant" | "tool"; content?: string; tool_calls?: unknown; name?: string };
-export type SuggestionTool = { type: "function"; function: { name: string; description: string; parameters: unknown } };
-type ResponsesInputMessage = { type: "message"; role: "system" | "developer" | "user" | "assistant"; content: string };
-export type ResponsesFunctionTool = { type: "function"; name: string; description: string; parameters: unknown };
+export type SimilarIncidentsToolRequest = {
+	evidence: string;
+	reason: string;
+};
+
+export type GenerateIncidentSuggestionsResult = {
+	suggestions: AgentSuggestion[];
+	similarIncidentsRequest?: SimilarIncidentsToolRequest;
+};
 
 export function normalizeEventData(value: unknown): unknown {
 	if (Array.isArray(value)) {
@@ -90,72 +104,11 @@ export function normalizeEventData(value: unknown): unknown {
 	return Object.fromEntries(entries.map(([key, item]) => [key, normalizeEventData(item)]));
 }
 
-function toResponsesInputMessages(messages: SuggestionMessage[]): ResponsesInputMessage[] {
-	const input: ResponsesInputMessage[] = [];
-	for (const message of messages) {
-		if (!message.content) {
-			continue;
-		}
-		if (message.role === "tool") {
-			continue;
-		}
-		input.push({
-			type: "message",
-			role: message.role,
-			content: message.content,
-		});
-	}
-	return input;
-}
-
-export function toResponsesTools(tools: SuggestionTool[]): ResponsesFunctionTool[] {
-	const mapped: ResponsesFunctionTool[] = [];
-	for (const tool of tools) {
-		if (!tool.function.name) {
-			continue;
-		}
-		mapped.push({
-			type: "function",
-			name: tool.function.name,
-			description: tool.function.description,
-			parameters: tool.function.parameters,
-		});
-	}
-	return mapped;
-}
-
-type OpenAIResponseFunctionCallItem = {
-	type?: string;
-	name?: string;
-	arguments?: string;
-};
-
-type OpenAIResponsesCreateResponse = {
-	id?: string;
-	model?: string;
-	usage?: {
-		input_tokens?: number;
-		output_tokens?: number;
-		total_tokens?: number;
-		input_tokens_details?: { cached_tokens?: number };
-	};
-	output?: OpenAIResponseFunctionCallItem[];
-};
-
+// TODO: @Miquel => This is bad ux
 function truncateMessage(value: string, max = 240) {
 	const trimmed = value.trim();
 	if (trimmed.length <= max) return trimmed;
 	return `${trimmed.slice(0, max - 1)}...`;
-}
-
-export function formatSuggestionEvent(event: AgentEvent): string {
-	const data = event.event_data as Record<string, unknown>;
-	if (data.suggestion && typeof data.suggestion === "object") {
-		const suggestion = data.suggestion as Record<string, unknown>;
-		return `AGENT_SUGGESTION: ${JSON.stringify(suggestion)}`;
-	}
-	const message = typeof data.message === "string" ? data.message : "";
-	return `AGENT_SUGGESTION: ${message}`;
 }
 
 export function buildEventMessages(events: AgentEvent[], processedThroughId: number): Array<{ role: "user" | "assistant"; content: string }> {
@@ -172,95 +125,115 @@ export function buildEventMessages(events: AgentEvent[], processedThroughId: num
 			boundaryInserted = true;
 		}
 
-		const isSuggestion = event.event_type === "MESSAGE_ADDED" && event.event_metadata?.kind === "suggestion" && !!event.event_metadata?.agentSuggestionId;
-		const role = isSuggestion ? "assistant" : "user";
-		const content = isSuggestion ? formatSuggestionEvent(event) : `${event.event_type}: ${JSON.stringify(normalizeEventData(event.event_data))}`;
+		const isInternal = isInternalAgentEvent(event);
+		const role = isInternal ? "assistant" : "user";
+		const content = isInternal ? formatAgentEventForPrompt(event) : `${event.event_type}: ${JSON.stringify(normalizeEventData(event.event_data))}`;
 		messages.push({ role, content });
 	}
 
 	return messages;
 }
 
-export function buildSuggestionTools(context: AgentSuggestionContext): SuggestionTool[] {
+export function buildSuggestionTools(context: AgentSuggestionContext): OpenAI.Responses.FunctionTool[] {
 	const serviceOptions = context.services.map((service) => service.id);
-
-	return [
+	const tools: OpenAI.Responses.FunctionTool[] = [
 		{
 			type: "function",
-			function: {
-				name: "update_status",
-				description: `Suggest updating the incident status. Only call when the event log contains clear, confirmed evidence.
+			name: "similar_incidents",
+			description: `Request retrieval + analysis of similar incidents before final action suggestions.
+- Call only when similar history is likely to improve current decision quality.
+- First search: require clear mechanism/error-class context plus concrete affected surface and impact.
+- Re-search: require material understanding change since the latest SIMILAR_INCIDENTS_DISCOVERED event.
+- Skip when context is ambiguous, purely monitoring chatter, or only reworded status updates.`,
+			strict: true,
+			parameters: {
+				type: "object",
+				properties: {
+					evidence: { type: "string", description: "Specific events proving why similar-incident search is useful now." },
+					reason: { type: "string", description: "Concise reason to run similar-incident search now." },
+				},
+				required: ["evidence", "reason"],
+				additionalProperties: false,
+			},
+		},
+	];
+
+	tools.push(
+		{
+			type: "function",
+			name: "update_status",
+			description: `Suggest updating the incident status. Only call when the event log contains clear, confirmed evidence.
 - "mitigating": a mitigation action has been taken (e.g. fix deployed, workaround applied, rollback done, service restarted). It does NOT require verification that the fix is working - only that a concrete action has been taken to address the issue. Do NOT suggest if no action has been taken yet (investigating alone is not mitigating).
 - "resolved": ONLY when a human explicitly confirms the incident is OVER - the fix is verified AND the problem is completely gone (e.g. "confirmed working", "error rate back to zero", "all clear"). The confirmation must be a statement of verified fact, not a hopeful action.
   NEVER suggest resolved when ANY of these are true: (a) a fix/restart/purge was just initiated or is in progress, (b) error rate has dropped but is not zero, (c) retries are still failing, (d) some users or regions are still affected, (e) someone says they are monitoring or investigating, (f) no human has explicitly confirmed the problem is gone. When in doubt, do NOT suggest resolved - wait for the next turn.`,
-				parameters: {
-					type: "object",
-					properties: {
-						evidence: { type: "string", description: "The specific event(s) from the log that justify this suggestion." },
-						status: { type: "string", enum: ["mitigating", "resolved"] },
-						message: { type: "string" },
-					},
-					required: ["evidence", "status", "message"],
-					additionalProperties: false,
+			strict: true,
+			parameters: {
+				type: "object",
+				properties: {
+					evidence: { type: "string", description: "The specific event(s) from the log that justify this suggestion." },
+					status: { type: "string", enum: ["mitigating", "resolved"] },
+					message: { type: "string" },
 				},
+				required: ["evidence", "status", "message"],
+				additionalProperties: false,
 			},
 		},
 		{
 			type: "function",
-			function: {
-				name: "update_severity",
-				description: `Suggest updating the incident severity. Only call when the event log shows clear evidence of changed impact scope.
+			name: "update_severity",
+			description: `Suggest updating the incident severity. Only call when the event log shows clear evidence of changed impact scope.
 - "high": confirmed multi-customer or revenue impact, complete service outage, or data loss.
 - "medium": partial degradation affecting some users, elevated error rates.
 - "low": minimal impact, cosmetic issues, or internal-only.`,
-				parameters: {
-					type: "object",
-					properties: {
-						evidence: { type: "string", description: "The specific event(s) from the log that justify this suggestion." },
-						severity: { type: "string", enum: ["low", "medium", "high"] },
-					},
-					required: ["evidence", "severity"],
-					additionalProperties: false,
+			strict: true,
+			parameters: {
+				type: "object",
+				properties: {
+					evidence: { type: "string", description: "The specific event(s) from the log that justify this suggestion." },
+					severity: { type: "string", enum: ["low", "medium", "high"] },
 				},
+				required: ["evidence", "severity"],
+				additionalProperties: false,
 			},
 		},
 		{
 			type: "function",
-			function: {
-				name: "add_status_page_update",
-				description: `Suggest posting a public status page update. Only call when the incident should be notified to external users.
+			name: "add_status_page_update",
+			description: `Suggest posting a public status page update. Only call when the incident should be notified to external users.
 - Use the status-page context provided in the prompt:
   - If hasAffection=false, this is the FIRST public update. You MUST set affectionStatus=investigating and include title + services. Do NOT set mitigating/resolved.
   - If hasAffection=true and you also suggest update_status in this turn, set affectionStatus to the same lifecycle status (mitigating/resolved).
   - If hasAffection=true and incident status is unchanged in this turn, set affectionStatus=update for follow-up communication.
 - Subsequent updates: share updates when there is meaningful progress, status changes, scope changes, or genuinely new external information about impact/timeline. If the latest public update already communicates the same external state, do NOT post another update.
 - Do NOT call this tool for internal-only issues (e.g. internal tooling, demo/staging environments, internal dashboards, background jobs that do not affect end users). If the incident has no external user impact, simply do not call this tool.`,
-				parameters: {
-					type: "object",
-					properties: {
-						evidence: { type: "string", description: "The specific event(s) from the log that justify this suggestion." },
-						message: { type: "string" },
-						affectionStatus: { type: "string", enum: ["investigating", "mitigating", "resolved", "update"] },
-						title: { type: "string" },
-						services: {
-							type: "array",
-							items: {
-								type: "object",
-								properties: {
-									id: { type: "string", enum: serviceOptions.length ? serviceOptions : [""] },
-									impact: { type: "string", enum: ["partial", "major"] },
-								},
-								required: ["id", "impact"],
-								additionalProperties: false,
+			strict: true,
+			parameters: {
+				type: "object",
+				properties: {
+					evidence: { type: "string", description: "The specific event(s) from the log that justify this suggestion." },
+					message: { type: "string" },
+					affectionStatus: { type: ["string", "null"], enum: ["investigating", "mitigating", "resolved", "update", null] },
+					title: { type: ["string", "null"] },
+					services: {
+						type: ["array", "null"],
+						items: {
+							type: "object",
+							properties: {
+								id: { type: "string", enum: serviceOptions.length ? serviceOptions : [""] },
+								impact: { type: "string", enum: ["partial", "major"] },
 							},
+							required: ["id", "impact"],
+							additionalProperties: false,
 						},
 					},
-					required: ["evidence", "message"],
-					additionalProperties: false,
 				},
+				required: ["evidence", "message", "affectionStatus", "title", "services"],
+				additionalProperties: false,
 			},
 		},
-	];
+	);
+
+	return tools;
 }
 
 export function buildContextUserMessage(context: AgentSuggestionContext): string {
@@ -551,7 +524,7 @@ export async function generateIncidentSuggestions(
 	openaiApiKey: string,
 	stepDo: <T extends Rpc.Serializable<T>>(name: string, callback: () => Promise<T>) => Promise<T>,
 	stepLabel: string,
-): Promise<AgentSuggestion[]> {
+): Promise<GenerateIncidentSuggestionsResult> {
 	const userMessage = buildContextUserMessage(context);
 	const statusPageContextMessage = buildStatusPageContextMessage(context);
 	const suggestionStateContextMessage = buildSuggestionStateContextMessage(context);
@@ -560,8 +533,9 @@ export async function generateIncidentSuggestions(
 	const eventMessages = buildEventMessages(context.events, context.processedThroughId ?? 0);
 
 	const suggestions: AgentSuggestion[] = [];
+	let similarIncidentsRequest: SimilarIncidentsToolRequest | undefined;
 	const tools = buildSuggestionTools(context);
-	const messages: SuggestionMessage[] = [
+	const input: OpenAI.Responses.EasyInputMessage[] = [
 		{ role: "system", content: SYSTEM_PROMPT },
 		{ role: "user", content: userMessage },
 		...eventMessages,
@@ -575,73 +549,78 @@ export async function generateIncidentSuggestions(
 	const incidentId = context.incident.id;
 	const promptCacheKey = `is:v1:${incidentId.slice(0, 12)}:${incidentId.slice(-8)}`;
 
-	const input = toResponsesInputMessages(messages);
-	const responseTools = toResponsesTools(tools);
-	const requestBody = {
+	const requestBody: OpenAI.Responses.ResponseCreateParamsNonStreaming = {
 		model: "gpt-5.2",
 		input,
-		tools: responseTools,
-		tool_choice: "auto" as const,
-		reasoning: { effort: "medium" as const },
-		text: { verbosity: "low" as const },
+		tools,
+		tool_choice: "auto",
+		reasoning: { effort: "medium" },
+		text: { verbosity: "low" },
 		prompt_cache_key: promptCacheKey,
 	};
-	const serializedRequestBody = JSON.stringify(requestBody);
-	const data = await stepDo(`agent-suggest.fetch:${stepLabel}`, async () => {
-		console.log(serializedRequestBody);
-		const response = await fetch("https://api.openai.com/v1/responses", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${openaiApiKey}`,
-			},
-			body: serializedRequestBody,
-		});
-
-		if (!response.ok) {
-			const error = await response.text();
-			throw new Error(`OpenAI API error: ${response.status} - ${error}`);
-		}
-
-		const responseJson = (await response.json()) as OpenAIResponsesCreateResponse;
-		console.log(responseJson);
-		return responseJson;
-	});
-	const toolCalls = (data.output ?? [])
-		.filter(
-			(item): item is Required<Pick<OpenAIResponseFunctionCallItem, "name">> & OpenAIResponseFunctionCallItem => item.type === "function_call" && typeof item.name === "string",
-		)
-		.map((item) => ({
-			function: {
-				name: item.name,
-				arguments: typeof item.arguments === "string" ? item.arguments : "{}",
-			},
+	const data = await stepDo<{
+		id?: string;
+		usage?: {
+			input_tokens?: number;
+			output_tokens?: number;
+			total_tokens?: number;
+			input_tokens_details?: { cached_tokens?: number };
+		};
+		output: OpenAI.Responses.ResponseFunctionToolCall[];
+	}>(`agent-suggest.fetch:${stepLabel}`, async () => {
+		const client = new OpenAI({ apiKey: openaiApiKey });
+		const responseJson = await client.responses.create(requestBody);
+		const output = (responseJson.output ?? []).filter(isResponsesFunctionToolCall).map((item) => ({
+			...item,
+			arguments: typeof item.arguments === "string" ? item.arguments : "{}",
 		}));
+		const safeResponse = {
+			id: responseJson.id,
+			usage: responseJson.usage
+				? {
+						input_tokens: responseJson.usage.input_tokens,
+						output_tokens: responseJson.usage.output_tokens,
+						total_tokens: responseJson.usage.total_tokens,
+						input_tokens_details: responseJson.usage.input_tokens_details ? { cached_tokens: responseJson.usage.input_tokens_details.cached_tokens } : undefined,
+					}
+				: undefined,
+			output,
+		};
+		return safeResponse;
+	});
+	const toolCalls = data.output;
 	if (!toolCalls.length) {
-		return suggestions;
+		return { suggestions };
 	}
 
 	for (const toolCall of toolCalls) {
-		if (suggestions.length >= 3) {
-			break;
+		if (usedToolNames.has(toolCall.name)) {
+			continue;
 		}
-		if (usedToolNames.has(toolCall.function.name)) {
+		usedToolNames.add(toolCall.name);
+		const args = parseJsonObject(toolCall.arguments);
+
+		if (toolCall.name === "similar_incidents") {
+			if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.reason === "string" && args.reason.trim()) {
+				similarIncidentsRequest = {
+					evidence: args.evidence.trim(),
+					reason: args.reason.trim(),
+				};
+			}
 			continue;
 		}
 
-		usedToolNames.add(toolCall.function.name);
-		const args = toolCall.function.arguments ? (JSON.parse(toolCall.function.arguments) as Record<string, unknown>) : {};
-		switch (toolCall.function.name) {
+		if (suggestions.length >= 3) {
+			continue;
+		}
+
+		switch (toolCall.name) {
 			case "update_status": {
 				if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.status === "string" && typeof args.message === "string") {
 					suggestions.push({
 						action: "update_status",
 						status: args.status as Exclude<IS["status"], "open">,
 						message: args.message,
-					});
-					messages.push({
-						role: "assistant",
-						content: `[SUGGESTION] update_status status=${args.status} message=${args.message}`,
 					});
 				}
 				break;
@@ -651,10 +630,6 @@ export async function generateIncidentSuggestions(
 					suggestions.push({
 						action: "update_severity",
 						severity: args.severity as IS["severity"],
-					});
-					messages.push({
-						role: "assistant",
-						content: `[SUGGESTION] update_severity severity=${args.severity}`,
 					});
 				}
 				break;
@@ -669,10 +644,6 @@ export async function generateIncidentSuggestions(
 						...(typeof args.title === "string" ? { title: args.title } : {}),
 						...(Array.isArray(args.services) ? { services: args.services as { id: string; impact: "partial" | "major" }[] } : {}),
 					});
-					messages.push({
-						role: "assistant",
-						content: `[SUGGESTION] add_status_page_update message=${args.message}`,
-					});
 				}
 				break;
 			}
@@ -681,5 +652,5 @@ export async function generateIncidentSuggestions(
 		}
 	}
 
-	return suggestions;
+	return { suggestions, similarIncidentsRequest };
 }

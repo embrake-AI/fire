@@ -9,6 +9,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import OpenAI from "openai";
 import {
 	buildContextUserMessage,
 	buildEventMessages,
@@ -18,7 +19,6 @@ import {
 	buildSuggestionTools,
 	normalizeSuggestions,
 	SYSTEM_PROMPT,
-	toResponsesTools,
 } from "./suggestions";
 import type { AgentEvent, AgentSuggestion, AgentSuggestionContext } from "./types";
 
@@ -26,9 +26,7 @@ import type { AgentEvent, AgentSuggestion, AgentSuggestionContext } from "./type
 // Message builder
 // ---------------------------------------------------------------------------
 
-type InputMessage = { type: "message"; role: "system" | "user" | "assistant"; content: string };
-
-function buildFullInput(context: AgentSuggestionContext, opts: { systemPrompt?: string }): InputMessage[] {
+function buildFullInput(context: AgentSuggestionContext, opts: { systemPrompt?: string }): OpenAI.Responses.EasyInputMessage[] {
 	const systemPrompt = opts.systemPrompt ?? SYSTEM_PROMPT;
 	const userMessage = buildContextUserMessage(context);
 	const statusPageContextMessage = buildStatusPageContextMessage(context);
@@ -46,61 +44,52 @@ function buildFullInput(context: AgentSuggestionContext, opts: { systemPrompt?: 
 		{ role: "user", content: "Return suggestions." },
 	];
 
-	return raw.map((m) => ({ type: "message" as const, role: m.role, content: m.content }));
+	return raw.map((m) => ({ role: m.role, content: m.content }));
 }
 
 // ---------------------------------------------------------------------------
 // OpenAI Responses API caller
 // ---------------------------------------------------------------------------
 
-type ResponseFunctionCallItem = { type?: string; name?: string; arguments?: string };
-type ResponsesCreateResponse = {
-	id?: string;
-	output?: ResponseFunctionCallItem[];
-	usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number; input_tokens_details?: { cached_tokens?: number } };
-};
-
-type ResponsesToolDef = { type: "function"; name: string; description: string; parameters: unknown };
-
 type ModelUsage = { inputTokens: number; outputTokens: number; cachedInputTokens: number; totalTokens: number };
 type ModelToolCall = { name: string; args: Record<string, unknown> };
 type ModelCallResult = { responseId?: string; usage?: ModelUsage; toolCalls: ModelToolCall[]; suggestions: AgentSuggestion[] };
+type SimilarIncidentsRequest = { evidence: string; reason: string };
 
 type ReasoningEffort = "low" | "medium" | "high";
 
-async function callOpenAI(input: InputMessage[], tools: ResponsesToolDef[], apiKey: string, model: string, reasoningEffort: ReasoningEffort): Promise<ModelCallResult> {
+function isFunctionCallItem(item: OpenAI.Responses.ResponseOutputItem): item is OpenAI.Responses.ResponseFunctionToolCall {
+	return item.type === "function_call";
+}
+
+async function callOpenAI(
+	input: OpenAI.Responses.EasyInputMessage[],
+	tools: OpenAI.Responses.FunctionTool[],
+	apiKey: string,
+	model: string,
+	reasoningEffort: ReasoningEffort,
+): Promise<ModelCallResult> {
 	const suggestions: AgentSuggestion[] = [];
+	const client = new OpenAI({ apiKey });
 
-	const response = await fetch("https://api.openai.com/v1/responses", {
-		method: "POST",
-		headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-		body: JSON.stringify({
-			model,
-			input,
-			tools,
-			tool_choice: "auto",
-			reasoning: { effort: reasoningEffort },
-			text: { verbosity: "low" },
-		}),
+	const data = await client.responses.create({
+		model,
+		input,
+		tools,
+		tool_choice: "auto",
+		reasoning: { effort: reasoningEffort },
+		text: { verbosity: "low" },
 	});
-
-	if (!response.ok) {
-		const text = await response.text();
-		throw new Error(`OpenAI API error ${response.status}: ${text}`);
-	}
-
-	const data = (await response.json()) as ResponsesCreateResponse;
 	if (data.usage) {
 		const cached = data.usage.input_tokens_details?.cached_tokens ?? 0;
 		console.log(`    [usage] input=${data.usage.input_tokens} (cached=${cached}) output=${data.usage.output_tokens}`);
 	}
 
 	const parsedToolCalls: ModelToolCall[] = [];
-	const toolCalls = (data.output ?? []).filter(
-		(item): item is Required<Pick<ResponseFunctionCallItem, "name">> & ResponseFunctionCallItem => item.type === "function_call" && typeof item.name === "string",
-	);
-
-	for (const call of toolCalls) {
+	for (const call of data.output ?? []) {
+		if (!isFunctionCallItem(call)) {
+			continue;
+		}
 		let args: Record<string, unknown> = {};
 		if (call.arguments) {
 			try {
@@ -145,6 +134,21 @@ async function callOpenAI(input: InputMessage[], tools: ResponsesToolDef[], apiK
 		: undefined;
 
 	return { responseId: data.id, usage, toolCalls: parsedToolCalls, suggestions };
+}
+
+function extractSimilarIncidentsRequest(toolCalls: ModelToolCall[]): SimilarIncidentsRequest | undefined {
+	for (const toolCall of toolCalls) {
+		if (toolCall.name !== "similar_incidents") {
+			continue;
+		}
+		const evidence = typeof toolCall.args.evidence === "string" ? toolCall.args.evidence.trim() : "";
+		const reason = typeof toolCall.args.reason === "string" ? toolCall.args.reason.trim() : "";
+		if (!evidence || !reason) {
+			continue;
+		}
+		return { evidence, reason };
+	}
+	return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +247,14 @@ function shouldNotSuggest(action: string, extraMatch?: (s: AgentSuggestion) => b
 function shouldSuggest(action: string, extraMatch?: (s: AgentSuggestion) => boolean): ExpectationCheck {
 	const detail = extractExpectationDetail(extraMatch);
 	return detail ? `Should suggest ${action} (${detail}).` : `Should suggest ${action}.`;
+}
+
+function shouldRequestSimilarIncidents(): ExpectationCheck {
+	return "Should request similar_incidents.";
+}
+
+function shouldNotRequestSimilarIncidents(): ExpectationCheck {
+	return "Should NOT request similar_incidents.";
 }
 
 function extractExpectationDetail(extraMatch?: (s: AgentSuggestion) => boolean): string | null {
@@ -2957,6 +2969,511 @@ function buildStalePendingSuggestionScenario(): LifecycleScenario {
 	};
 }
 
+function buildSimilarIncidentCapabilityScenario(): LifecycleScenario {
+	const SERVICES: AgentSuggestionContext["services"] = [
+		{ id: "svc_api", name: "API", prompt: "Public API availability and latency" },
+		{ id: "svc_web", name: "Web", prompt: "Customer web app" },
+	];
+
+	const incidentBase = {
+		title: "API 5xx spike after deploy",
+		description: "Customers report intermittent 5xx responses in API",
+		prompt: "Investigate API errors after deploy",
+		severity: "medium" as const,
+	};
+
+	resetIds();
+	const t1Events: AgentEvent[] = [
+		mkEvent(
+			{
+				event_type: "INCIDENT_CREATED",
+				event_data: {
+					status: "open",
+					severity: "medium",
+					createdBy: "U_ONCALL",
+					title: incidentBase.title,
+					description: incidentBase.description,
+					prompt: incidentBase.prompt,
+					source: "slack",
+					assignee: "U_ONCALL",
+					entryPointId: "ep_api",
+					rotationId: "rot_api",
+				},
+			},
+			0,
+		),
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "Seeing some errors, still collecting details.",
+					userId: "U_ONCALL",
+				},
+			},
+			1,
+		),
+		mkEvent(
+			{
+				event_type: "SIMILAR_INCIDENTS_DISCOVERED",
+				adapter: "fire",
+				event_data: {
+					runId: "sim-run-1",
+					searchedAt: ts(1),
+					contextSnapshot: "Initial report is still ambiguous and lacks concrete scope.",
+					gateDecision: "insufficient_context",
+					openCandidateCount: 0,
+					closedCandidateCount: 0,
+					rankedIncidentIds: [],
+					selectedIncidentIds: [],
+				},
+			},
+			1,
+		),
+	];
+
+	const t2Events: AgentEvent[] = [
+		...t1Events,
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "Deploy 1743 rolled out right before spike. Error class is DB connection timeout for multiple customers.",
+					userId: "U_DB",
+				},
+			},
+			4,
+		),
+		mkEvent(
+			{
+				event_type: "SIMILAR_INCIDENTS_DISCOVERED",
+				adapter: "fire",
+				event_data: {
+					runId: "sim-run-2",
+					searchedAt: ts(4),
+					contextSnapshot: "Likely deployment-induced DB timeout issue with broad customer impact.",
+					gateDecision: "run",
+					openCandidateCount: 7,
+					closedCandidateCount: 12,
+					rankedIncidentIds: ["inc_prev_20", "inc_prev_11"],
+					selectedIncidentIds: ["inc_prev_20"],
+				},
+			},
+			4,
+		),
+		mkEvent(
+			{
+				event_type: "SIMILAR_INCIDENT",
+				adapter: "fire",
+				event_data: {
+					originRunId: "sim-run-2",
+					similarIncidentId: "inc_prev_20",
+					sourceIncidentIds: ["inc_prev_20"],
+					summary: "Prior incident had same timeout class right after a connection pool config deploy.",
+					evidence: "Rollback + pool reset mitigated in 3 minutes and reduced errors immediately.",
+					comparisonContext: "Current timeline matches previous deploy regression",
+				},
+			},
+			5,
+		),
+	];
+	const t2ProcessedThrough = t1Events[t1Events.length - 1]!.id;
+
+	const t3Events: AgentEvent[] = [
+		...t2Events,
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "Applied rollback and reset connection pools. Errors dropped from 35% to 2%, still monitoring.",
+					userId: "U_ONCALL",
+				},
+			},
+			8,
+		),
+		mkEvent(
+			{
+				event_type: "SIMILAR_INCIDENTS_DISCOVERED",
+				adapter: "fire",
+				event_data: {
+					runId: "sim-run-3",
+					searchedAt: ts(8),
+					contextSnapshot: "Mitigation action applied; incident understanding moved from diagnosis to active mitigation.",
+					gateDecision: "run",
+					openCandidateCount: 8,
+					closedCandidateCount: 12,
+					rankedIncidentIds: ["inc_prev_20", "inc_prev_11"],
+					selectedIncidentIds: ["inc_prev_20", "inc_prev_11"],
+				},
+			},
+			8,
+		),
+	];
+	const t3ProcessedThrough = t2Events[t2Events.length - 1]!.id;
+
+	const t4Events: AgentEvent[] = [
+		...t3Events,
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "Monitoring thread: no new user reports in the last 5 minutes.",
+					userId: "U_OBSERVER",
+				},
+			},
+			10,
+		),
+		mkEvent(
+			{
+				event_type: "SIMILAR_INCIDENTS_DISCOVERED",
+				adapter: "fire",
+				event_data: {
+					runId: "sim-run-4",
+					searchedAt: ts(10),
+					contextSnapshot: "No material understanding change since last search.",
+					gateDecision: "no_material_change",
+					openCandidateCount: 0,
+					closedCandidateCount: 0,
+					rankedIncidentIds: [],
+					selectedIncidentIds: [],
+				},
+			},
+			10,
+		),
+	];
+	const t4ProcessedThrough = t3Events[t3Events.length - 1]!.id;
+
+	return {
+		id: "similar-capability",
+		name: "Similar-Incident Capability Coverage",
+		description: "Covers insufficient-context skip, first eligible search with similar match, rerun after understanding change, and no-rerun on noisy non-material updates.",
+		turns: [
+			{
+				name: "Turn 1: Insufficient context should avoid premature lifecycle suggestions",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t1Events,
+					processedThroughId: 0,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [
+					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+					shouldNotSuggest("update_severity", (s) => s.action === "update_severity" && s.severity === "high"),
+					shouldNotRequestSimilarIncidents(),
+				],
+			},
+			{
+				name: "Turn 2: First eligible search + deep dive should support severity or mitigation suggestions",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t2Events,
+					processedThroughId: t2ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [
+					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+					"Should prefer at least one operational suggestion (severity high or status mitigating) based on concrete evidence and similar-incident context.",
+					shouldNotRequestSimilarIncidents(),
+				],
+			},
+			{
+				name: "Turn 3: Material understanding change should support mitigating transition",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t3Events,
+					processedThroughId: t3ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [
+					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
+					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+					shouldNotRequestSimilarIncidents(),
+				],
+			},
+			{
+				name: "Turn 4: No material change rerun should avoid repetitive noise",
+				context: {
+					incident: baseIncident({ ...incidentBase, status: "mitigating" }),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t4Events,
+					processedThroughId: t4ProcessedThrough,
+					validStatusTransitions: ["resolved"],
+				},
+				checks: [
+					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+					"Should avoid redundant repetitive suggestions when the latest similar search indicates no material change.",
+					shouldNotRequestSimilarIncidents(),
+				],
+			},
+		],
+	};
+}
+
+function buildSimilarIncidentRetriggerScenario(): LifecycleScenario {
+	const SERVICES: AgentSuggestionContext["services"] = [
+		{ id: "svc_api", name: "API", prompt: "Public API availability and latency" },
+		{ id: "svc_auth", name: "Auth", prompt: "Login/authentication services" },
+	];
+
+	const incidentBase = {
+		title: "Login failures after auth rollout",
+		description: "Intermittent login failures during ongoing mitigation",
+		prompt: "Investigate login failures after rollout",
+		status: "mitigating" as const,
+		severity: "high" as const,
+	};
+
+	resetIds();
+	const t1Events: AgentEvent[] = [
+		mkEvent(
+			{
+				event_type: "INCIDENT_CREATED",
+				event_data: {
+					status: "open",
+					severity: "high",
+					createdBy: "U_ONCALL",
+					title: incidentBase.title,
+					description: incidentBase.description,
+					prompt: incidentBase.prompt,
+					source: "slack",
+					assignee: "U_ONCALL",
+					entryPointId: "ep_auth",
+					rotationId: "rot_auth",
+				},
+			},
+			0,
+		),
+		mkEvent(
+			{
+				event_type: "STATUS_UPDATE",
+				event_data: {
+					status: "mitigating",
+					message: "Applied emergency auth pool increase; still monitoring failures.",
+				},
+			},
+			1,
+		),
+		mkEvent(
+			{
+				event_type: "SIMILAR_INCIDENTS_DISCOVERED",
+				adapter: "fire",
+				event_data: {
+					runId: "sim-retrigger-1",
+					searchedAt: ts(2),
+					contextSnapshot: "Auth token verification latency suspected after rollout.",
+					gateDecision: "run",
+					openCandidateCount: 10,
+					closedCandidateCount: 22,
+					rankedIncidentIds: ["inc_prev_auth_1"],
+					selectedIncidentIds: ["inc_prev_auth_1"],
+				},
+			},
+			2,
+		),
+		mkEvent(
+			{
+				event_type: "SIMILAR_INCIDENT",
+				adapter: "fire",
+				event_data: {
+					originRunId: "sim-retrigger-1",
+					similarIncidentId: "inc_prev_auth_1",
+					sourceIncidentIds: ["inc_prev_auth_1"],
+					summary: "Previous auth rollout incident with token verifier latency.",
+					evidence: "Mitigation used verifier pool tuning and rollout pause.",
+					comparisonContext: "Initial hypothesis aligned with token verifier saturation.",
+				},
+			},
+			3,
+		),
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "No new evidence since last search; still monitoring current mitigation.",
+					userId: "U_ONCALL",
+				},
+			},
+			4,
+		),
+		mkEvent(
+			{
+				event_type: "SIMILAR_INCIDENTS_DISCOVERED",
+				adapter: "fire",
+				event_data: {
+					runId: "sim-retrigger-2",
+					searchedAt: ts(4),
+					contextSnapshot: "No material understanding change since prior search.",
+					gateDecision: "no_material_change",
+					openCandidateCount: 0,
+					closedCandidateCount: 0,
+					rankedIncidentIds: [],
+					selectedIncidentIds: [],
+				},
+			},
+			4,
+		),
+	];
+
+	const t2Events: AgentEvent[] = [
+		...t1Events,
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message:
+						"Root cause understanding changed: failures are driven by Redis session eviction after memory pressure, not token verifier latency. Requesting similar incident lookup before next mitigation choice.",
+					userId: "U_SRE",
+				},
+			},
+			8,
+		),
+	];
+	const t2ProcessedThrough = t1Events[t1Events.length - 1]!.id;
+
+	return {
+		id: "similar-retrigger",
+		name: "Similar-Incident Retrigger on Material Understanding Change",
+		description: "Ensures similar_incidents is requested when incident understanding materially shifts after a prior no_material_change gate.",
+		turns: [
+			{
+				name: "Turn 1: Stable understanding after recent no_material_change should not retrigger",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: true, lastStatus: "investigating", lastUpdateAt: ts(3) },
+					events: t1Events,
+					processedThroughId: 0,
+					validStatusTransitions: ["resolved"],
+				},
+				checks: [shouldNotRequestSimilarIncidents(), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+			},
+			{
+				name: "Turn 2: Clear mechanism shift should retrigger similar lookup",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: true, lastStatus: "investigating", lastUpdateAt: ts(3) },
+					events: t2Events,
+					processedThroughId: t2ProcessedThrough,
+					validStatusTransitions: ["resolved"],
+				},
+				checks: [shouldRequestSimilarIncidents(), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+			},
+		],
+	};
+}
+
+function buildSimilarIncidentClarityGateScenario(): LifecycleScenario {
+	const SERVICES: AgentSuggestionContext["services"] = [
+		{ id: "svc_api", name: "API", prompt: "Public API availability and latency" },
+		{ id: "svc_checkout", name: "Checkout", prompt: "Checkout request processing path" },
+	];
+
+	const incidentBase = {
+		title: "Intermittent checkout failures",
+		description: "Checkout failures observed but mechanism initially unclear",
+		prompt: "Investigate checkout failures and recommend next safe step",
+		status: "open" as const,
+		severity: "medium" as const,
+	};
+
+	resetIds();
+	const t1Events: AgentEvent[] = [
+		mkEvent(
+			{
+				event_type: "INCIDENT_CREATED",
+				event_data: {
+					status: "open",
+					severity: "medium",
+					createdBy: "U_ONCALL",
+					title: incidentBase.title,
+					description: incidentBase.description,
+					prompt: incidentBase.prompt,
+					source: "slack",
+					assignee: "U_ONCALL",
+					entryPointId: "ep_checkout",
+					rotationId: "rot_checkout",
+				},
+			},
+			0,
+		),
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "We see some checkout failures, still gathering details from support and logs.",
+					userId: "U_ONCALL",
+				},
+			},
+			1,
+		),
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "No clear error class yet; could be retries, could be timeout noise.",
+					userId: "U_SRE",
+				},
+			},
+			2,
+		),
+	];
+
+	const t2Events: AgentEvent[] = [
+		...t1Events,
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message:
+						"Clear context now: after deploy 2219, checkout API errors are DB connection timeouts across US/EU for enterprise tenants. We have two competing mitigation paths and should check similar incidents before choosing.",
+					userId: "U_DB",
+				},
+			},
+			6,
+		),
+	];
+	const t2ProcessedThrough = t1Events[t1Events.length - 1]!.id;
+
+	return {
+		id: "similar-clarity-gate",
+		name: "Similar-Incident Clarity Gate",
+		description: "Ensures similar_incidents is not requested while context is unclear, then requested once mechanism/scope become concrete.",
+		turns: [
+			{
+				name: "Turn 1: Ambiguous context should not request similar incidents",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: true, lastStatus: "investigating", lastUpdateAt: ts(0) },
+					events: t1Events,
+					processedThroughId: 0,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotRequestSimilarIncidents(), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+			},
+			{
+				name: "Turn 2: Concrete mechanism/scope should request similar incidents",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: true, lastStatus: "investigating", lastUpdateAt: ts(0) },
+					events: t2Events,
+					processedThroughId: t2ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldRequestSimilarIncidents(), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+			},
+		],
+	};
+}
+
 // ---------------------------------------------------------------------------
 // All scenarios
 // ---------------------------------------------------------------------------
@@ -2976,6 +3493,9 @@ export const SCENARIOS: LifecycleScenario[] = [
 	buildPendingInvestigatingSpamScenario(),
 	buildMicroTurnNoiseScenario(),
 	buildStalePendingSuggestionScenario(),
+	buildSimilarIncidentCapabilityScenario(),
+	buildSimilarIncidentClarityGateScenario(),
+	buildSimilarIncidentRetriggerScenario(),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3002,14 +3522,15 @@ type TurnRunCapture = {
 	rawSuggestions: AgentSuggestion[];
 	suggestions: AgentSuggestion[];
 	durationMs: number;
+	similarIncidentsRequested: boolean;
 };
 
 type TurnCapture = {
 	name: string;
 	expectations: string[];
 	context: AgentSuggestionContext;
-	input: InputMessage[];
-	tools: ResponsesToolDef[];
+	input: OpenAI.Responses.EasyInputMessage[];
+	tools: OpenAI.Responses.FunctionTool[];
 	runs: TurnRunCapture[];
 };
 
@@ -3022,7 +3543,7 @@ type ScenarioCapture = {
 };
 
 type EvaluationArtifact = {
-	version: 3;
+	version: 4;
 	createdAt: string;
 	model: string;
 	systemPrompt: string;
@@ -3111,9 +3632,30 @@ async function readArtifact(path: string): Promise<EvaluationArtifact> {
 }
 
 type ExpectationConstraint = { field: "status" | "severity" | "affectionStatus"; values: string[] };
-type ExpectationRule = { raw: string; isNegative: boolean; action: AgentSuggestion["action"]; constraints: ExpectationConstraint[] };
+type SuggestionExpectationRule = {
+	raw: string;
+	kind: "suggestion";
+	isNegative: boolean;
+	action: AgentSuggestion["action"];
+	constraints: ExpectationConstraint[];
+};
+type SimilarIncidentsExpectationRule = {
+	raw: string;
+	kind: "similar_incidents_request";
+	isNegative: boolean;
+};
+type ExpectationRule = SuggestionExpectationRule | SimilarIncidentsExpectationRule;
 
 function parseExpectationRule(expectation: string): ExpectationRule | null {
+	const similarRequestMatch = expectation.trim().match(/^Should( NOT)? request similar_incidents\.$/);
+	if (similarRequestMatch) {
+		return {
+			raw: expectation,
+			kind: "similar_incidents_request",
+			isNegative: Boolean(similarRequestMatch[1]),
+		};
+	}
+
 	const match = expectation.trim().match(/^Should( NOT)? suggest ([a-z_]+)(?: \((.+)\))?\.$/);
 	if (!match) {
 		return null;
@@ -3136,7 +3678,7 @@ function parseExpectationRule(expectation: string): ExpectationRule | null {
 		addConstraint(eqMatch[1] as "status" | "severity" | "affectionStatus", [eqMatch[2]!]);
 	}
 
-	return { raw: expectation, isNegative, action, constraints };
+	return { raw: expectation, kind: "suggestion", isNegative, action, constraints };
 }
 
 function getSuggestionConstraintValue(suggestion: AgentSuggestion, field: "status" | "severity" | "affectionStatus"): string | null {
@@ -3150,6 +3692,9 @@ function getSuggestionConstraintValue(suggestion: AgentSuggestion, field: "statu
 }
 
 function matchesExpectationRule(suggestion: AgentSuggestion, rule: ExpectationRule): boolean {
+	if (rule.kind !== "suggestion") {
+		return false;
+	}
 	if (suggestion.action !== rule.action) {
 		return false;
 	}
@@ -3215,13 +3760,14 @@ function computeDeterministicMetrics(artifact: EvaluationArtifact): EvaluationMe
 				negativeExpectations += negativeRules.length;
 
 				for (const rule of positiveRules) {
-					if (suggestions.some((suggestion) => matchesExpectationRule(suggestion, rule))) {
+					const met = rule.kind === "similar_incidents_request" ? run.similarIncidentsRequested : suggestions.some((suggestion) => matchesExpectationRule(suggestion, rule));
+					if (met) {
 						metExpectations += 1;
 						metPositive += 1;
 					}
 				}
 				for (const rule of negativeRules) {
-					const violated = suggestions.some((suggestion) => matchesExpectationRule(suggestion, rule));
+					const violated = rule.kind === "similar_incidents_request" ? run.similarIncidentsRequested : suggestions.some((suggestion) => matchesExpectationRule(suggestion, rule));
 					if (!violated) {
 						metExpectations += 1;
 					} else {
@@ -3229,8 +3775,9 @@ function computeDeterministicMetrics(artifact: EvaluationArtifact): EvaluationMe
 					}
 				}
 
+				const positiveSuggestionRules = positiveRules.filter((rule): rule is SuggestionExpectationRule => rule.kind === "suggestion");
 				for (const suggestion of suggestions) {
-					const matchesAnyPositive = positiveRules.some((rule) => matchesExpectationRule(suggestion, rule));
+					const matchesAnyPositive = positiveSuggestionRules.some((rule) => matchesExpectationRule(suggestion, rule));
 					if (!matchesAnyPositive) {
 						unsupportedSuggestions += 1;
 					}
@@ -3314,15 +3861,17 @@ function toJudgePayload(turn: TurnCapture, run: TurnRunCapture) {
 		modelSuggestions: run.suggestions,
 		modelRawSuggestions: run.rawSuggestions,
 		modelToolCalls: run.toolCalls,
+		similarIncidentsRequested: run.similarIncidentsRequested,
 		modelUsage: run.usage ?? null,
 	};
 }
 
 async function judgeTurnWithLLM(payload: ReturnType<typeof toJudgePayload>, apiKey: string, judgeModel: string): Promise<TurnJudgement> {
-	const judgeTool: ResponsesToolDef = {
+	const judgeTool: OpenAI.Responses.FunctionTool = {
 		type: "function",
 		name: "grade_turn",
 		description: "Grade whether the model suggestions satisfy the written expectations for this turn.",
+		strict: true,
 		parameters: {
 			type: "object",
 			properties: {
@@ -3350,38 +3899,37 @@ async function judgeTurnWithLLM(payload: ReturnType<typeof toJudgePayload>, apiK
 		},
 	};
 
-	const judgeInput: InputMessage[] = [
+	const judgeInput: OpenAI.Responses.EasyInputMessage[] = [
 		{
-			type: "message",
 			role: "system",
 			content:
-				"You are grading an incident-agent turn. Use written expectations as the rubric. Treat modelSuggestions as the final accepted suggestions to score. modelRawSuggestions/modelToolCalls are diagnostic only. Do not invent facts. Call grade_turn exactly once.",
+				"You are grading an incident-agent turn. Use written expectations as the rubric. Treat modelSuggestions as the final accepted suggestions to score. For expectations about similar_incidents, use the similarIncidentsRequested boolean (true = the model called the similar_incidents tool). modelRawSuggestions/modelToolCalls are diagnostic only. Do not invent facts. Call grade_turn exactly once.",
 		},
 		{
-			type: "message",
 			role: "user",
 			content: JSON.stringify(payload),
 		},
 	];
 
-	const response = await fetch("https://api.openai.com/v1/responses", {
-		method: "POST",
-		headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-		body: JSON.stringify({ model: judgeModel, input: judgeInput, tools: [judgeTool], tool_choice: "auto" }),
+	const client = new OpenAI({ apiKey });
+	const data = await client.responses.create({
+		model: judgeModel,
+		input: judgeInput,
+		tools: [judgeTool],
+		tool_choice: "auto",
 	});
-
-	if (!response.ok) {
-		const text = await response.text();
-		throw new Error(`Judge model API error ${response.status}: ${text}`);
+	let toolCallArgs: string | undefined;
+	for (const item of data.output ?? []) {
+		if (isFunctionCallItem(item) && item.name === "grade_turn" && typeof item.arguments === "string") {
+			toolCallArgs = item.arguments;
+			break;
+		}
 	}
-
-	const data = (await response.json()) as ResponsesCreateResponse;
-	const toolCall = (data.output ?? []).find((item) => item.type === "function_call" && item.name === "grade_turn");
-	if (!toolCall?.arguments) {
+	if (!toolCallArgs) {
 		throw new Error("Judge model did not return grade_turn output");
 	}
 
-	const parsed = JSON.parse(toolCall.arguments) as JudgeFunctionOutput;
+	const parsed = JSON.parse(toolCallArgs) as JudgeFunctionOutput;
 	const normalizedScore = Number.isFinite(parsed.score) ? Math.min(1, Math.max(0, parsed.score)) : 0;
 
 	return {
@@ -3407,7 +3955,7 @@ async function runTurn(turn: Turn, opts: EvalOptions): Promise<TurnCapture> {
 	const runs = opts.runs ?? 1;
 
 	const input = buildFullInput(turn.context, { systemPrompt: opts.systemPrompt });
-	const tools = toResponsesTools(buildSuggestionTools(turn.context));
+	const tools = buildSuggestionTools(turn.context);
 
 	if (opts.verbose) {
 		console.log(`\n    --- Messages for: ${turn.name} ---`);
@@ -3421,6 +3969,7 @@ async function runTurn(turn: Turn, opts: EvalOptions): Promise<TurnCapture> {
 	for (let runIndex = 1; runIndex <= runs; runIndex += 1) {
 		const start = Date.now();
 		const result = await callOpenAI(input, tools, apiKey, model, opts.reasoningEffort ?? "medium");
+		const similarRequest = extractSimilarIncidentsRequest(result.toolCalls);
 		const durationMs = Date.now() - start;
 		const normalizedSuggestions = normalizeSuggestions(result.suggestions, turn.context);
 		runCaptures.push({
@@ -3431,6 +3980,7 @@ async function runTurn(turn: Turn, opts: EvalOptions): Promise<TurnCapture> {
 			rawSuggestions: result.suggestions,
 			suggestions: normalizedSuggestions,
 			durationMs,
+			similarIncidentsRequested: !!similarRequest,
 		});
 	}
 
@@ -3520,6 +4070,9 @@ function printResults(artifact: EvaluationArtifact, outputPath: string): void {
 	console.log(`Scenarios: ${artifact.scenarios.length}`);
 	console.log(`Turns: ${totalTurns}`);
 	console.log(`Model runs captured: ${totalRuns}`);
+	const allRuns = artifact.scenarios.flatMap((scenario) => scenario.turns.flatMap((turn) => turn.runs));
+	const similarRequestedRuns = allRuns.filter((run) => run.similarIncidentsRequested).length;
+	console.log(`Runs requesting similar_incidents: ${similarRequestedRuns}`);
 
 	for (const scenario of artifact.scenarios) {
 		console.log(`\n>> ${scenario.name} (${scenario.totalDurationMs}ms)`);
@@ -3606,7 +4159,7 @@ async function main() {
 	}
 
 	const artifact: EvaluationArtifact = {
-		version: 3,
+		version: 4,
 		createdAt: new Date().toISOString(),
 		model: modelName,
 		systemPrompt,

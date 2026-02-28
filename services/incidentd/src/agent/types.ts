@@ -103,3 +103,17 @@ export type AgentContextResponse =
 	| {
 			error: string;
 	  };
+
+export type AgentContextRangeResponse =
+	| {
+			incident: AgentIncidentSnapshot;
+			metadata: Metadata;
+			services: AgentService[];
+			affection: AgentAffectionInfo;
+			events: AgentEvent[];
+			fromEventIdExclusive: number;
+			toEventIdInclusive: number;
+	  }
+	| {
+			error: string;
+	  };

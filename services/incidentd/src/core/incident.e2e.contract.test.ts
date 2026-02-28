@@ -28,12 +28,12 @@ const SERVICES = [
 	{ id: "svc-web", name: "Web", prompt: "Dashboard availability" },
 ];
 
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_URL = "https://api.openai.com/v1/responses";
 
 function createIncidentHandle(seed = crypto.randomUUID()) {
 	const identifier = `incident:${seed}`;
 	const doId = env.INCIDENT.idFromName(identifier);
-	const stub = env.INCIDENT.get(doId) as IncidentStub;
+	const stub = env.INCIDENT.get(doId);
 	return { identifier, id: doId.toString(), stub };
 }
 
@@ -92,22 +92,19 @@ function mockOpenAiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
 		requestBody = JSON.parse(init.body) as Record<string, unknown>;
 	}
 
-	const schemaName = (requestBody.response_format as { json_schema?: { name?: string } } | undefined)?.json_schema?.name;
+	const schemaName =
+		(requestBody.text as { format?: { name?: string } } | undefined)?.format?.name ??
+		(requestBody.response_format as { json_schema?: { name?: string } } | undefined)?.json_schema?.name;
 	if (schemaName === "incident_info") {
 		return Promise.resolve(
 			Response.json({
-				choices: [
-					{
-						message: {
-							content: JSON.stringify({
-								entryPointIndex: 0,
-								severity: "high",
-								title: "API Error Spike",
-								description: "High API failure rate across multiple customers.",
-							}),
-						},
-					},
-				],
+				output_text: JSON.stringify({
+					entryPointIndex: 0,
+					severity: "high",
+					title: "API Error Spike",
+					description: "High API failure rate across multiple customers.",
+				}),
+				output: [],
 			}),
 		);
 	}
@@ -115,31 +112,21 @@ function mockOpenAiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
 	if (schemaName === "incident_postmortem") {
 		return Promise.resolve(
 			Response.json({
-				choices: [
-					{
-						message: {
-							content: JSON.stringify({
-								timeline: [{ created_at: new Date().toISOString(), text: "Incident identified and triaged." }],
-								rootCause: "Root cause not determined from available data.",
-								impact: "Elevated error rates and latency for API users.",
-								actions: ["Review API error budget alerts"],
-							}),
-						},
-					},
-				],
+				output_text: JSON.stringify({
+					timeline: [{ created_at: new Date().toISOString(), text: "Incident identified and triaged." }],
+					rootCause: "Root cause not determined from available data.",
+					impact: "Elevated error rates and latency for API users.",
+					actions: ["Review API error budget alerts"],
+				}),
+				output: [],
 			}),
 		);
 	}
 
 	return Promise.resolve(
 		Response.json({
-			choices: [
-				{
-					message: {
-						content: "Acknowledged.",
-					},
-				},
-			],
+			output_text: "Acknowledged.",
+			output: [],
 		}),
 	);
 }
@@ -201,59 +188,28 @@ async function setAgentState(stub: IncidentStub, nextState: { lastProcessedEvent
 	});
 }
 
-beforeEach(() => {
-	vi.stubGlobal("fetch", mockOpenAiFetch);
-});
+describe("Incident e2e contract", () => {
+	beforeEach(() => {
+		vi.stubGlobal("fetch", mockOpenAiFetch);
+	});
 
-afterEach(async () => {
-	const ids = await listDurableObjectIds(env.INCIDENT);
-	await Promise.all(
-		ids.map(async (id) => {
-			const stub = env.INCIDENT.get(id) as IncidentStub;
-			await runInDurableObject(stub, async (_instance, state) => {
-				await state.storage.deleteAlarm();
-				await state.storage.deleteAll();
-			});
-		}),
-	);
-	vi.unstubAllGlobals();
-});
-
-describe("Incident DO end-to-end", () => {
-	it("fails init when no entry points are available", async () => {
-		const { stub, id, identifier } = createIncidentHandle();
-		const initError = await runInDurableObject(stub, async (instance) => {
-			const incident = instance as unknown as {
-				init: (args: {
-					id: string;
-					prompt: string;
-					createdBy: string;
-					source: "dashboard" | "slack" | "fire";
-					metadata: Record<string, string> & { clientId: string; identifier: string };
-				}) => Promise<unknown>;
-			};
-			try {
-				await incident.init({
-					id,
-					prompt: "Users report elevated API error rates and latency",
-					createdBy: "user-1",
-					source: "dashboard",
-					metadata: { clientId: "client-1", identifier },
+	afterEach(async () => {
+		const ids = await listDurableObjectIds(env.INCIDENT);
+		await Promise.all(
+			ids.map(async (id) => {
+				const stub = env.INCIDENT.get(id);
+				await runInDurableObject(stub, async (_instance, state) => {
+					await state.storage.deleteAlarm();
+					await state.storage.deleteAll();
 				});
-				return null;
-			} catch (error) {
-				return error instanceof Error ? error.message : String(error);
-			}
-		});
-
-		expect(initError).toContain("No entry points found");
-		expect(await stub.get()).toEqual({ error: "NOT_FOUND" });
+			}),
+		);
+		vi.unstubAllGlobals();
 	});
 
 	it("rejects start when entry points are empty and persists nothing", async () => {
 		const { stub, id, identifier } = createIncidentHandle();
-		await runInDurableObject(stub, async (instance) => {
-			const incident = instance as import("./incident").Incident;
+		await runInDurableObject(stub, async (incident) => {
 			await expect(
 				incident.start(
 					{

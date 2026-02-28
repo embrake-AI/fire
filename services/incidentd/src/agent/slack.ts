@@ -77,7 +77,6 @@ function encodePayload(payload: AgentSuggestionPayload): string | null {
 	return null;
 }
 
-// TODO: @Miquel => check if this generic suggestions are good enough or we should make it custom per action type
 export function buildAgentSuggestionMessages({
 	suggestions,
 	incidentId,

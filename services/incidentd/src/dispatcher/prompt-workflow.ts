@@ -1,18 +1,21 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import type { IS } from "@fire/common";
+import OpenAI from "openai";
+import { formatAgentEventForPrompt } from "../agent/event-format";
+import { isResponsesFunctionToolCall, parseJsonObject } from "../agent/openai";
+import { getSimilarIncidentsProvider } from "../agent/providers/registry";
 import type { AgentContextResponse, AgentPromptPayload, AgentSuggestionContext } from "../agent/types";
 import { addReaction, removeReaction } from "../lib/slack";
 
 const SYSTEM_PROMPT = `You are an incident operations assistant.
 You must choose one mode:
 1) If the user prompt includes an explicit instruction to change incident state or status page, call the matching tool and execute it.
-2) If there is no explicit instruction, reply with concise plain text.
+2) If the user asks to query or prompt a context agent (e.g. similar incidents), forward the prompt by calling the agent's tool.
+3) If there is no explicit instruction, reply with concise plain text.
 
 Rules:
 - Follow explicit user instructions immediately.
 - Keep text replies concise.`;
-
-type PromptTool = { type: "function"; function: { name: string; description: string; parameters: unknown } };
 
 function getPromptWorkflowValidStatusTransitions(currentStatus: IS["status"]): Array<Exclude<IS["status"], "open">> {
 	switch (currentStatus) {
@@ -26,92 +29,132 @@ function getPromptWorkflowValidStatusTransitions(currentStatus: IS["status"]): A
 	}
 }
 
-function buildPromptTools(context: AgentSuggestionContext): PromptTool[] {
+function buildPromptTools(context: AgentSuggestionContext): OpenAI.Responses.FunctionTool[] {
 	const serviceOptions = context.services.map((service) => service.id);
 	return [
 		{
 			type: "function",
-			function: {
-				name: "update_status",
-				description: "Update incident status.",
-				parameters: {
-					type: "object",
-					properties: {
-						status: { type: "string", enum: ["mitigating", "resolved", "declined"] },
-						message: { type: "string", description: "Message explaining status change. Keep concise." },
-					},
-					required: ["status", "message"],
-					additionalProperties: false,
+			name: "update_status",
+			description: "Update incident status.",
+			strict: true,
+			parameters: {
+				type: "object",
+				properties: {
+					status: { type: "string", enum: ["mitigating", "resolved", "declined"] },
+					message: { type: "string", description: "Message explaining status change. Keep concise." },
 				},
+				required: ["status", "message"],
+				additionalProperties: false,
 			},
 		},
 		{
 			type: "function",
-			function: {
-				name: "update_severity",
-				description: "Update incident severity.",
-				parameters: {
-					type: "object",
-					properties: {
-						severity: { type: "string", enum: ["low", "medium", "high"] },
-					},
-					required: ["severity"],
-					additionalProperties: false,
+			name: "update_severity",
+			description: "Update incident severity.",
+			strict: true,
+			parameters: {
+				type: "object",
+				properties: {
+					severity: { type: "string", enum: ["low", "medium", "high"] },
 				},
+				required: ["severity"],
+				additionalProperties: false,
 			},
 		},
 		{
 			type: "function",
-			function: {
-				name: "add_status_page_update",
-				description: "Post a status page update.",
-				parameters: {
-					type: "object",
-					properties: {
-						message: { type: "string" },
-						affectionStatus: { type: "string", enum: ["investigating", "mitigating", "resolved"] },
-						title: { type: "string" },
-						services: {
-							type: "array",
-							items: {
-								type: "object",
-								properties: {
-									id: { type: "string", enum: serviceOptions.length ? serviceOptions : [""] },
-									impact: { type: "string", enum: ["partial", "major"] },
-								},
-								required: ["id", "impact"],
-								additionalProperties: false,
+			name: "prompt_similar_incidents",
+			description: "Forward a question to the similar-incidents agent. Use when the user asks about past incidents or patterns.",
+			strict: true,
+			parameters: {
+				type: "object",
+				properties: {
+					prompt: { type: "string", description: "The question to forward to the similar-incidents agent." },
+				},
+				required: ["prompt"],
+				additionalProperties: false,
+			},
+		},
+		{
+			type: "function",
+			name: "add_status_page_update",
+			description: "Post a status page update.",
+			strict: true,
+			parameters: {
+				type: "object",
+				properties: {
+					message: { type: "string" },
+					affectionStatus: { type: ["string", "null"], enum: ["investigating", "mitigating", "resolved", null] },
+					title: { type: ["string", "null"] },
+					services: {
+						type: ["array", "null"],
+						items: {
+							type: "object",
+							properties: {
+								id: { type: "string", enum: serviceOptions.length ? serviceOptions : [""] },
+								impact: { type: "string", enum: ["partial", "major"] },
 							},
+							required: ["id", "impact"],
+							additionalProperties: false,
 						},
 					},
-					required: ["message"],
-					additionalProperties: false,
 				},
+				required: ["message", "affectionStatus", "title", "services"],
+				additionalProperties: false,
 			},
 		},
 	];
 }
 
-function parseToolArguments(raw?: string): Record<string, unknown> {
-	if (!raw) {
-		return {};
+function parsePromptStatus(value: unknown): "mitigating" | "resolved" | "declined" | undefined {
+	if (value === "mitigating" || value === "resolved" || value === "declined") {
+		return value;
 	}
-	try {
-		const parsed = JSON.parse(raw) as unknown;
-		if (parsed && typeof parsed === "object") {
-			return parsed as Record<string, unknown>;
-		}
-		return {};
-	} catch {
-		return {};
+	return undefined;
+}
+
+function parsePromptSeverity(value: unknown): "low" | "medium" | "high" | undefined {
+	if (value === "low" || value === "medium" || value === "high") {
+		return value;
 	}
+	return undefined;
+}
+
+function parsePromptAffectionStatus(value: unknown): "investigating" | "mitigating" | "resolved" | undefined {
+	if (value === "investigating" || value === "mitigating" || value === "resolved") {
+		return value;
+	}
+	return undefined;
+}
+
+function parsePromptServices(value: unknown): { id: string; impact: "partial" | "major" }[] | undefined {
+	if (!Array.isArray(value)) {
+		return undefined;
+	}
+
+	const services = value
+		.map((service) => {
+			if (!service || typeof service !== "object") {
+				return null;
+			}
+			const typed = service as { id?: unknown; impact?: unknown };
+			if (typeof typed.id !== "string") {
+				return null;
+			}
+			if (typed.impact !== "partial" && typed.impact !== "major") {
+				return null;
+			}
+			return { id: typed.id, impact: typed.impact };
+		})
+		.filter((service): service is { id: string; impact: "partial" | "major" } => !!service);
+
+	return services.length ? services : undefined;
 }
 
 function buildPromptUserMessage(context: AgentSuggestionContext) {
 	const eventsDescription = context.events
 		.map((event) => {
-			const data = JSON.stringify(event.event_data);
-			return `[${event.created_at}] ${event.event_type}: ${data}`;
+			return `[${event.created_at}] ${formatAgentEventForPrompt(event)}`;
 		})
 		.join("\n");
 
@@ -149,36 +192,26 @@ Recent events:
 ${eventsDescription}`;
 }
 
-type IncidentAgentStub = {
-	getAgentContext: () => Promise<AgentContextResponse>;
-	updateStatus: (status: Exclude<IS["status"], "open">, message: string, adapter: "slack" | "dashboard" | "fire", eventMetadata?: Record<string, string>) => Promise<unknown>;
-	setSeverity: (severity: IS["severity"], adapter: "slack" | "dashboard" | "fire", eventMetadata?: Record<string, string>) => Promise<unknown>;
-	updateAffection: (params: {
-		message: string;
-		status?: "investigating" | "mitigating" | "resolved";
-		title?: string;
-		services?: { id: string; impact: "partial" | "major" }[];
-		createdBy: string;
-		adapter: "slack" | "dashboard" | "fire";
-		eventMetadata?: Record<string, string>;
-	}) => Promise<{ error: string } | undefined>;
-	addMessage: (
-		message: string,
-		userId: string,
-		messageId: string,
-		adapter: "slack" | "dashboard" | "fire",
-		slackUserToken?: string,
-		eventMetadata?: Record<string, string>,
-	) => Promise<unknown>;
-};
-
 export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptPayload> {
 	async run(event: WorkflowEvent<AgentPromptPayload>, step: WorkflowStep) {
 		const payload = event.payload;
-		const stub = this.env.INCIDENT.get(this.env.INCIDENT.idFromString(payload.incidentId)) as unknown as IncidentAgentStub;
-		const contextResponse = (await step.do(`agent-prompt.context:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, () =>
-			stub.getAgentContext(),
-		)) as AgentContextResponse;
+		const incidentId = this.env.INCIDENT.idFromString(payload.incidentId);
+		const contextResponse = await step.do<AgentContextResponse>(
+			`agent-prompt.context:${payload.incidentId}:${payload.ts}`,
+			{ retries: { limit: 3, delay: "2 seconds" } },
+			async () => {
+				const incidentStub = this.env.INCIDENT.get(incidentId);
+				const response = await incidentStub.getAgentContext();
+				if (!response || "error" in response) {
+					const errorText = response && "error" in response ? await response.error : "FAILED_TO_LOAD_AGENT_CONTEXT";
+					return { error: String(errorText) };
+				}
+
+				const [incident, metadata, services, affection, events] = await Promise.all([response.incident, response.metadata, response.services, response.affection, response.events]);
+
+				return { incident, metadata, services, affection, events };
+			},
+		);
 		if ("error" in contextResponse || !contextResponse.incident) {
 			return;
 		}
@@ -208,7 +241,7 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 		};
 
 		const tools = buildPromptTools(context);
-		const messages: Array<{ role: "system" | "user" | "assistant" | "tool"; content?: string; tool_calls?: unknown; name?: string }> = [
+		const input: OpenAI.Responses.EasyInputMessage[] = [
 			{ role: "system", content: SYSTEM_PROMPT },
 			{ role: "user", content: buildPromptUserMessage(context) },
 		];
@@ -220,97 +253,91 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 				);
 			}
 
-			const data = (await step.do(`agent-prompt.fetch:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "3 seconds" } }, async () => {
-				const response = await fetch("https://api.openai.com/v1/chat/completions", {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-						Authorization: `Bearer ${this.env.OPENAI_API_KEY}`,
-					},
-					body: JSON.stringify({
+			const data = await step.do<{ outputText: string; toolCall: OpenAI.Responses.ResponseFunctionToolCall | null }>(
+				`agent-prompt.fetch:${payload.incidentId}:${payload.ts}`,
+				{ retries: { limit: 3, delay: "3 seconds" } },
+				async () => {
+					const client = new OpenAI({ apiKey: this.env.OPENAI_API_KEY });
+					const response = await client.responses.create({
 						model: "gpt-5.2",
-						messages,
+						input,
 						tools,
 						tool_choice: "auto",
-					}),
-				});
-
-				if (!response.ok) {
-					const error = await response.text();
-					throw new Error(`OpenAI API error: ${response.status} - ${error}`);
-				}
-
-				return (await response.json()) as {
-					id?: string;
-					model?: string;
-					usage?: {
-						prompt_tokens?: number;
-						completion_tokens?: number;
-						total_tokens?: number;
-						prompt_tokens_details?: { cached_tokens?: number };
+						text: { verbosity: "low" },
+					});
+					const toolCall = (response.output ?? []).find(isResponsesFunctionToolCall) ?? null;
+					return {
+						outputText: response.output_text,
+						toolCall,
 					};
-					choices: Array<{
-						message: {
-							content: string | null;
-							tool_calls?: Array<{ function: { name: string; arguments: string } }>;
-						};
-					}>;
-				};
-			})) as {
-				id?: string;
-				model?: string;
-				usage?: {
-					prompt_tokens?: number;
-					completion_tokens?: number;
-					total_tokens?: number;
-					prompt_tokens_details?: { cached_tokens?: number };
-				};
-				choices: Array<{
-					message: {
-						content: string | null;
-						tool_calls?: Array<{ function: { name: string; arguments: string } }>;
-					};
-				}>;
-			};
-			const message = data.choices[0]?.message;
-			if (!message) {
-				return;
-			}
-
-			const toolCall = message.tool_calls?.[0];
+				},
+			);
+			const toolCall = data.toolCall;
 			if (toolCall) {
-				const args = parseToolArguments(toolCall.function.arguments);
+				const functionName = toolCall.name;
+				const args = parseJsonObject(toolCall.arguments);
 				let handledToolCall = false;
-				switch (toolCall.function.name) {
+				switch (functionName) {
 					case "update_status": {
-						const status = args.status;
-						if (status === "mitigating" || status === "resolved" || status === "declined") {
-							const messageText = args.message as string;
+						const status = parsePromptStatus(args.status);
+						const messageText = typeof args.message === "string" ? args.message.trim() : "";
+						if (status && messageText) {
 							await step.do(`agent-prompt.apply-status:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
-								await stub.updateStatus(status, messageText, "fire", eventMetadata);
+								const incidentStub = this.env.INCIDENT.get(incidentId);
+								await incidentStub.updateStatus(status, messageText, "fire", eventMetadata);
 							});
 							handledToolCall = true;
 						}
 						break;
 					}
 					case "update_severity": {
-						const severity = args.severity;
-						if (severity === "low" || severity === "medium" || severity === "high") {
+						const severity = parsePromptSeverity(args.severity);
+						if (severity) {
 							await step.do(`agent-prompt.apply-severity:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
-								await stub.setSeverity(severity, "fire", eventMetadata);
+								const incidentStub = this.env.INCIDENT.get(incidentId);
+								await incidentStub.setSeverity(severity, "fire", eventMetadata);
 							});
 							handledToolCall = true;
 						}
 						break;
 					}
+					case "prompt_similar_incidents": {
+						const promptText = typeof args.prompt === "string" ? args.prompt.trim() : "";
+						if (promptText) {
+							const result = await step.do<{ answer: string }>(
+								`agent-prompt.similar:${payload.incidentId}:${payload.ts}`,
+								{ retries: { limit: 3, delay: "2 seconds" } },
+								async () => {
+									const provider = getSimilarIncidentsProvider(this.env, payload.incidentId);
+									const response = await provider.addPrompt({ question: promptText, requestedAt: new Date().toISOString() });
+									return { answer: response?.answer ?? "" };
+								},
+							);
+							const answer = result.answer.trim();
+							if (answer) {
+								await step.do(`agent-prompt.similar-respond:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
+									const incidentStub = this.env.INCIDENT.get(incidentId);
+									await incidentStub.addMessage(answer, "", `fire-prompt:${payload.ts}`, "fire", undefined, eventMetadata);
+									return null;
+								});
+								handledToolCall = true;
+							}
+						}
+						break;
+					}
 					case "add_status_page_update": {
-						if (typeof args.message === "string") {
+						const messageText = typeof args.message === "string" ? args.message.trim() : "";
+						if (messageText) {
+							const affectionStatus = parsePromptAffectionStatus(args.affectionStatus);
+							const title = typeof args.title === "string" ? args.title.trim() : "";
+							const services = parsePromptServices(args.services);
 							await step.do(`agent-prompt.apply-affection:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
-								await stub.updateAffection({
-									message: args.message as string,
-									...(typeof args.affectionStatus === "string" ? { status: args.affectionStatus as "investigating" | "mitigating" | "resolved" } : {}),
-									...(typeof args.title === "string" ? { title: args.title as string } : {}),
-									...(Array.isArray(args.services) ? { services: args.services as { id: string; impact: "partial" | "major" }[] } : {}),
+								const incidentStub = this.env.INCIDENT.get(incidentId);
+								await incidentStub.updateAffection({
+									message: messageText,
+									...(affectionStatus ? { status: affectionStatus } : {}),
+									...(title ? { title } : {}),
+									...(services ? { services } : {}),
 									createdBy: "fire",
 									adapter: "fire",
 									eventMetadata,
@@ -327,10 +354,11 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 				}
 			}
 
-			const trimmedResponse = message.content?.trim();
+			const trimmedResponse = data.outputText.trim();
 			if (trimmedResponse) {
 				await step.do(`agent-prompt.respond:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
-					await stub.addMessage(trimmedResponse, "", `fire-prompt:${payload.ts}`, "fire", undefined, eventMetadata);
+					const incidentStub = this.env.INCIDENT.get(incidentId);
+					await incidentStub.addMessage(trimmedResponse, "", `fire-prompt:${payload.ts}`, "fire", undefined, eventMetadata);
 					return null;
 				});
 			}

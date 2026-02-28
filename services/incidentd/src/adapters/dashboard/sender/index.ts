@@ -89,3 +89,4 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 
 export const messageAdded = undefined;
 export const affectionUpdated = undefined;
+export const similarIncident = undefined;

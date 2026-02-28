@@ -663,6 +663,46 @@ export async function affectionUpdated(params: SenderParams["affectionUpdated"])
 	await maybeUpdateSuggestionMessage(stepDo, botToken, eventMetadata);
 }
 
+export async function similarIncident(params: SenderParams["similarIncident"]) {
+	const { step: stepDo, metadata, event } = params;
+	const { botToken, channel, thread, incidentChannelId } = metadata;
+	if (!botToken) {
+		return;
+	}
+
+	const targetChannel = incidentChannelId ?? channel;
+	const targetThreadTs = incidentChannelId ? undefined : thread;
+	if (!targetChannel) {
+		return;
+	}
+
+	const sourceList = event.sourceIncidentIds.length ? event.sourceIncidentIds.join(", ") : event.similarIncidentId;
+	const text = [
+		":mag: *Similar incident found*",
+		`Candidate: \`${event.similarIncidentId}\` (sources: ${sourceList})`,
+		`Summary: ${event.summary}`,
+		`Evidence: ${event.evidence}`,
+		`Context: ${event.comparisonContext}`,
+	].join("\n");
+
+	await stepDo(
+		"slack.post-similar-incident",
+		{
+			retries: {
+				limit: 3,
+				delay: "1 second",
+			},
+		},
+		() =>
+			postSlackMessage({
+				botToken,
+				channel: targetChannel,
+				threadTs: targetThreadTs ?? undefined,
+				text,
+			}),
+	);
+}
+
 async function updateIncidentMessage({
 	stepDo,
 	stepName,
