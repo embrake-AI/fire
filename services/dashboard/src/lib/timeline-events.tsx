@@ -192,11 +192,11 @@ export const eventRegistry: EventConfigMap = {
 						<EmojiText text={data.summary} />
 					</p>
 					<p class="text-sm text-muted-foreground italic">
-						<EmojiText text={data.evidence} />
+						<EmojiText text={data.similarities} />
 					</p>
-					<Show when={data.comparisonContext}>
+					<Show when={data.learnings}>
 						<p class="text-xs text-muted-foreground">
-							Context: <EmojiText text={data.comparisonContext} />
+							Context: <EmojiText text={data.learnings} />
 						</p>
 					</Show>
 				</div>
