@@ -51,9 +51,9 @@ function formatSimilarIncidentEvent(event: AgentEvent) {
 		learnings?: string;
 	};
 	const id = data.similarIncidentId ?? "unknown";
-	const title = data.title ? truncate(data.title, 120) : "";
-	const similarities = data.similarities ? truncate(data.similarities, 180) : "";
-	const learnings = data.learnings ? truncate(data.learnings, 180) : "";
+	const title = data.title ? truncate(data.title, 200) : "";
+	const similarities = data.similarities ? truncate(data.similarities, 400) : "";
+	const learnings = data.learnings ? truncate(data.learnings, 400) : "";
 	return `AGENT_SIMILAR_INCIDENT id=${id} title="${title}" similarities="${similarities}" learnings="${learnings}"`;
 }
 

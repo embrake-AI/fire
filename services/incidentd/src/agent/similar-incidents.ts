@@ -34,6 +34,7 @@ export type SimilarIncidentPersistenceApi = {
 };
 
 export type DeepDiveDecision = {
+	reasoning: string;
 	isSimilar: boolean;
 	similarities: string;
 	learnings: string;
@@ -77,17 +78,22 @@ Return isSimilar=true only if the candidate can directly inform current diagnosi
 Require explicit evidence of mechanism overlap and operationally relevant lessons.
 Reject surface-level similarity (same symptom words, different underlying cause).
 When evidence is mixed, return false.
-In similarities, describe shared mechanisms, symptoms, and subsystems.
-In learnings, describe resolution steps, mitigations, and applicable actions from the candidate.`;
+
+Put your full analysis and evidence evaluation in the "reasoning" field (no length limit).
+
+The "similarities" and "learnings" fields are shown directly to users in Slack. They must be self-contained, concise, and never truncated mid-thought:
+- similarities: 2-3 sentences describing shared mechanisms, symptoms, and subsystems (<400 chars).
+- learnings: 2-3 concise actionable items — resolution steps, mitigations, applicable actions from the candidate (<400 chars).`;
 
 export const DEEP_DIVE_SCHEMA = {
 	type: "object",
 	properties: {
+		reasoning: { type: "string" },
 		isSimilar: { type: "boolean" },
 		similarities: { type: "string" },
 		learnings: { type: "string" },
 	},
-	required: ["isSimilar", "similarities", "learnings"],
+	required: ["reasoning", "isSimilar", "similarities", "learnings"],
 	additionalProperties: false,
 } as const;
 
@@ -171,6 +177,58 @@ function parseEventData(value: string) {
 	} catch {
 		return {};
 	}
+}
+
+export type StructuredPromptAnswer = {
+	explanation: string;
+	incidents: Array<{ id: string; summary: string }>;
+};
+
+const STRUCTURED_PROMPT_SCHEMA = {
+	type: "object",
+	properties: {
+		explanation: { type: "string" },
+		incidents: {
+			type: "array",
+			items: {
+				type: "object",
+				properties: {
+					id: { type: "string" },
+					summary: { type: "string" },
+				},
+				required: ["id", "summary"],
+				additionalProperties: false,
+			},
+		},
+	},
+	required: ["explanation", "incidents"],
+	additionalProperties: false,
+} as const;
+
+export async function answerSimilarProviderPromptStructured(params: {
+	openaiApiKey: string;
+	input: OpenAI.Responses.ResponseInputItem[];
+	model?: string;
+}): Promise<StructuredPromptAnswer> {
+	const client = new OpenAI({ apiKey: params.openaiApiKey });
+	const response = await client.responses.create({
+		model: params.model ?? "gpt-5.2",
+		input: params.input,
+		text: {
+			format: {
+				type: "json_schema",
+				name: "similar_prompt_answer",
+				schema: STRUCTURED_PROMPT_SCHEMA as Record<string, unknown>,
+				strict: true,
+			},
+			verbosity: "low",
+		},
+	});
+	const content = response.output_text.trim();
+	if (!content) {
+		return { explanation: "No additional similar-incident insight is available yet.", incidents: [] };
+	}
+	return JSON.parse(content) as StructuredPromptAnswer;
 }
 
 export async function answerSimilarProviderPrompt(params: { openaiApiKey: string; input: OpenAI.Responses.ResponseInputItem[]; model?: string }): Promise<string> {
@@ -385,9 +443,11 @@ export async function runDeepDive(
 	});
 
 	const candidateStatus = candidate.kind === "open" ? candidate.status : candidate.terminalStatus;
+	// reasoning included in toolResult (agent context) but excluded from eventData (Slack/persistence)
 	const toolResult = {
 		title: detail.title,
 		isSimilar: verdict.isSimilar,
+		reasoning: verdict.reasoning,
 		similarities: truncate(verdict.similarities, 500),
 		...(verdict.isSimilar ? { learnings: truncate(verdict.learnings, 500) } : {}),
 	};

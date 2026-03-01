@@ -679,7 +679,38 @@ export async function similarIncident(params: SenderParams["similarIncident"]) {
 	const isOpen = event.incidentStatus === "open" || event.incidentStatus === "mitigating";
 	const link = isOpen ? `${env.FRONTEND_URL}/incidents/${event.similarIncidentId}` : `${env.FRONTEND_URL}/metrics/${event.similarIncidentId}`;
 
-	const text = [`:mag: *Similar incident found*`, `*Incident:* <${link}|${event.title}>`, `*Similarities:* ${event.similarities}`, `*Learnings:* ${event.learnings}`].join("\n");
+	const text = `:mag: Similar incident found: ${event.title}`;
+
+	const blocks: KnownBlock[] = [
+		{
+			type: "section",
+			text: {
+				type: "mrkdwn",
+				text: `:mag: *Similar incident found*`,
+			},
+		},
+		{
+			type: "section",
+			text: {
+				type: "mrkdwn",
+				text: `*<${link}|${event.title}>*`,
+			},
+		},
+		{
+			type: "section",
+			text: {
+				type: "mrkdwn",
+				text: `*Similarities:* ${event.similarities}`,
+			},
+		},
+		{
+			type: "section",
+			text: {
+				type: "mrkdwn",
+				text: `*Learnings:* ${event.learnings}`,
+			},
+		},
+	];
 
 	await stepDo(
 		"slack.post-similar-incident",
@@ -695,6 +726,7 @@ export async function similarIncident(params: SenderParams["similarIncident"]) {
 				channel: targetChannel,
 				threadTs: targetThreadTs ?? undefined,
 				text,
+				blocks,
 			}),
 	);
 }

@@ -3,6 +3,7 @@ import { truncate } from "@fire/common";
 import { formatAgentEventForPrompt } from "../event-format";
 import {
 	answerSimilarProviderPrompt,
+	answerSimilarProviderPromptStructured,
 	type CompletedIncidentCandidate,
 	decideSimilarProviderAction,
 	formatCandidatesForContext,
@@ -47,17 +48,51 @@ export class SimilarIncidentsAgent extends AgentBase {
 		}
 
 		let answer = "";
+		let stepContent = "";
 		try {
-			answer = await answerSimilarProviderPrompt({
+			const structured = await answerSimilarProviderPromptStructured({
 				openaiApiKey: this.env.OPENAI_API_KEY,
 				input: context,
 			});
+
+			stepContent = structured.explanation;
+			const candidates = this.getLoadedCandidates();
+			const frontendUrl = this.env.FRONTEND_URL;
+
+			const incidentLines: string[] = [];
+			for (const inc of structured.incidents) {
+				const candidate = candidates.find((c) => c.id === inc.id);
+				let linkPath: string;
+				if (candidate) {
+					linkPath = candidate.kind === "open" ? `/incidents/${inc.id}` : `/metrics/${inc.id}`;
+				} else {
+					linkPath = `/metrics/${inc.id}`;
+				}
+				const title = candidate?.title ?? inc.id;
+				incidentLines.push(`\u2022 <${frontendUrl}${linkPath}|${title}> \u2014 ${inc.summary}`);
+			}
+
+			if (incidentLines.length) {
+				answer = `${structured.explanation}\n\n${incidentLines.join("\n")}`;
+			} else {
+				answer = structured.explanation;
+			}
 		} catch (error) {
-			console.error("Similar provider prompt mini-call failed", error);
+			console.error("Similar provider structured prompt failed, falling back to plain", error);
+			try {
+				answer = await answerSimilarProviderPrompt({
+					openaiApiKey: this.env.OPENAI_API_KEY,
+					input: context,
+				});
+				stepContent = answer;
+			} catch (fallbackError) {
+				console.error("Similar provider prompt fallback also failed", fallbackError);
+			}
 		}
 
 		if (!answer.trim()) {
 			answer = this.latestAssistantStep();
+			stepContent = answer;
 		}
 
 		if (!answer.trim()) {
@@ -69,11 +104,12 @@ export class SimilarIncidentsAgent extends AgentBase {
 		}
 
 		if (questionWithConstraints) {
-			this.appendStep({ role: "user", content: questionWithConstraints, source: "prompt" });
-			this.appendStep({ role: "assistant", content: answer.trim(), source: "prompt" });
-			// Flag + alarm so processPendingContexts runs an iteration with the new Q&A context
-			this.ctx.storage.kv.put<boolean>(PROMPT_PENDING_KEY, true);
-			await this.ctx.storage.setAlarm(Date.now() + 200);
+			await this.ctx.storage.transaction(async () => {
+				this.appendStep({ role: "user", content: questionWithConstraints, source: "prompt" });
+				this.appendStep({ role: "assistant", content: (stepContent || answer).trim(), source: "prompt" });
+				this.ctx.storage.kv.put<boolean>(PROMPT_PENDING_KEY, true);
+				await this.ctx.storage.setAlarm(Date.now() + 200);
+			});
 		}
 
 		const freshness = this.getRunStatus() === RUN_STATUS_RUNNING || this.getLastProcessedEventId() < this.getMaxQueuedToEventId() ? "in_progress" : "fresh";
