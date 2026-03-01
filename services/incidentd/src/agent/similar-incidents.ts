@@ -13,18 +13,17 @@ const COMPLETED_LOOKBACK_DAYS = 90;
 const DEEP_DIVE_EVENT_LIMIT = 25;
 
 export const SIMILAR_PROVIDER_SYSTEM_PROMPT =
-	"You are the similar-incident context provider. Call run_similar_investigation only when the incident identifies a specific failure mechanism, error class, or affected subsystem. Do not call for vague symptoms or early triage without a clear technical signal. Call once per meaningful understanding change. Do not rerun when context has not materially changed.";
+	"You are the similar-incident context provider. You have candidate incidents loaded in context. Use the investigate_incident tool to deep-dive into any candidate that looks potentially relevant. Call it eagerly and early — a described symptom and affected area is enough. Do not wait for confirmed root cause or specific error classes. Historical context is most valuable during initial triage. You may call investigate_incident multiple times in parallel for different candidates. Re-investigate only when understanding materially changes (new subsystem, new failure mechanism, scope change). Do not re-investigate for repeated updates or monitoring chatter. When answering questions, only state facts from the conversation (incident events, investigation results, similar incidents found). Never speculate or list hypothetical causes/mitigations. If no similar incidents have been found yet, say so briefly.";
 
 export const SIMILAR_PROVIDER_SUMMARIZATION_PROMPT =
-	"Summarize these new incident events into a concise context update. Focus on technical signals: failure mechanisms, error classes, affected subsystems, and impact changes. If the events contain no meaningful new technical signal (only monitoring chatter or repeated updates), respond with SKIP.";
+	"Summarize these new incident events into a concise context update. Focus on technical signals: failure mechanisms, error classes, affected subsystems, and impact changes. If the events contain no meaningful new technical signal (only monitoring chatter or repeated updates), respond with SKIP. Do not speculate or add information not present in the events.";
 
-type SimilarIncidentsDiscoveredEvent = Extract<IS_Event, { event_type: "SIMILAR_INCIDENTS_DISCOVERED" }>["event_data"];
 type SimilarIncidentEvent = Extract<IS_Event, { event_type: "SIMILAR_INCIDENT" }>["event_data"];
 
-type SimilarIncidentPersistenceApi = {
+export type SimilarIncidentPersistenceApi = {
 	recordAgentContextEvent: (
 		eventType: "SIMILAR_INCIDENTS_DISCOVERED",
-		eventData: SimilarIncidentsDiscoveredEvent,
+		eventData: Extract<IS_Event, { event_type: "SIMILAR_INCIDENTS_DISCOVERED" }>["event_data"],
 		dedupeKey: string,
 	) => Promise<{ eventId: number; createdAt: string } | { error: string }>;
 	recordAgentInsightEvent: (
@@ -34,36 +33,13 @@ type SimilarIncidentPersistenceApi = {
 	) => Promise<{ eventId: number; createdAt: string; deduped?: boolean } | { error: string }>;
 };
 
-type StepDo = <T extends Rpc.Serializable<T>>(name: string, callback: () => Promise<T>) => Promise<T>;
-
-type RunSimilarIncidentFlowParams = {
-	env: Env;
-	incidentId: string;
-	turnId: string;
-	metadata: Metadata;
-	incident: AgentIncidentSnapshot;
-	events: AgentEvent[];
-	stepDo: StepDo;
-	persistence: SimilarIncidentPersistenceApi;
-	investigationReason?: string;
-};
-
-export type RankingDecision = {
-	rankedIncidentIds: string[];
-	selectedIncidentIds: string[];
-	reason: string;
-	contextSnapshot: string;
-	changedUnderstanding: string;
-};
-
 export type DeepDiveDecision = {
 	isSimilar: boolean;
-	summary: string;
-	evidence: string;
-	comparisonContext: string;
+	similarities: string;
+	learnings: string;
 };
 
-type OpenIncidentCandidate = {
+export type OpenIncidentCandidate = {
 	id: string;
 	status: string;
 	severity: string;
@@ -72,7 +48,7 @@ type OpenIncidentCandidate = {
 	createdAt: string;
 };
 
-type CompletedIncidentCandidate = {
+export type CompletedIncidentCandidate = {
 	id: string;
 	terminalStatus: "resolved" | "declined";
 	severity: string;
@@ -82,12 +58,12 @@ type CompletedIncidentCandidate = {
 	resolvedAt: string;
 };
 
-type SimilarIncidentCandidate = (OpenIncidentCandidate & { kind: "open" }) | (CompletedIncidentCandidate & { kind: "completed" });
+export type SimilarIncidentCandidate = (OpenIncidentCandidate & { kind: "open" }) | (CompletedIncidentCandidate & { kind: "completed" });
 
 export type SimilarProviderToolCall = {
 	toolCallId: string;
+	incidentId: string;
 	reason: string;
-	evidence: string;
 	argumentsText: string;
 };
 
@@ -96,70 +72,24 @@ export type SimilarProviderDecision = {
 	toolCalls: SimilarProviderToolCall[];
 };
 
-export const RANKING_SYSTEM_PROMPT = `You rank historical incidents for practical reuse in the current incident.
-Selection criteria:
-- Must have mechanism-level compatibility OR clearly transferable mitigation playbook.
-- Prefer overlap in trigger, impact pattern, and affected subsystem.
-- Exclude incidents that only share generic symptoms or business-domain words.
-- selectedIncidentIds may be empty; prioritize precision over recall when uncertain.
-- Return contextSnapshot and changedUnderstanding to be persisted with the search event.`;
-
 export const DEEP_DIVE_SYSTEM_PROMPT = `You are a strict deep-dive validator for incident similarity.
 Return isSimilar=true only if the candidate can directly inform current diagnosis or mitigation.
 Require explicit evidence of mechanism overlap and operationally relevant lessons.
 Reject surface-level similarity (same symptom words, different underlying cause).
-When evidence is mixed, return false.`;
-
-export const RANKING_SCHEMA = {
-	type: "object",
-	properties: {
-		rankedIncidentIds: { type: "array", items: { type: "string" } },
-		selectedIncidentIds: { type: "array", items: { type: "string" } },
-		reason: { type: "string" },
-		contextSnapshot: { type: "string" },
-		changedUnderstanding: { type: "string" },
-	},
-	required: ["rankedIncidentIds", "selectedIncidentIds", "reason", "contextSnapshot", "changedUnderstanding"],
-	additionalProperties: false,
-} as const;
+When evidence is mixed, return false.
+In similarities, describe shared mechanisms, symptoms, and subsystems.
+In learnings, describe resolution steps, mitigations, and applicable actions from the candidate.`;
 
 export const DEEP_DIVE_SCHEMA = {
 	type: "object",
 	properties: {
 		isSimilar: { type: "boolean" },
-		summary: { type: "string" },
-		evidence: { type: "string" },
-		comparisonContext: { type: "string" },
+		similarities: { type: "string" },
+		learnings: { type: "string" },
 	},
-	required: ["isSimilar", "summary", "evidence", "comparisonContext"],
+	required: ["isSimilar", "similarities", "learnings"],
 	additionalProperties: false,
 } as const;
-
-export function buildRankingUserPrompt(params: {
-	incident: { id: string; title: string; description: string; status: string; severity: string };
-	candidates: Array<{ id: string; kind: "open" | "completed"; status: string; severity: string; title: string; description: string; createdAt: string; resolvedAt?: string }>;
-	investigationReason?: string;
-}): string {
-	const candidatesText = params.candidates
-		.map((candidate, index) => {
-			const recency = candidate.kind === "completed" && candidate.resolvedAt ? `resolvedAt=${candidate.resolvedAt}` : `createdAt=${candidate.createdAt}`;
-			return `${index + 1}. id=${candidate.id} kind=${candidate.kind} status=${candidate.status} severity=${candidate.severity} ${recency} title="${truncate(candidate.title, 100)}" description="${truncate(candidate.description, 250)}"`;
-		})
-		.join("\n");
-
-	return `Current incident:
-- id: ${params.incident.id}
-- title: ${params.incident.title}
-- description: ${params.incident.description}
-- status: ${params.incident.status}
-- severity: ${params.incident.severity}
-- reason for running search: ${params.investigationReason ?? "Model requested similar incident lookup"}
-
-Candidate incidents:
-${candidatesText}
-
-Return ranking and selected ids.`;
-}
 
 export function buildDeepDiveUserPrompt(params: {
 	incident: { id: string; title: string; description: string; status: string; severity: string };
@@ -265,16 +195,17 @@ export async function decideSimilarProviderAction(params: { openaiApiKey: string
 		tools: [
 			{
 				type: "function",
-				name: "run_similar_investigation",
-				description: "Run or re-run similar incident investigation for the latest incident context. Call only when context is concrete enough to produce reliable matches.",
+				name: "investigate_incident",
+				description:
+					"Run deep-dive investigation on a single candidate incident. Call once per incident you want to investigate. You may call this multiple times in parallel for different candidates.",
 				strict: true,
 				parameters: {
 					type: "object",
 					properties: {
-						reason: { type: "string", description: "Why similar incident investigation is useful now." },
-						evidence: { type: "string", description: "Specific event evidence supporting this run." },
+						incidentId: { type: "string", description: "The ID of the candidate incident to investigate." },
+						reason: { type: "string", description: "Why this candidate is worth investigating for the current incident." },
 					},
-					required: ["reason", "evidence"],
+					required: ["incidentId", "reason"],
 					additionalProperties: false,
 				},
 			},
@@ -287,21 +218,21 @@ export async function decideSimilarProviderAction(params: { openaiApiKey: string
 	const toolCalls: SimilarProviderToolCall[] = [];
 
 	for (const item of response.output ?? []) {
-		if (!isResponsesFunctionToolCall(item) || item.name !== "run_similar_investigation") {
+		if (!isResponsesFunctionToolCall(item) || item.name !== "investigate_incident") {
 			continue;
 		}
 
 		const parsed = parseJsonObject(item.arguments);
+		const incidentId = typeof parsed.incidentId === "string" ? parsed.incidentId.trim() : "";
 		const reason = typeof parsed.reason === "string" ? parsed.reason.trim() : "";
-		const evidence = typeof parsed.evidence === "string" ? parsed.evidence.trim() : "";
-		if (!reason || !evidence) {
+		if (!incidentId || !reason) {
 			continue;
 		}
-		const argumentsText = JSON.stringify({ reason, evidence });
+		const argumentsText = JSON.stringify({ incidentId, reason });
 		toolCalls.push({
 			toolCallId: item.call_id,
+			incidentId,
 			reason,
-			evidence,
 			argumentsText,
 		});
 	}
@@ -337,15 +268,12 @@ async function callJsonSchema<T>(params: { openaiApiKey: string; systemPrompt: s
 	return JSON.parse(content) as T;
 }
 
-async function loadOpenCandidates(params: RunSimilarIncidentFlowParams): Promise<OpenIncidentCandidate[]> {
-	const result = await params.stepDo(`agent-similar.open:${params.turnId}`, async () => {
-		const response = await params.env.incidents
-			.prepare("SELECT id, status, severity, title, description, createdAt FROM incident WHERE client_id = ? AND id != ? ORDER BY datetime(createdAt) DESC LIMIT ?")
-			.bind(params.metadata.clientId, params.incident.id, OPEN_INCIDENT_LIMIT)
-			.all<OpenIncidentCandidate>();
-		return response.results;
-	});
-	return result.map((row) => ({
+export async function loadOpenCandidates(params: { env: Env; clientId: string; incidentId: string }): Promise<OpenIncidentCandidate[]> {
+	const response = await params.env.incidents
+		.prepare("SELECT id, status, severity, title, description, createdAt FROM incident WHERE client_id = ? AND id != ? ORDER BY datetime(createdAt) DESC LIMIT ?")
+		.bind(params.clientId, params.incidentId, OPEN_INCIDENT_LIMIT)
+		.all<OpenIncidentCandidate>();
+	return response.results.map((row) => ({
 		id: row.id,
 		status: row.status,
 		severity: row.severity,
@@ -355,90 +283,143 @@ async function loadOpenCandidates(params: RunSimilarIncidentFlowParams): Promise
 	}));
 }
 
-async function loadCompletedCandidates(params: RunSimilarIncidentFlowParams): Promise<CompletedIncidentCandidate[]> {
+export async function loadCompletedCandidates(params: { env: Env; clientId: string; incidentId: string }): Promise<CompletedIncidentCandidate[]> {
 	const db = getDB(params.env.db);
 	const lowerBound = new Date(Date.now() - COMPLETED_LOOKBACK_DAYS * 24 * 60 * 60 * 1_000);
-	return params.stepDo(`agent-similar.closed:${params.turnId}`, async () => {
-		const rows = await db
-			.select({
-				id: incidentAnalysis.id,
-				terminalStatus: incidentAnalysis.terminalStatus,
-				severity: incidentAnalysis.severity,
-				title: incidentAnalysis.title,
-				description: incidentAnalysis.description,
-				createdAt: incidentAnalysis.createdAt,
-				resolvedAt: incidentAnalysis.resolvedAt,
-			})
-			.from(incidentAnalysis)
-			.where(
-				and(
-					eq(incidentAnalysis.clientId, params.metadata.clientId),
-					ne(incidentAnalysis.id, params.incident.id),
-					gte(incidentAnalysis.resolvedAt, lowerBound),
-					inArray(incidentAnalysis.terminalStatus, ["resolved", "declined"]),
-				),
-			)
-			.orderBy(desc(incidentAnalysis.resolvedAt))
-			.limit(COMPLETED_INCIDENT_LIMIT);
-		return rows.map((row) => ({
-			id: row.id,
-			terminalStatus: row.terminalStatus,
-			severity: row.severity,
-			title: row.title,
-			description: row.description,
-			createdAt: row.createdAt.toISOString(),
-			resolvedAt: row.resolvedAt.toISOString(),
-		}));
-	});
+	const rows = await db
+		.select({
+			id: incidentAnalysis.id,
+			terminalStatus: incidentAnalysis.terminalStatus,
+			severity: incidentAnalysis.severity,
+			title: incidentAnalysis.title,
+			description: incidentAnalysis.description,
+			createdAt: incidentAnalysis.createdAt,
+			resolvedAt: incidentAnalysis.resolvedAt,
+		})
+		.from(incidentAnalysis)
+		.where(
+			and(
+				eq(incidentAnalysis.clientId, params.clientId),
+				ne(incidentAnalysis.id, params.incidentId),
+				gte(incidentAnalysis.resolvedAt, lowerBound),
+				inArray(incidentAnalysis.terminalStatus, ["resolved", "declined"]),
+			),
+		)
+		.orderBy(desc(incidentAnalysis.resolvedAt))
+		.limit(COMPLETED_INCIDENT_LIMIT);
+	return rows.map((row) => ({
+		id: row.id,
+		terminalStatus: row.terminalStatus,
+		severity: row.severity,
+		title: row.title,
+		description: row.description,
+		createdAt: row.createdAt.toISOString(),
+		resolvedAt: row.resolvedAt.toISOString(),
+	}));
 }
 
-async function rankCandidates(params: RunSimilarIncidentFlowParams, candidates: SimilarIncidentCandidate[]): Promise<RankingDecision> {
+export function formatCandidatesForContext(candidates: SimilarIncidentCandidate[]): string {
 	if (!candidates.length) {
-		return {
-			rankedIncidentIds: [],
-			selectedIncidentIds: [],
-			reason: "No candidates available.",
-			contextSnapshot: "No similar-incident candidates were available for this tenant and window.",
-			changedUnderstanding: "",
-		};
+		return "No candidate incidents available.";
+	}
+	return candidates
+		.map((candidate, index) => {
+			const status = candidate.kind === "open" ? candidate.status : candidate.terminalStatus;
+			const recency = candidate.kind === "completed" ? `resolvedAt=${candidate.resolvedAt}` : `createdAt=${candidate.createdAt}`;
+			return `${index + 1}. id=${candidate.id} kind=${candidate.kind} status=${status} severity=${candidate.severity} ${recency} title="${truncate(candidate.title, 100)}" description="${truncate(candidate.description, 250)}"`;
+		})
+		.join("\n");
+}
+
+export type RunDeepDiveParams = {
+	env: Env;
+	incidentId: string;
+	incident: AgentIncidentSnapshot;
+	metadata: Metadata;
+	persistence: SimilarIncidentPersistenceApi;
+	knownEventIds: Set<number>;
+};
+
+export async function runDeepDive(
+	params: RunDeepDiveParams,
+	runId: string,
+	candidateId: string,
+	reason: string,
+	candidates: SimilarIncidentCandidate[],
+): Promise<{ result: string; event: AgentEvent | null }> {
+	const candidate = candidates.find((c) => c.id === candidateId);
+	if (!candidate) {
+		return { result: JSON.stringify({ title: "Unknown", isSimilar: false, similarities: `Candidate ${candidateId} not found in loaded candidates.`, learnings: "" }), event: null };
 	}
 
-	const userPrompt = buildRankingUserPrompt({
+	const detail = await loadCandidateDeepDiveData(params, candidate);
+	if (!detail) {
+		return { result: JSON.stringify({ title: candidate.title, isSimilar: false, similarities: "Could not load candidate details.", learnings: "" }), event: null };
+	}
+
+	const contextSnapshot = reason;
+	const deepDiveUserPrompt = buildDeepDiveUserPrompt({
 		incident: params.incident,
-		candidates: candidates.map((candidate) => ({
-			id: candidate.id,
-			kind: candidate.kind,
-			status: candidate.kind === "open" ? candidate.status : candidate.terminalStatus,
-			severity: candidate.severity,
-			title: candidate.title,
-			description: candidate.description,
-			createdAt: candidate.createdAt,
-			resolvedAt: candidate.kind === "completed" ? candidate.resolvedAt : undefined,
-		})),
-		investigationReason: params.investigationReason,
+		contextSnapshot,
+		candidate: {
+			id: detail.id,
+			kind: detail.kind,
+			title: detail.title,
+			description: detail.description,
+			status: detail.status,
+			severity: detail.severity,
+			createdAt: detail.createdAt,
+			resolvedAt: "resolvedAt" in detail ? detail.resolvedAt : undefined,
+			prompt: detail.prompt,
+			rootCause: "rootCause" in detail ? detail.rootCause : undefined,
+			impact: "impact" in detail ? detail.impact : undefined,
+			eventsSummary: detail.eventsSummary,
+		},
 	});
 
-	const result = await params.stepDo(`agent-similar.rank:${params.turnId}`, async () =>
-		callJsonSchema<RankingDecision>({
-			openaiApiKey: params.env.OPENAI_API_KEY,
-			systemPrompt: RANKING_SYSTEM_PROMPT,
-			userPrompt,
-			schemaName: "similar_incident_ranking",
-			schema: RANKING_SCHEMA,
-		}),
-	);
+	const verdict = await callJsonSchema<DeepDiveDecision>({
+		openaiApiKey: params.env.OPENAI_API_KEY,
+		systemPrompt: DEEP_DIVE_SYSTEM_PROMPT,
+		userPrompt: deepDiveUserPrompt,
+		schemaName: "similar_incident_deep_dive",
+		schema: DEEP_DIVE_SCHEMA,
+	});
 
-	const allowedIds = new Set(candidates.map((candidate) => candidate.id));
-	return {
-		rankedIncidentIds: Array.from(new Set(result.rankedIncidentIds.filter((id) => allowedIds.has(id)))),
-		selectedIncidentIds: Array.from(new Set(result.selectedIncidentIds.filter((id) => allowedIds.has(id)))),
-		reason: truncate(result.reason, 320),
-		contextSnapshot: truncate(result.contextSnapshot, 500),
-		changedUnderstanding: truncate(result.changedUnderstanding, 500),
+	const candidateStatus = candidate.kind === "open" ? candidate.status : candidate.terminalStatus;
+	const toolResult = {
+		title: detail.title,
+		isSimilar: verdict.isSimilar,
+		similarities: truncate(verdict.similarities, 500),
+		...(verdict.isSimilar ? { learnings: truncate(verdict.learnings, 500) } : {}),
 	};
+
+	if (!verdict.isSimilar) {
+		return { result: JSON.stringify(toolResult), event: null };
+	}
+
+	const eventData: SimilarIncidentEvent = {
+		originRunId: runId,
+		similarIncidentId: candidate.id,
+		sourceIncidentIds: [candidate.id],
+		title: detail.title,
+		incidentStatus: candidateStatus,
+		summary: truncate(verdict.similarities, 400),
+		similarities: truncate(verdict.similarities, 500),
+		learnings: truncate(verdict.learnings, 500),
+	};
+	const dedupeKey = `${eventData.originRunId}:${eventData.similarIncidentId}`;
+	const recorded = await params.persistence.recordAgentInsightEvent("SIMILAR_INCIDENT", eventData, dedupeKey);
+	if ("error" in recorded) {
+		return { result: JSON.stringify(toolResult), event: null };
+	}
+	if (recorded.deduped && params.knownEventIds.has(recorded.eventId)) {
+		return { result: JSON.stringify(toolResult), event: null };
+	}
+	params.knownEventIds.add(recorded.eventId);
+	return { result: JSON.stringify(toolResult), event: toAgentEvent(recorded, "SIMILAR_INCIDENT", eventData) };
 }
 
-async function loadCandidateDeepDiveData(params: RunSimilarIncidentFlowParams, candidate: SimilarIncidentCandidate) {
+async function loadCandidateDeepDiveData(params: { env: Env; metadata: Metadata }, candidate: SimilarIncidentCandidate) {
 	if (candidate.kind === "open") {
 		const incidentStub = params.env.INCIDENT.get(params.env.INCIDENT.idFromString(candidate.id));
 		const result = await incidentStub.get();
@@ -508,156 +489,4 @@ async function loadCandidateDeepDiveData(params: RunSimilarIncidentFlowParams, c
 			})),
 		),
 	};
-}
-
-async function runDeepDive(params: RunSimilarIncidentFlowParams, runId: string, candidate: SimilarIncidentCandidate, contextSnapshot: string, knownEventIds: Set<number>) {
-	return params.stepDo(`agent-similar.deep-dive:${params.turnId}:${candidate.id}`, async () => {
-		const detail = await loadCandidateDeepDiveData(params, candidate);
-		if (!detail) {
-			return null;
-		}
-
-		const deepDiveUserPrompt = buildDeepDiveUserPrompt({
-			incident: params.incident,
-			contextSnapshot,
-			candidate: {
-				id: detail.id,
-				kind: detail.kind,
-				title: detail.title,
-				description: detail.description,
-				status: detail.status,
-				severity: detail.severity,
-				createdAt: detail.createdAt,
-				resolvedAt: "resolvedAt" in detail ? detail.resolvedAt : undefined,
-				prompt: detail.prompt,
-				rootCause: "rootCause" in detail ? detail.rootCause : undefined,
-				impact: "impact" in detail ? detail.impact : undefined,
-				eventsSummary: detail.eventsSummary,
-			},
-		});
-
-		const verdict = await callJsonSchema<DeepDiveDecision>({
-			openaiApiKey: params.env.OPENAI_API_KEY,
-			systemPrompt: DEEP_DIVE_SYSTEM_PROMPT,
-			userPrompt: deepDiveUserPrompt,
-			schemaName: "similar_incident_deep_dive",
-			schema: DEEP_DIVE_SCHEMA,
-		});
-
-		if (!verdict.isSimilar) {
-			return null;
-		}
-
-		const eventData: SimilarIncidentEvent = {
-			originRunId: runId,
-			similarIncidentId: candidate.id,
-			sourceIncidentIds: [candidate.id],
-			summary: truncate(verdict.summary, 400),
-			evidence: truncate(verdict.evidence, 500),
-			comparisonContext: truncate(verdict.comparisonContext, 320),
-		};
-		const dedupeKey = `${eventData.originRunId}:${eventData.similarIncidentId}`;
-		const recorded = await params.persistence.recordAgentInsightEvent("SIMILAR_INCIDENT", eventData, dedupeKey);
-		if ("error" in recorded) {
-			return null;
-		}
-		if (recorded.deduped && knownEventIds.has(recorded.eventId)) {
-			return null;
-		}
-		knownEventIds.add(recorded.eventId);
-		return toAgentEvent(recorded, "SIMILAR_INCIDENT", eventData);
-	});
-}
-
-export async function runSimilarIncidentFlow(params: RunSimilarIncidentFlowParams): Promise<{ appendedEvents: AgentEvent[] }> {
-	const runId = `${params.incidentId}:${params.turnId}:similar-search`;
-	const searchedAt = new Date().toISOString();
-
-	let openCandidates: OpenIncidentCandidate[] = [];
-	let completedCandidates: CompletedIncidentCandidate[] = [];
-	try {
-		[openCandidates, completedCandidates] = await Promise.all([loadOpenCandidates(params), loadCompletedCandidates(params)]);
-	} catch (error) {
-		console.error("Failed to load similar incident candidates", error);
-		const failedEvent: SimilarIncidentsDiscoveredEvent = {
-			runId,
-			searchedAt,
-			contextSnapshot: "Candidate retrieval failed.",
-			gateDecision: "error",
-			gateReason: "Candidate retrieval failed",
-			openCandidateCount: 0,
-			closedCandidateCount: 0,
-			rankedIncidentIds: [],
-			selectedIncidentIds: [],
-		};
-		const failed = await params.persistence.recordAgentContextEvent("SIMILAR_INCIDENTS_DISCOVERED", failedEvent, runId);
-		if ("error" in failed) {
-			return { appendedEvents: [] };
-		}
-		return {
-			appendedEvents: [toAgentEvent(failed, "SIMILAR_INCIDENTS_DISCOVERED", failedEvent)],
-		};
-	}
-
-	const candidates: SimilarIncidentCandidate[] = [
-		...openCandidates.map((candidate) => ({ ...candidate, kind: "open" as const })),
-		...completedCandidates.map((candidate) => ({ ...candidate, kind: "completed" as const })),
-	];
-
-	let ranking: RankingDecision = {
-		rankedIncidentIds: [],
-		selectedIncidentIds: [],
-		reason: "No ranking performed",
-		contextSnapshot: params.investigationReason ?? "Similar incident search requested by suggestion tool.",
-		changedUnderstanding: "",
-	};
-	try {
-		ranking = await rankCandidates(params, candidates);
-	} catch (error) {
-		console.error("Similar incident ranking failed", error);
-	}
-
-	const discoveryEventData: SimilarIncidentsDiscoveredEvent = {
-		runId,
-		searchedAt,
-		contextSnapshot: ranking.contextSnapshot,
-		gateDecision: "run",
-		gateReason: `${params.investigationReason ? `${params.investigationReason} | ` : ""}${ranking.reason}`,
-		changedUnderstanding: ranking.changedUnderstanding,
-		openCandidateCount: openCandidates.length,
-		closedCandidateCount: completedCandidates.length,
-		rankedIncidentIds: ranking.rankedIncidentIds,
-		selectedIncidentIds: ranking.selectedIncidentIds,
-	};
-
-	const discovery = await params.persistence.recordAgentContextEvent("SIMILAR_INCIDENTS_DISCOVERED", discoveryEventData, runId);
-	const appendedEvents: AgentEvent[] = [];
-	if (!("error" in discovery)) {
-		appendedEvents.push(toAgentEvent(discovery, "SIMILAR_INCIDENTS_DISCOVERED", discoveryEventData));
-	}
-
-	if (!ranking.selectedIncidentIds.length) {
-		return { appendedEvents };
-	}
-
-	const selectedMap = new Map(candidates.map((candidate) => [candidate.id, candidate]));
-	const knownEventIds = new Set(params.events.map((event) => event.id));
-	for (const event of appendedEvents) {
-		knownEventIds.add(event.id);
-	}
-	const deepDiveTasks = ranking.selectedIncidentIds
-		.map((id) => selectedMap.get(id))
-		.filter((candidate): candidate is SimilarIncidentCandidate => !!candidate)
-		.map((candidate) => runDeepDive(params, runId, candidate, ranking.contextSnapshot, knownEventIds));
-	const deepDiveResults = await Promise.allSettled(deepDiveTasks);
-	for (const result of deepDiveResults) {
-		if (result.status === "fulfilled" && result.value) {
-			appendedEvents.push(result.value);
-		}
-		if (result.status === "rejected") {
-			console.error("Similar incident deep dive failed", result.reason);
-		}
-	}
-
-	return { appendedEvents };
 }

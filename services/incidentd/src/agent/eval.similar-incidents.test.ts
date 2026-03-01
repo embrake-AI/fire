@@ -3,7 +3,6 @@
  *
  * Usage:
  *   OPENAI_API_KEY=... bun services/incidentd/src/agent/eval.similar-incidents.test.ts
- *   OPENAI_API_KEY=... bun services/incidentd/src/agent/eval.similar-incidents.test.ts --section=ranking --runs=3
  *   OPENAI_API_KEY=... bun services/incidentd/src/agent/eval.similar-incidents.test.ts --section=provider-decision --runs=3
  *   OPENAI_API_KEY=... bun services/incidentd/src/agent/eval.similar-incidents.test.ts --section=summarization --runs=3
  *   OPENAI_API_KEY=... bun services/incidentd/src/agent/eval.similar-incidents.test.ts --out=/tmp/sim-eval.json
@@ -13,41 +12,27 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import OpenAI from "openai";
 import { formatAgentEventForPrompt, isInternalAgentEvent } from "./event-format";
-import type { DeepDiveDecision, RankingDecision, SimilarProviderDecision } from "./similar-incidents";
+import type { DeepDiveDecision, SimilarProviderDecision } from "./similar-incidents";
 import {
 	buildDeepDiveUserPrompt,
-	buildRankingUserPrompt,
 	DEEP_DIVE_SCHEMA,
 	DEEP_DIVE_SYSTEM_PROMPT,
 	decideSimilarProviderAction,
-	RANKING_SCHEMA,
-	RANKING_SYSTEM_PROMPT,
 	SIMILAR_PROVIDER_SUMMARIZATION_PROMPT,
 	SIMILAR_PROVIDER_SYSTEM_PROMPT,
 } from "./similar-incidents";
 import { normalizeEventData } from "./suggestions";
 import type { AgentEvent } from "./types";
 
-type EvalSection = "all" | "provider-decision" | "ranking" | "deep-dive" | "summarization";
+type EvalSection = "all" | "provider-decision" | "deep-dive" | "summarization";
 
 type ProviderDecisionScenario = {
 	id: string;
 	name: string;
 	expectedCallsTool: boolean;
+	/** When expectedCallsTool=true, candidate IDs the model is allowed to investigate */
+	expectedIncidentIds?: string[];
 	input: OpenAI.Responses.ResponseInputItem[];
-};
-
-type RankingScenario = {
-	id: string;
-	name: string;
-	expectedSelected: string[];
-	exactSelected?: boolean;
-	disallowSelected?: string[];
-	input: {
-		incident: { id: string; title: string; description: string; status: string; severity: string };
-		candidates: Array<{ id: string; kind: "open" | "completed"; status: string; severity: string; title: string; description: string; createdAt: string; resolvedAt?: string }>;
-		investigationReason?: string;
-	};
 };
 
 type DeepDiveScenario = {
@@ -95,7 +80,7 @@ type ScenarioRunResult = {
 	runIndex: number;
 	ok: boolean;
 	note: string;
-	raw: SimilarProviderDecision | RankingDecision | DeepDiveDecision | SummarizationResult;
+	raw: SimilarProviderDecision | DeepDiveDecision | SummarizationResult;
 };
 
 type EvalSummary = {
@@ -138,53 +123,47 @@ async function callJsonSchema<T>(params: { apiKey: string; model: string; system
 	return JSON.parse(content) as T;
 }
 
-function areSameSet(left: string[], right: string[]): boolean {
-	if (left.length !== right.length) {
-		return false;
-	}
-	const leftSorted = [...left].sort();
-	const rightSorted = [...right].sort();
-	for (let i = 0; i < leftSorted.length; i += 1) {
-		if (leftSorted[i] !== rightSorted[i]) {
-			return false;
-		}
-	}
-	return true;
-}
-
 // --- provider-decision section ---
-// Mirrors production: summarized context steps (from base.ts summarizeNewContext) + tool call history
+// Mirrors production: system prompt → candidates user step → context summary → tool call history
 
 function buildProviderDecisionInput(params: {
+	candidatesText: string;
 	contextSummary: string;
-	priorToolCall?: {
+	priorToolCalls?: Array<{
 		callId: string;
 		arguments: string;
 		output: string;
-		resultEvents: AgentEvent[];
-	};
+		/** Assistant step appended after tool result when isSimilar=true (production: formatAgentEventForPrompt) */
+		assistantFollowUp?: string;
+	}>;
 	laterContextSummary?: string;
 }): OpenAI.Responses.ResponseInputItem[] {
 	const items: OpenAI.Responses.ResponseInputItem[] = [{ role: "system", content: SIMILAR_PROVIDER_SYSTEM_PROMPT }];
 
-	// Single summarized context step (matches production: summarizeNewContext → one user step)
+	// Candidates loaded into context (matches production: ensureCandidatesLoaded)
+	items.push({ role: "user", content: params.candidatesText });
+
+	// Summarized context step (matches production: summarizeNewContext → one user step)
 	items.push({ role: "user", content: params.contextSummary });
 
-	// Prior tool call + output + result events (exactly as runSingleIteration + listModelInputItems)
-	if (params.priorToolCall) {
-		items.push({
-			type: "function_call",
-			call_id: params.priorToolCall.callId,
-			name: "run_similar_investigation",
-			arguments: params.priorToolCall.arguments,
-		} as OpenAI.Responses.ResponseInputItem);
-		items.push({
-			type: "function_call_output",
-			call_id: params.priorToolCall.callId,
-			output: params.priorToolCall.output,
-		});
-		for (const event of params.priorToolCall.resultEvents) {
-			items.push({ role: "assistant", content: formatAgentEventForPrompt(event) });
+	// Prior tool calls + outputs + optional assistant follow-up (matches runSingleIteration + listModelInputItems)
+	if (params.priorToolCalls) {
+		for (const toolCall of params.priorToolCalls) {
+			items.push({
+				type: "function_call",
+				call_id: toolCall.callId,
+				name: "investigate_incident",
+				arguments: toolCall.arguments,
+			} as OpenAI.Responses.ResponseInputItem);
+			items.push({
+				type: "function_call_output",
+				call_id: toolCall.callId,
+				output: toolCall.output,
+			});
+			// Production appends an assistant step with formatAgentEventForPrompt when isSimilar=true
+			if (toolCall.assistantFollowUp) {
+				items.push({ role: "assistant", content: toolCall.assistantFollowUp });
+			}
 		}
 	}
 
@@ -203,52 +182,18 @@ async function runProviderDecisionScenario(
 ): Promise<{ ok: boolean; note: string; result: SimilarProviderDecision }> {
 	const result = await decideSimilarProviderAction({ openaiApiKey: apiKey, input: scenario.input, model });
 	const calledTool = result.toolCalls.length > 0;
-	const ok = calledTool === scenario.expectedCallsTool;
-	const note = `calledTool=${calledTool} expected=${scenario.expectedCallsTool}`;
-	return { ok, note, result };
-}
-
-// --- ranking section ---
-
-async function runRankingScenario(scenario: RankingScenario, apiKey: string, model: string): Promise<{ ok: boolean; note: string; result: RankingDecision }> {
-	const userPrompt = buildRankingUserPrompt(scenario.input);
-
-	const result = await callJsonSchema<RankingDecision>({
-		apiKey,
-		model,
-		systemPrompt: RANKING_SYSTEM_PROMPT,
-		userPrompt,
-		schemaName: "similar_incident_ranking",
-		schema: RANKING_SCHEMA,
-	});
-
-	const candidateIds = new Set(scenario.input.candidates.map((candidate) => candidate.id));
-	const outOfScope = result.selectedIncidentIds.filter((id) => !candidateIds.has(id));
-	if (outOfScope.length) {
-		return {
-			ok: false,
-			note: `selected out-of-scope ids: ${outOfScope.join(",")}`,
-			result,
-		};
+	if (calledTool !== scenario.expectedCallsTool) {
+		return { ok: false, note: `calledTool=${calledTool} expected=${scenario.expectedCallsTool}`, result };
 	}
-
-	if (scenario.exactSelected) {
-		const ok = areSameSet(result.selectedIncidentIds, scenario.expectedSelected);
-		return {
-			ok,
-			note: `selected=${result.selectedIncidentIds.join(",") || "none"} expected_exact=${scenario.expectedSelected.join(",") || "none"}`,
-			result,
-		};
+	if (calledTool && scenario.expectedIncidentIds) {
+		const calledIds = result.toolCalls.map((tc) => tc.incidentId).sort();
+		const badIds = calledIds.filter((id) => !scenario.expectedIncidentIds!.includes(id));
+		if (badIds.length) {
+			return { ok: false, note: `calledTool=true but unknown ids=[${badIds.join(",")}] expected_pool=[${scenario.expectedIncidentIds.join(",")}]`, result };
+		}
 	}
-
-	const missing = scenario.expectedSelected.filter((id) => !result.selectedIncidentIds.includes(id));
-	const forbidden = (scenario.disallowSelected ?? []).filter((id) => result.selectedIncidentIds.includes(id));
-	const ok = missing.length === 0 && forbidden.length === 0;
-	return {
-		ok,
-		note: `selected=${result.selectedIncidentIds.join(",") || "none"}${missing.length ? ` missing=${missing.join(",")}` : ""}${forbidden.length ? ` forbidden=${forbidden.join(",")}` : ""}`,
-		result,
-	};
+	const ids = calledTool ? result.toolCalls.map((tc) => tc.incidentId).join(",") : "none";
+	return { ok: true, note: `calledTool=${calledTool} ids=[${ids}]`, result };
 }
 
 // --- deep-dive section ---
@@ -280,21 +225,22 @@ function msgEvt(id: number, message: string, created_at: string): AgentEvent {
 	return evt(id, "MESSAGE_ADDED", { message, userId: "U-oncall", messageId: `m-${id}` }, created_at);
 }
 
+// Shared candidate sets used across provider-decision scenarios
+const DB_TIMEOUT_CANDIDATES = `Candidate incidents (2 open, 3 completed):
+1. id=inc-prev-101 kind=completed status=resolved severity=high resolvedAt=2026-01-05T13:00:00.000Z title="API outage after pool config change" description="DB pool timeout errors after deploy; rollback plus pool reset mitigated quickly"
+2. id=inc-prev-102 kind=completed status=resolved severity=low resolvedAt=2026-01-20T15:30:00.000Z title="Docs latency due cache miss" description="CDN cache-key issue on docs pages only"
+3. id=inc-prev-103 kind=open status=mitigating severity=medium createdAt=2026-02-20T10:00:00.000Z title="Webhook retries delayed" description="Background webhook worker lag from queue shard imbalance"
+4. id=inc-prev-104 kind=completed status=resolved severity=medium resolvedAt=2026-02-01T11:30:00.000Z title="Admin dashboard color regression" description="Internal admin page style issue after CSS bundle update"
+5. id=inc-prev-105 kind=open status=open severity=low createdAt=2026-02-25T14:00:00.000Z title="Internal dashboard CSS issue" description="Admin panel layout regression after design token refactor"`;
+
 const PROVIDER_DECISION_SCENARIOS: ProviderDecisionScenario[] = [
 	{
-		id: "provider-vague-context",
-		name: "Vague/early context should NOT call tool",
-		expectedCallsTool: false,
-		input: buildProviderDecisionInput({
-			contextSummary:
-				"Incident opened: Possible auth instability (medium severity). A few users report intermittent login failures with no clear pattern. Team still gathering facts — no correlated deploy or identifiable error class yet.",
-		}),
-	},
-	{
 		id: "provider-clear-context-first-run",
-		name: "Clear operational context, first run, should call tool",
+		name: "Clear operational context, first run, should call tool with relevant candidate",
 		expectedCallsTool: true,
+		expectedIncidentIds: ["inc-prev-101", "inc-prev-102", "inc-prev-103", "inc-prev-104", "inc-prev-105"],
 		input: buildProviderDecisionInput({
+			candidatesText: DB_TIMEOUT_CANDIDATES,
 			contextSummary:
 				"High-severity incident: API 5xx spike after deploy 1743. Error class is DB connection timeout across US and EU regions. Support confirms broad customer impact with failed checkout API calls.",
 		}),
@@ -304,214 +250,49 @@ const PROVIDER_DECISION_SCENARIOS: ProviderDecisionScenario[] = [
 		name: "No material change since last run should NOT call tool",
 		expectedCallsTool: false,
 		input: buildProviderDecisionInput({
+			candidatesText: DB_TIMEOUT_CANDIDATES,
 			contextSummary:
 				"High-severity incident: API 5xx spike after deploy 1743. Error class is DB connection timeout across US and EU regions. Support confirms broad customer impact with failed checkout API calls.",
-			priorToolCall: {
-				callId: "call_sim_1",
-				arguments: JSON.stringify({
-					reason: "Concrete context: deploy-induced DB timeout across regions",
-					evidence: "Deploy 1743 correlated with DB connection timeout errors impacting checkout",
-				}),
-				output: "Similar investigation processed for toEventId=4 with 0 emitted event(s).",
-				resultEvents: [
-					evt(
-						100,
-						"SIMILAR_INCIDENTS_DISCOVERED",
-						{
-							runId: "sim-run-1",
-							searchedAt: "2026-02-27T10:10:00.000Z",
-							contextSnapshot: "Deployment-induced DB timeout; rollback in progress.",
-							gateDecision: "run",
-							gateReason: "Deploy-induced DB timeout across US+EU regions",
-							openCandidateCount: 5,
-							closedCandidateCount: 10,
-							rankedIncidentIds: [],
-							selectedIncidentIds: [],
-						},
-						"2026-02-27T10:10:00.000Z",
-					),
-				],
-			},
+			priorToolCalls: [
+				{
+					callId: "call_sim_1",
+					arguments: JSON.stringify({ incidentId: "inc-prev-101", reason: "DB pool timeout errors after deploy — same error class as current incident" }),
+					output: JSON.stringify({
+						title: "API outage after pool config change",
+						isSimilar: true,
+						similarities: "Both incidents show DB connection timeout after deploy with broad customer impact.",
+						learnings: "Rollback + pool reset mitigated in 3 minutes.",
+					}),
+					assistantFollowUp:
+						'AGENT_SIMILAR_INCIDENT id=inc-prev-101 title="API outage after pool config change" similarities="Both incidents show DB connection timeout after deploy with broad customer impact." learnings="Rollback + pool reset mitigated in 3 minutes."',
+				},
+			],
 			laterContextSummary:
 				"Status moved to mitigating — rollback in progress. No new scope or root-cause updates. Monitoring only, waiting for confirmation from one customer segment.",
 		}),
 	},
 	{
 		id: "provider-material-change",
-		name: "Material understanding shift should call tool",
+		name: "Material understanding shift should call tool with new or same candidates",
 		expectedCallsTool: true,
+		expectedIncidentIds: ["inc-prev-101", "inc-prev-102", "inc-prev-103", "inc-prev-104", "inc-prev-105"],
 		input: buildProviderDecisionInput({
+			candidatesText: DB_TIMEOUT_CANDIDATES,
 			contextSummary: "High-severity incident: API 5xx spike after deploy 1743. Error class is DB connection timeout across US and EU regions.",
-			priorToolCall: {
-				callId: "call_sim_2",
-				arguments: JSON.stringify({ reason: "Concrete context: deploy-induced DB timeout", evidence: "Deploy correlated with DB connection timeout errors" }),
-				output: "Similar investigation processed for toEventId=3 with 0 emitted event(s).",
-				resultEvents: [
-					evt(
-						100,
-						"SIMILAR_INCIDENTS_DISCOVERED",
-						{
-							runId: "sim-run-2",
-							searchedAt: "2026-02-27T10:10:00.000Z",
-							contextSnapshot: "Deployment-induced DB timeout suspected.",
-							gateDecision: "run",
-							gateReason: "Deploy-induced DB timeout",
-							openCandidateCount: 5,
-							closedCandidateCount: 10,
-							rankedIncidentIds: [],
-							selectedIncidentIds: [],
-						},
-						"2026-02-27T10:10:00.000Z",
-					),
-				],
-			},
+			priorToolCalls: [
+				{
+					callId: "call_sim_2",
+					arguments: JSON.stringify({ incidentId: "inc-prev-101", reason: "DB pool timeout errors after deploy" }),
+					output: JSON.stringify({
+						title: "API outage after pool config change",
+						isSimilar: false,
+						similarities: "Both involve DB timeouts after deploy, but current incident is still being diagnosed.",
+					}),
+				},
+			],
 			laterContextSummary:
 				"Root cause shifted: connection pool exhaustion caused by config drift in sidecar, not the deploy itself. Mitigation changed from rollback to emergency pool size override.",
 		}),
-	},
-];
-
-const RANKING_SCENARIOS: RankingScenario[] = [
-	{
-		id: "ranking-no-match",
-		name: "No meaningful prior incident should produce empty selection",
-		expectedSelected: [],
-		exactSelected: true,
-		input: {
-			incident: {
-				id: "inc-rank-0",
-				title: "Mobile uploads failing with HTTP 413",
-				description: "APAC mobile users receive 413 after WAF rule update for multipart requests",
-				status: "open",
-				severity: "medium",
-			},
-			candidates: [
-				{
-					id: "inc-prev-001",
-					kind: "completed",
-					status: "resolved",
-					severity: "medium",
-					title: "Invoice generation delayed",
-					description: "Stripe webhook backlog delayed PDF invoice generation by 20 minutes",
-					createdAt: "2026-01-10T09:00:00.000Z",
-					resolvedAt: "2026-01-10T10:00:00.000Z",
-				},
-				{
-					id: "inc-prev-002",
-					kind: "open",
-					status: "mitigating",
-					severity: "low",
-					title: "Internal dashboard CSS issue",
-					description: "Admin panel layout regression after design token refactor",
-					createdAt: "2026-02-25T14:00:00.000Z",
-				},
-				{
-					id: "inc-prev-003",
-					kind: "completed",
-					status: "resolved",
-					severity: "medium",
-					title: "Email bounces increased",
-					description: "SES suppression list misconfiguration causing transactional email retries",
-					createdAt: "2026-01-15T08:00:00.000Z",
-					resolvedAt: "2026-01-15T09:30:00.000Z",
-				},
-			],
-			investigationReason: "Model requested similar incident lookup",
-		},
-	},
-	{
-		id: "ranking-one-match",
-		name: "One clear operationally similar incident should be selected",
-		expectedSelected: ["inc-prev-101"],
-		disallowSelected: ["inc-prev-102", "inc-prev-103"],
-		input: {
-			incident: {
-				id: "inc-rank-1",
-				title: "API 5xx spike after deploy",
-				description: "DB timeout errors after rollout across major customers",
-				status: "open",
-				severity: "high",
-			},
-			candidates: [
-				{
-					id: "inc-prev-101",
-					kind: "completed",
-					status: "resolved",
-					severity: "high",
-					title: "API outage after pool config change",
-					description: "DB pool timeout errors after deploy; rollback plus pool reset mitigated quickly",
-					createdAt: "2026-01-05T12:00:00.000Z",
-					resolvedAt: "2026-01-05T13:00:00.000Z",
-				},
-				{
-					id: "inc-prev-102",
-					kind: "completed",
-					status: "resolved",
-					severity: "low",
-					title: "Docs latency due cache miss",
-					description: "CDN cache-key issue on docs pages only",
-					createdAt: "2026-01-20T15:00:00.000Z",
-					resolvedAt: "2026-01-20T15:30:00.000Z",
-				},
-				{
-					id: "inc-prev-103",
-					kind: "open",
-					status: "mitigating",
-					severity: "medium",
-					title: "Webhook retries delayed",
-					description: "Background webhook worker lag from queue shard imbalance",
-					createdAt: "2026-02-20T10:00:00.000Z",
-				},
-			],
-			investigationReason: "Likely deploy-induced DB pool regression",
-		},
-	},
-	{
-		id: "ranking-multiple-matches",
-		name: "Multiple strong matches should all be selected",
-		expectedSelected: ["inc-prev-201", "inc-prev-202"],
-		disallowSelected: ["inc-prev-203"],
-		input: {
-			incident: {
-				id: "inc-rank-2",
-				title: "Event pipeline lag after schema registry instability",
-				description: "Kafka consumers timing out, lag growing, delayed order-state events",
-				status: "mitigating",
-				severity: "high",
-			},
-			candidates: [
-				{
-					id: "inc-prev-201",
-					kind: "completed",
-					status: "resolved",
-					severity: "high",
-					title: "Kafka lag after schema registry timeout",
-					description: "Registry saturation caused consumer decode failures and lag explosion",
-					createdAt: "2025-12-10T09:00:00.000Z",
-					resolvedAt: "2025-12-10T10:30:00.000Z",
-				},
-				{
-					id: "inc-prev-202",
-					kind: "completed",
-					status: "resolved",
-					severity: "high",
-					title: "Consumer rebalance storm from auth token expiry",
-					description: "Frequent rebalances caused timeout and delayed downstream order updates",
-					createdAt: "2026-01-22T08:00:00.000Z",
-					resolvedAt: "2026-01-22T09:15:00.000Z",
-				},
-				{
-					id: "inc-prev-203",
-					kind: "open",
-					status: "open",
-					severity: "low",
-					title: "Marketing site typo",
-					description: "Content typo on hero banner in French locale",
-					createdAt: "2026-02-26T11:00:00.000Z",
-				},
-			],
-			investigationReason: "Schema registry latency triggered rebalance storm and consumer lag",
-		},
 	},
 ];
 
@@ -776,10 +557,10 @@ function parseSection(value: string | undefined): EvalSection {
 	if (!value) {
 		return "all";
 	}
-	if (value === "all" || value === "provider-decision" || value === "ranking" || value === "deep-dive" || value === "summarization") {
+	if (value === "all" || value === "provider-decision" || value === "deep-dive" || value === "summarization") {
 		return value;
 	}
-	throw new Error(`Invalid --section value "${value}". Use all|provider-decision|ranking|deep-dive|summarization.`);
+	throw new Error(`Invalid --section value "${value}". Use all|provider-decision|deep-dive|summarization.`);
 }
 
 async function main() {
@@ -816,25 +597,6 @@ async function main() {
 					raw: result,
 				});
 				console.log(`[provider-decision] ${scenario.id} run=${runIndex} -> ${ok ? "PASS" : "FAIL"} (${note})`);
-			}
-		}
-	}
-
-	const runRanking = section === "all" || section === "ranking";
-	if (runRanking) {
-		for (const scenario of RANKING_SCENARIOS) {
-			for (let runIndex = 1; runIndex <= runs; runIndex += 1) {
-				const { ok, note, result } = await runRankingScenario(scenario, apiKey, model);
-				scenarioRuns.push({
-					section: "ranking",
-					scenarioId: scenario.id,
-					scenarioName: scenario.name,
-					runIndex,
-					ok,
-					note,
-					raw: result,
-				});
-				console.log(`[ranking] ${scenario.id} run=${runIndex} -> ${ok ? "PASS" : "FAIL"} (${note})`);
 			}
 		}
 	}
@@ -879,7 +641,6 @@ async function main() {
 
 	const bySection = {
 		"provider-decision": { scenarioRuns: 0, passes: 0, fails: 0, passRate: 0 },
-		ranking: { scenarioRuns: 0, passes: 0, fails: 0, passRate: 0 },
 		"deep-dive": { scenarioRuns: 0, passes: 0, fails: 0, passRate: 0 },
 		summarization: { scenarioRuns: 0, passes: 0, fails: 0, passRate: 0 },
 	};
@@ -922,7 +683,6 @@ async function main() {
 	console.log(`- fail: ${totals.fails}`);
 	console.log(`- pass rate: ${(totals.passRate * 100).toFixed(1)}%`);
 	console.log(`- provider-decision pass rate: ${(bySection["provider-decision"].passRate * 100).toFixed(1)}%`);
-	console.log(`- ranking pass rate: ${(bySection.ranking.passRate * 100).toFixed(1)}%`);
 	console.log(`- deep-dive pass rate: ${(bySection["deep-dive"].passRate * 100).toFixed(1)}%`);
 	console.log(`- summarization pass rate: ${(bySection.summarization.passRate * 100).toFixed(1)}%`);
 

@@ -46,18 +46,15 @@ function formatSimilarDiscoveryEvent(event: AgentEvent) {
 function formatSimilarIncidentEvent(event: AgentEvent) {
 	const data = event.event_data as {
 		similarIncidentId?: string;
-		sourceIncidentIds?: string[];
-		summary?: string;
-		evidence?: string;
-		comparisonContext?: string;
+		title?: string;
+		similarities?: string;
+		learnings?: string;
 	};
-	const similarIncidentId = data.similarIncidentId ?? "unknown";
-	const sources = Array.isArray(data.sourceIncidentIds) ? data.sourceIncidentIds : [];
-	const sourceText = sources.length ? sources.join(", ") : "none";
-	const summary = data.summary ? truncate(data.summary, 180) : "";
-	const evidence = data.evidence ? truncate(data.evidence, 180) : "";
-	const comparisonContext = data.comparisonContext ? truncate(data.comparisonContext, 140) : "";
-	return `AGENT_SIMILAR_INCIDENT target=${similarIncidentId} sources=[${sourceText}] summary="${summary}" evidence="${evidence}" context="${comparisonContext}"`;
+	const id = data.similarIncidentId ?? "unknown";
+	const title = data.title ? truncate(data.title, 120) : "";
+	const similarities = data.similarities ? truncate(data.similarities, 180) : "";
+	const learnings = data.learnings ? truncate(data.learnings, 180) : "";
+	return `AGENT_SIMILAR_INCIDENT id=${id} title="${title}" similarities="${similarities}" learnings="${learnings}"`;
 }
 
 export function isSuggestionEvent(event: AgentEvent) {

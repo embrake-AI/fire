@@ -664,7 +664,7 @@ export async function affectionUpdated(params: SenderParams["affectionUpdated"])
 }
 
 export async function similarIncident(params: SenderParams["similarIncident"]) {
-	const { step: stepDo, metadata, event } = params;
+	const { step: stepDo, env, metadata, event } = params;
 	const { botToken, channel, thread, incidentChannelId } = metadata;
 	if (!botToken) {
 		return;
@@ -676,14 +676,10 @@ export async function similarIncident(params: SenderParams["similarIncident"]) {
 		return;
 	}
 
-	const sourceList = event.sourceIncidentIds.length ? event.sourceIncidentIds.join(", ") : event.similarIncidentId;
-	const text = [
-		":mag: *Similar incident found*",
-		`Candidate: \`${event.similarIncidentId}\` (sources: ${sourceList})`,
-		`Summary: ${event.summary}`,
-		`Evidence: ${event.evidence}`,
-		`Context: ${event.comparisonContext}`,
-	].join("\n");
+	const isOpen = event.incidentStatus === "open" || event.incidentStatus === "mitigating";
+	const link = isOpen ? `${env.FRONTEND_URL}/incidents/${event.similarIncidentId}` : `${env.FRONTEND_URL}/metrics/${event.similarIncidentId}`;
+
+	const text = [`:mag: *Similar incident found*`, `*Incident:* <${link}|${event.title}>`, `*Similarities:* ${event.similarities}`, `*Learnings:* ${event.learnings}`].join("\n");
 
 	await stepDo(
 		"slack.post-similar-incident",

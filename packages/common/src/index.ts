@@ -88,9 +88,11 @@ export type IS_Event =
 				originRunId: string;
 				similarIncidentId: string;
 				sourceIncidentIds: string[];
+				title: string;
+				incidentStatus: string;
 				summary: string;
-				evidence: string;
-				comparisonContext: string;
+				similarities: string;
+				learnings: string;
 			};
 	  }
 	| {
