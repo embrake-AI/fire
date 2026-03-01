@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { formatAgentEventForPrompt, isInternalAgentEvent } from "../event-format";
 import { normalizeEventData } from "../suggestions";
 import type { AgentEvent } from "../types";
-import type { AddContextInput, AddContextResult, PromptInput, PromptResult } from "./types";
+import type { AddContextInput, AddContextResult, AgentExport, ExportedAgentContext, ExportedAgentStep, PromptInput, PromptResult } from "./types";
 
 const LAST_PROCESSED_EVENT_ID_KEY = "lastProcessedEventId";
 const MAX_QUEUED_TO_EVENT_ID_KEY = "maxQueuedToEventId";
@@ -16,14 +16,14 @@ type RunStatus = typeof RUN_STATUS_IDLE | typeof RUN_STATUS_RUNNING;
 
 export abstract class AgentBase extends DurableObject<Env> {
 	protected incidentId?: string;
-	private systemPrompt: string;
-	private summarizationPrompt: string;
 
-	constructor(ctx: DurableObjectState, env: Env, options: { systemPrompt: string; summarizationPrompt: string }) {
+	protected abstract readonly providerMeta: { name: string; description: string };
+	protected abstract readonly systemPrompt: string;
+	protected abstract readonly summarizationPrompt: string;
+
+	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		this.incidentId = this.ctx.storage.kv.get(INCIDENT_ID_KEY);
-		this.systemPrompt = options.systemPrompt;
-		this.summarizationPrompt = options.summarizationPrompt;
 	}
 
 	async addContext(input: AddContextInput & { incidentId: string }) {
@@ -256,6 +256,45 @@ export abstract class AgentBase extends DurableObject<Env> {
 	protected latestAssistantStep() {
 		const [row] = this.ctx.storage.sql.exec<{ content: string }>("SELECT content FROM steps WHERE role = 'assistant' ORDER BY id DESC LIMIT 1").toArray();
 		return row?.content ?? "";
+	}
+
+	exportData(): AgentExport {
+		const steps = this.ctx.storage.sql
+			.exec<ExportedAgentStep>("SELECT id, role, content, name, tool_call_id, source, context_to_event_id, run_id, created_at FROM steps ORDER BY id ASC")
+			.toArray()
+			.map((r) => ({
+				id: r.id,
+				role: r.role,
+				content: r.content,
+				name: r.name,
+				tool_call_id: r.tool_call_id,
+				source: r.source,
+				context_to_event_id: r.context_to_event_id,
+				run_id: r.run_id,
+				created_at: r.created_at,
+			}));
+		const contexts = this.ctx.storage.sql
+			.exec<ExportedAgentContext>("SELECT id, to_event_id, trigger, requested_at, appended_step_start_id, appended_step_end_id, created_at FROM contexts ORDER BY id ASC")
+			.toArray()
+			.map((r) => ({
+				id: r.id,
+				to_event_id: r.to_event_id,
+				trigger: r.trigger,
+				requested_at: r.requested_at,
+				appended_step_start_id: r.appended_step_start_id,
+				appended_step_end_id: r.appended_step_end_id,
+				created_at: r.created_at,
+			}));
+		return {
+			provider: this.providerMeta,
+			incidentId: this.incidentId ?? "",
+			steps,
+			contexts,
+		};
+	}
+
+	async cleanup(): Promise<void> {
+		await Promise.all([this.ctx.storage.deleteAlarm(), this.ctx.storage.deleteAll()]);
 	}
 
 	private async migrateBaseSchema(incidentId: string) {

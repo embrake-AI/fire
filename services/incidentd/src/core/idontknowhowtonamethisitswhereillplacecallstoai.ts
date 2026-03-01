@@ -1,5 +1,6 @@
 import type { EntryPoint, IS, IS_Event } from "@fire/common";
 import OpenAI from "openai";
+import type { AgentExport } from "../agent/providers/types";
 import { ASSERT } from "../lib/utils";
 
 type IncidentInfo = {
@@ -104,6 +105,8 @@ Select the most appropriate entry point and provide the incident details.`;
 
 const POSTMORTEM_SYSTEM_PROMPT = `You are an incident post-mortem analyst. Given incident details and a timeline of events, produce a structured post-mortem.
 
+Agent investigation data from automated similar-incident analysis may be provided. When available, use it to inform root cause analysis and action items.
+
 Requirements:
 - timeline: pick only the MOST IMPORTANT events (chronological). Each item needs "created_at" (ISO 8601) and "text" (short sentence). Keep this short and strictly include at most one event per event type (e.g. only one severity update, only one assignee change, only one status transition).
 - rootCause: concise paragraph. If unclear, say "Root cause not determined from available data."
@@ -156,10 +159,28 @@ function isHumanMessageEvent(event: { event_type: string; event_data: unknown })
 	return !!data?.userId && data.userId !== "fire";
 }
 
+function extractAgentInsights(agentData: AgentExport): string | null {
+	const conclusions = agentData.steps
+		.filter((s) => s.role === "assistant" && s.source === "runner")
+		.slice(-5)
+		.map((s) => s.content);
+	const findings = agentData.steps
+		.filter((s) => s.source === "tool-result")
+		.slice(-10)
+		.map((s) => s.content);
+	if (!conclusions.length && !findings.length) return null;
+	const header = `Agent: ${agentData.provider.name} — ${agentData.provider.description}`;
+	const parts: string[] = [header];
+	if (findings.length) parts.push(`Investigation findings:\n${findings.join("\n")}`);
+	if (conclusions.length) parts.push(`Agent conclusions:\n${conclusions.join("\n")}`);
+	return parts.join("\n\n");
+}
+
 export async function generateIncidentPostmortem(
 	incident: { title: string; description: string; severity: IS["severity"]; prompt: string; createdAt: Date },
 	events: Array<{ event_type: IS_Event["event_type"]; event_data: IS_Event["event_data"]; created_at: string }>,
 	openaiApiKey: string,
+	agentData?: AgentExport | null,
 ): Promise<IncidentPostmortem> {
 	const client = new OpenAI({ apiKey: openaiApiKey });
 	const startedAt = events.find((event) => event.event_type === "INCIDENT_CREATED")?.created_at ?? events[0]?.created_at ?? null;
@@ -178,6 +199,9 @@ export async function generateIncidentPostmortem(
 
 	const eventDescriptions = events.map((e) => `[${e.created_at}] ${e.event_type}: ${JSON.stringify(e.event_data)}`).join("\n");
 
+	const agentInsights = agentData ? extractAgentInsights(agentData) : null;
+	const agentSection = agentInsights ? `\n\nAgent Investigation Context:\n${agentInsights}` : "";
+
 	const userMessage = `Incident: ${incident.title}
 Description: ${incident.description}
 Severity: ${incident.severity}
@@ -191,7 +215,7 @@ Timing:
 - resolvedAt: ${resolvedAt ?? "unknown"}
 
 Timeline Events:
-${eventDescriptions}
+${eventDescriptions}${agentSection}
 
 Generate the post-mortem.`;
 

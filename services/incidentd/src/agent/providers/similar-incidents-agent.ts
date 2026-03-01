@@ -19,11 +19,15 @@ function truncate(value: string, max = 220) {
 }
 
 export class SimilarIncidentsAgent extends AgentBase {
+	readonly providerMeta = {
+		name: "similar-incidents",
+		description: "Searches for and analyzes similar past incidents to inform investigation",
+	};
+	readonly systemPrompt = SIMILAR_PROVIDER_SYSTEM_PROMPT;
+	readonly summarizationPrompt = SIMILAR_PROVIDER_SUMMARIZATION_PROMPT;
+
 	constructor(ctx: DurableObjectState, env: Env) {
-		super(ctx, env, {
-			systemPrompt: SIMILAR_PROVIDER_SYSTEM_PROMPT,
-			summarizationPrompt: SIMILAR_PROVIDER_SUMMARIZATION_PROMPT,
-		});
+		super(ctx, env);
 	}
 
 	async prompt(input: PromptInput): Promise<PromptResult> {

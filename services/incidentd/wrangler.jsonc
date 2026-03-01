@@ -74,7 +74,15 @@
 			"service": "incidentd",
 		},
 	],
-	"vars": { "FRONTEND_URL": "https://app.firedash.ai/" },
+	"r2_buckets": [
+		{
+			"binding": "INCIDENT_ARCHIVE",
+			"bucket_name": "incident-archive",
+		},
+	],
+	"vars": {
+		"FRONTEND_URL": "https://app.firedash.ai/",
+	},
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

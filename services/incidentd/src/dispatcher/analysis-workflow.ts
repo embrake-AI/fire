@@ -2,6 +2,9 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloud
 import type { IS, IS_Event } from "@fire/common";
 import { type IncidentEventData, incidentAction, incidentAnalysis } from "@fire/db/schema";
 import { and, eq } from "drizzle-orm";
+import { getSimilarIncidentsProvider } from "../agent/providers/registry";
+import type { AgentExport } from "../agent/providers/types";
+import { archiveKey, type IncidentArchive } from "../core/archive";
 import { generateIncidentPostmortem } from "../core/idontknowhowtonamethisitswhereillplacecallstoai";
 import type { Metadata } from "../handler";
 import { getDB } from "../lib/db";
@@ -42,9 +45,9 @@ function getTerminalStatusEvent(
 		if (event.event_type !== "STATUS_UPDATE") {
 			continue;
 		}
-		const status = (event.event_data as { status?: string } | undefined)?.status;
+		const status = event.event_data?.status;
 		if (isTerminalIncidentStatus(status)) {
-			return event as IncidentEventData & { event_type: "STATUS_UPDATE"; event_data: Extract<IS_Event, { event_type: "STATUS_UPDATE" }>["event_data"] };
+			return event;
 		}
 	}
 	return undefined;
@@ -53,7 +56,7 @@ function getTerminalStatusEvent(
 function isResolvedStatusEvent(
 	event: IncidentEventData,
 ): event is IncidentEventData & { event_type: "STATUS_UPDATE"; event_data: Extract<IS_Event, { event_type: "STATUS_UPDATE" }>["event_data"] } {
-	return event.event_type === "STATUS_UPDATE" && (event.event_data as { status?: string } | undefined)?.status === "resolved";
+	return event.event_type === "STATUS_UPDATE" && event.event_data?.status === "resolved";
 }
 
 export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAnalysisWorkflowPayload> {
@@ -66,6 +69,34 @@ export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAn
 		const declineReason = declineReasonRaw.length ? declineReasonRaw : null;
 		const shouldGeneratePostmortem = terminalStatus !== "declined";
 
+		// Step 1: Extract agent data before cleanup
+		const agentData = await step.do(`extract-agent-data:${incidentId}`, async (): Promise<AgentExport | null> => {
+			try {
+				const provider = getSimilarIncidentsProvider(this.env, incidentId);
+				const data = await provider.exportData();
+				return { provider: data.provider, incidentId: data.incidentId, steps: data.steps, contexts: data.contexts };
+			} catch (error) {
+				console.error("Failed to extract agent data", error);
+				return null;
+			}
+		});
+
+		// Step 2: Upload archive to R2
+		await step.do(`upload-archive:${incidentId}`, async () => {
+			const archive: IncidentArchive = {
+				version: 1,
+				incidentId,
+				archivedAt: new Date().toISOString(),
+				events,
+				agents: { similarIncidents: agentData },
+			};
+			const key = archiveKey(metadata.clientId, incidentId);
+			await this.env.INCIDENT_ARCHIVE.put(key, JSON.stringify(archive), {
+				httpMetadata: { contentType: "application/json" },
+			});
+		});
+
+		// Step 3: Generate postmortem (with agent data)
 		const postmortem = shouldGeneratePostmortem
 			? await step.do(`generate-postmortem:${incidentId}`, { retries: { limit: 5, delay: "30 seconds", backoff: "exponential" } }, async () =>
 					generateIncidentPostmortem(
@@ -82,10 +113,12 @@ export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAn
 							created_at: eventItem.created_at,
 						})),
 						this.env.OPENAI_API_KEY,
+						agentData,
 					),
 				)
 			: null;
 
+		// Step 4: Persist analysis to PG (unchanged)
 		await step.do(`persist-analysis:${incidentId}`, { retries: { limit: 5, delay: "1 minute", backoff: "exponential" } }, async () => {
 			const db = getDB(this.env.db);
 			const [existing] = await db
@@ -141,6 +174,16 @@ export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAn
 			});
 
 			return { status: "inserted" };
+		});
+
+		// Step 5: Cleanup agent DOs
+		await step.do(`cleanup-agents:${incidentId}`, async () => {
+			try {
+				const provider = getSimilarIncidentsProvider(this.env, incidentId);
+				await provider.cleanup();
+			} catch (error) {
+				console.error("Failed to cleanup agent DO", error);
+			}
 		});
 	}
 }
