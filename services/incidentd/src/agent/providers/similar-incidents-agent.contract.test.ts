@@ -151,7 +151,7 @@ describe("SimilarIncidentsAgent base contracts", () => {
 		const { incidentId, stub } = createProviderHandle();
 
 		await runInDurableObject(stub, async (instance, state) => {
-			const agent = instance as import("./similar-incidents-agent").SimilarIncidentsAgent;
+			const agent = instance;
 			const first = await agent.addContext({
 				incidentId,
 				toEventId: 2,
@@ -181,7 +181,7 @@ describe("SimilarIncidentsAgent base contracts", () => {
 		const { incidentId, stub } = createProviderHandle();
 
 		await runInDurableObject(stub, async (instance, state) => {
-			const agent = instance as import("./similar-incidents-agent").SimilarIncidentsAgent;
+			const agent = instance;
 			await agent.addContext({
 				incidentId,
 				toEventId: 2,
@@ -212,7 +212,7 @@ describe("SimilarIncidentsAgent base contracts", () => {
 		const { incidentId, stub } = createProviderHandle();
 
 		await runInDurableObject(stub, async (instance, state) => {
-			const agent = instance as import("./similar-incidents-agent").SimilarIncidentsAgent;
+			const agent = instance;
 			await agent.addContext({
 				incidentId,
 				toEventId: 2,
@@ -241,7 +241,7 @@ describe("SimilarIncidentsAgent base contracts", () => {
 		const { incidentId, stub } = createProviderHandle();
 
 		await runInDurableObject(stub, async (instance, state) => {
-			const agent = instance as import("./similar-incidents-agent").SimilarIncidentsAgent;
+			const agent = instance;
 			const result = await agent.addContext({
 				incidentId,
 				toEventId: 2,

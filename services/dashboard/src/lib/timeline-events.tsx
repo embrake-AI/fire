@@ -226,4 +226,20 @@ export const eventRegistry: EventConfigMap = {
 			);
 		},
 	},
+	CONTEXT_AGENT_TRIGGERED: {
+		icon: MessageSquare,
+		iconBg: "bg-slate-100",
+		iconColor: "text-slate-600",
+		label: "Context Agent Triggered",
+		render: ({ data }) => {
+			return (
+				<div class="space-y-2">
+					<p class="text-sm text-muted-foreground">
+						Agent <span class="font-mono">{data.agent}</span> triggered
+					</p>
+					<p class="text-sm text-muted-foreground">{data.reason}</p>
+				</div>
+			);
+		},
+	},
 } satisfies EventConfigMap;

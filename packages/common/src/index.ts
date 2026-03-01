@@ -134,6 +134,14 @@ export const SHIFT_LENGTH_OPTIONS = [
 	{ value: "2 weeks", label: "2 weeks" },
 ] as const;
 
+export function truncate(value: string, max: number): string {
+	const trimmed = value.trim();
+	if (trimmed.length <= max) {
+		return trimmed;
+	}
+	return `${trimmed.slice(0, max - 1)}...`;
+}
+
 export function emailInDomains(email: string, domains: string[]) {
 	const emailDomain = email.split("@")[1]?.toLowerCase();
 	return !!emailDomain && domains.some((domain) => domain.toLowerCase() === emailDomain);

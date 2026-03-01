@@ -1,3 +1,4 @@
+import { truncate } from "@fire/common";
 import { formatAgentEventForPrompt } from "../event-format";
 import {
 	answerSimilarProviderPrompt,
@@ -9,14 +10,6 @@ import {
 import type { AgentEvent } from "../types";
 import { AgentBase, RUN_STATUS_IDLE, RUN_STATUS_RUNNING } from "./base";
 import type { PromptInput, PromptResult } from "./types";
-
-function truncate(value: string, max = 220) {
-	const trimmed = value.trim();
-	if (trimmed.length <= max) {
-		return trimmed;
-	}
-	return `${trimmed.slice(0, max - 1)}...`;
-}
 
 export class SimilarIncidentsAgent extends AgentBase {
 	readonly providerMeta = {
@@ -197,34 +190,8 @@ export class SimilarIncidentsAgent extends AgentBase {
 			events: context.events,
 			stepDo: async (_name, callback) => callback(),
 			persistence: {
-				recordAgentContextEvent: async (eventType, eventData, dedupeKey) => {
-					const recorded = await incident.recordAgentContextEvent({
-						eventType,
-						eventData,
-						dedupeKey,
-					});
-					if (!recorded) {
-						return { error: "FAILED_TO_RECORD_AGENT_CONTEXT_EVENT" };
-					}
-					if ("error" in recorded) {
-						return { error: recorded.error };
-					}
-					return recorded;
-				},
-				recordAgentInsightEvent: async (eventType, eventData, dedupeKey) => {
-					const recorded = await incident.recordAgentInsightEvent({
-						eventType,
-						eventData,
-						dedupeKey,
-					});
-					if (!recorded) {
-						return { error: "FAILED_TO_RECORD_AGENT_INSIGHT_EVENT" };
-					}
-					if ("error" in recorded) {
-						return { error: recorded.error };
-					}
-					return recorded;
-				},
+				recordAgentContextEvent: (eventType, eventData, dedupeKey) => incident.recordAgentContextEvent({ eventType, eventData, dedupeKey }),
+				recordAgentInsightEvent: (eventType, eventData, dedupeKey) => incident.recordAgentInsightEvent({ eventType, eventData, dedupeKey }),
 			},
 			investigationReason: `${params.reason}. Evidence: ${params.evidence}`,
 		});

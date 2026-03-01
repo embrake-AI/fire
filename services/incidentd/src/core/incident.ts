@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { EntryPoint, EventLog, IS, IS_Event } from "@fire/common";
 import type { IncidentEventData } from "@fire/db/schema";
-import type { AgentAffectionInfo, AgentContextRangeResponse, AgentEvent, AgentIncidentSnapshot, AgentService, AgentTurnPayload } from "../agent/types";
+import type { AgentAffectionInfo, AgentEvent, AgentIncidentSnapshot, AgentService, AgentTurnPayload } from "../agent/types";
 import type { IncidentAnalysisWorkflowPayload } from "../dispatcher/analysis-workflow";
 import { INCIDENT_WORKFLOW_EVENT_TYPE, type IncidentWorkflowPayload } from "../dispatcher/workflow";
 import type { Metadata } from "../handler";
@@ -51,10 +51,6 @@ type BootstrapMessage = { message: string; userId: string; messageId: string; cr
 
 function isTerminalIncidentStatus(status: IS["status"]) {
 	return status === "resolved" || status === "declined";
-}
-
-function shouldTriggerAgentTurnForEvent(eventType: IS_Event["event_type"]) {
-	return eventType !== "SIMILAR_INCIDENT" && eventType !== "SIMILAR_INCIDENTS_DISCOVERED";
 }
 
 function normalizeIncidentServices(services: IncidentService[]) {
@@ -365,12 +361,12 @@ export class Incident extends DurableObject<Env> {
 
 	private refreshAgentDebounceState(events: EventLog[], now: number) {
 		const agentState = this.getAgentState();
-		const lastDispatchedEventId = [...events].reverse().find((event) => shouldTriggerAgentTurnForEvent(event.event_type))?.id ?? null;
-		if (lastDispatchedEventId === null) {
+		const lastEventId = events.at(-1)?.id ?? null;
+		if (lastEventId === null) {
 			return agentState;
 		}
 
-		agentState.toEventId = lastDispatchedEventId;
+		agentState.toEventId = lastEventId;
 		agentState.nextAt = computeAgentNextAt(agentState, now);
 		this.setAgentState(agentState);
 		return agentState;
@@ -732,37 +728,6 @@ export class Incident extends DurableObject<Env> {
 		};
 	}
 
-	async getAgentContextRange(params: { fromEventIdExclusive: number; toEventIdInclusive: number }): Promise<AgentContextRangeResponse> {
-		const state = this.ctx.storage.kv.get<DOState>(STATE_KEY);
-		if (!state) {
-			return { error: "NOT_FOUND" };
-		} else if (!state._initialized) {
-			return { error: "INITIALIZING" };
-		}
-
-		const fromEventId = Math.max(0, Math.floor(params.fromEventIdExclusive));
-		const toEventId = Math.max(fromEventId, Math.floor(params.toEventIdInclusive));
-
-		const rows = this.ctx.storage.sql
-			.exec<Pick<EventLog, "id" | "event_type" | "event_data" | "created_at" | "adapter" | "event_metadata">>(
-				"SELECT id, event_type, event_data, created_at, adapter, event_metadata FROM event_log WHERE id > ? AND id <= ? ORDER BY id ASC",
-				fromEventId,
-				toEventId,
-			)
-			.toArray();
-		const services = this.getAgentServicesFromStorage();
-
-		return {
-			incident: this.buildAgentIncidentSnapshot(state),
-			metadata: state.metadata,
-			services,
-			affection: this.getAffectionInfoFromLog(),
-			events: rows.map(mapAgentEventRow),
-			fromEventIdExclusive: fromEventId,
-			toEventIdInclusive: toEventId,
-		};
-	}
-
 	async addMessage(message: string, userId: string, messageId: string, adapter: "slack" | "dashboard" | "fire", slackUserToken?: string, eventMetadata?: Record<string, string>) {
 		const state = this.getState();
 		if ("error" in state) {
@@ -846,7 +811,7 @@ export class Incident extends DurableObject<Env> {
 			[inserted] = this.ctx.storage.sql.exec<{ id: number; created_at: string }>("SELECT id, created_at FROM event_log WHERE id = last_insert_rowid()").toArray();
 		});
 		if (!inserted) {
-			return;
+			return { error: "FAILED_TO_RECORD" };
 		}
 		return { eventId: inserted.id, createdAt: inserted.created_at };
 	}
@@ -881,25 +846,9 @@ export class Incident extends DurableObject<Env> {
 		});
 
 		if (!inserted) {
-			return;
+			return { error: "FAILED_TO_RECORD" };
 		}
 		return { eventId: inserted.id, createdAt: inserted.created_at, deduped: false };
-	}
-
-	async recordSimilarIncidentsDiscovered(eventData: SimilarIncidentsDiscoveredData) {
-		return this.recordAgentContextEvent({
-			eventType: "SIMILAR_INCIDENTS_DISCOVERED",
-			eventData,
-			dedupeKey: eventData.runId,
-		});
-	}
-
-	async recordSimilarIncident(eventData: SimilarIncidentData) {
-		return this.recordAgentInsightEvent({
-			eventType: "SIMILAR_INCIDENT",
-			eventData,
-			dedupeKey: `${eventData.originRunId}:${eventData.similarIncidentId}`,
-		});
 	}
 
 	async get() {

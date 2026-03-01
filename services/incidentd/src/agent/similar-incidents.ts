@@ -1,4 +1,4 @@
-import type { IS_Event } from "@fire/common";
+import { type IS_Event, truncate } from "@fire/common";
 import { incidentAnalysis } from "@fire/db/schema";
 import { and, desc, eq, gte, inArray, ne } from "drizzle-orm";
 import OpenAI from "openai";
@@ -95,14 +95,6 @@ export type SimilarProviderDecision = {
 	assistantContent: string;
 	toolCalls: SimilarProviderToolCall[];
 };
-
-function truncate(value: string, max = 220) {
-	const trimmed = value.trim();
-	if (trimmed.length <= max) {
-		return trimmed;
-	}
-	return `${trimmed.slice(0, max - 1)}...`;
-}
 
 export const RANKING_SYSTEM_PROMPT = `You rank historical incidents for practical reuse in the current incident.
 Selection criteria:

@@ -1,4 +1,4 @@
-import type { IS } from "@fire/common";
+import { type IS, truncate } from "@fire/common";
 import OpenAI from "openai";
 import { formatAgentEventForPrompt, isInternalAgentEvent } from "./event-format";
 import { isResponsesFunctionToolCall, parseJsonObject } from "./openai";
@@ -102,13 +102,6 @@ export function normalizeEventData(value: unknown): unknown {
 		.sort(([a], [b]) => a.localeCompare(b));
 
 	return Object.fromEntries(entries.map(([key, item]) => [key, normalizeEventData(item)]));
-}
-
-// TODO: @Miquel => This is bad ux
-function truncateMessage(value: string, max = 240) {
-	const trimmed = value.trim();
-	if (trimmed.length <= max) return trimmed;
-	return `${trimmed.slice(0, max - 1)}...`;
 }
 
 export function buildEventMessages(events: AgentEvent[], processedThroughId: number): Array<{ role: "user" | "assistant"; content: string }> {
@@ -472,7 +465,7 @@ export function normalizeSuggestions(suggestions: AgentSuggestion[], context: Ag
 				normalized.push({
 					action: "update_status",
 					status: suggestion.status,
-					message: truncateMessage(message),
+					message: truncate(message, 240),
 				});
 				break;
 			}
@@ -506,7 +499,7 @@ export function normalizeSuggestions(suggestions: AgentSuggestion[], context: Ag
 
 				normalized.push({
 					action: "add_status_page_update",
-					message: truncateMessage(message),
+					message: truncate(message, 240),
 					...(affectionStatus ? { affectionStatus } : {}),
 					...(title ? { title } : {}),
 					...(services?.length ? { services } : {}),

@@ -37,6 +37,21 @@ D1 stores a derived incident index used for list/query views. It is eventually c
 - `IncidentAgentTurnWorkflow` (`dispatcher/agent-turn-workflow.ts`): debounced agent turn execution
 - `IncidentAnalysisWorkflow` (`dispatcher/analysis-workflow.ts`): post-resolution or background analysis
 
+### Context Agent Providers
+
+Context agents (e.g. `SimilarIncidentsAgent`) are separate Durable Objects that enrich agent turns with background research. Each provider DO is keyed by incident id, creating a 1:1 pairing with the Incident DO.
+
+The two DOs communicate bidirectionally via RPC:
+
+- **Incident → Provider** (via `IncidentAgentTurnWorkflow`):
+  - `addContext`: pushes new timeline events for the provider to process in the background.
+  - `askQuestion`: pulls the provider's latest findings for inclusion in the agent turn.
+- **Provider → Incident** (from provider background runs):
+  - `getAgentContext`: pulls the full incident snapshot (metadata, state, events) to inform investigation.
+  - `recordAgentContextEvent` / `recordAgentInsightEvent`: pushes discovered findings back into the incident timeline.
+
+Events written back by providers (e.g. `SIMILAR_INCIDENT`) are unpublished and will trigger subsequent agent turns through the normal alarm/debounce cycle. Context-only events (`CONTEXT_AGENT_TRIGGERED`, `SIMILAR_INCIDENTS_DISCOVERED`) are written with `published_at` set, so they appear in the timeline but do not trigger dispatch or new agent turns.
+
 ### Agent Suggestions Lifecycle
 
 Agent turn execution has two outputs:

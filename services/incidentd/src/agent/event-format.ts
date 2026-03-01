@@ -1,12 +1,5 @@
+import { truncate } from "@fire/common";
 import type { AgentEvent } from "./types";
-
-function truncate(value: string, max = 180) {
-	const trimmed = value.trim();
-	if (trimmed.length <= max) {
-		return trimmed;
-	}
-	return `${trimmed.slice(0, max - 1)}...`;
-}
 
 function formatSuggestionPayload(value: Record<string, unknown>) {
 	const action = typeof value.action === "string" ? value.action : "unknown";

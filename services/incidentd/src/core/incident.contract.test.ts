@@ -194,16 +194,20 @@ describe("Incident DO core contracts", () => {
 		const { stub, id, identifier } = createIncidentHandle();
 		await seedInitializedIncident(stub, id, identifier);
 
-		const first = await stub.recordSimilarIncidentsDiscovered({
-			runId: "run-1",
-			searchedAt: "2026-02-27T12:00:00.000Z",
-			contextSnapshot: "Customers see elevated 5xx on API endpoints.",
-			gateDecision: "insufficient_context",
-			gateReason: "Need clearer scope confirmation.",
-			openCandidateCount: 0,
-			closedCandidateCount: 0,
-			rankedIncidentIds: [],
-			selectedIncidentIds: [],
+		const first = await stub.recordAgentContextEvent({
+			eventType: "SIMILAR_INCIDENTS_DISCOVERED",
+			eventData: {
+				runId: "run-1",
+				searchedAt: "2026-02-27T12:00:00.000Z",
+				contextSnapshot: "Customers see elevated 5xx on API endpoints.",
+				gateDecision: "insufficient_context",
+				gateReason: "Need clearer scope confirmation.",
+				openCandidateCount: 0,
+				closedCandidateCount: 0,
+				rankedIncidentIds: [],
+				selectedIncidentIds: [],
+			},
+			dedupeKey: "run-1",
 		});
 
 		expect(first).toBeDefined();
@@ -211,16 +215,20 @@ describe("Incident DO core contracts", () => {
 		expect(first).not.toEqual({ error: "NOT_INITIALIZED" });
 		expect(first).not.toEqual({ error: "RESOLVED" });
 
-		const second = await stub.recordSimilarIncidentsDiscovered({
-			runId: "run-1",
-			searchedAt: "2026-02-27T12:00:00.000Z",
-			contextSnapshot: "Customers see elevated 5xx on API endpoints.",
-			gateDecision: "insufficient_context",
-			gateReason: "Need clearer scope confirmation.",
-			openCandidateCount: 0,
-			closedCandidateCount: 0,
-			rankedIncidentIds: [],
-			selectedIncidentIds: [],
+		const second = await stub.recordAgentContextEvent({
+			eventType: "SIMILAR_INCIDENTS_DISCOVERED",
+			eventData: {
+				runId: "run-1",
+				searchedAt: "2026-02-27T12:00:00.000Z",
+				contextSnapshot: "Customers see elevated 5xx on API endpoints.",
+				gateDecision: "insufficient_context",
+				gateReason: "Need clearer scope confirmation.",
+				openCandidateCount: 0,
+				closedCandidateCount: 0,
+				rankedIncidentIds: [],
+				selectedIncidentIds: [],
+			},
+			dedupeKey: "run-1",
 		});
 		expect(second).toBeDefined();
 		if (first && second && "eventId" in first && "eventId" in second) {
@@ -244,13 +252,17 @@ describe("Incident DO core contracts", () => {
 		const { stub, id, identifier } = createIncidentHandle();
 		await seedInitializedIncident(stub, id, identifier);
 
-		const first = await stub.recordSimilarIncident({
-			originRunId: "run-2",
-			similarIncidentId: "inc-previous-1",
-			sourceIncidentIds: ["inc-previous-1"],
-			summary: "Very similar symptom pattern.",
-			evidence: "Both incidents show API 503 spikes after deploy.",
-			comparisonContext: "shared edge routing regression pattern",
+		const first = await stub.recordAgentInsightEvent({
+			eventType: "SIMILAR_INCIDENT",
+			eventData: {
+				originRunId: "run-2",
+				similarIncidentId: "inc-previous-1",
+				sourceIncidentIds: ["inc-previous-1"],
+				summary: "Very similar symptom pattern.",
+				evidence: "Both incidents show API 503 spikes after deploy.",
+				comparisonContext: "shared edge routing regression pattern",
+			},
+			dedupeKey: "run-2:inc-previous-1",
 		});
 		expect(first).toBeDefined();
 		expect(first).not.toEqual({ error: "NOT_FOUND" });
@@ -260,13 +272,17 @@ describe("Incident DO core contracts", () => {
 			expect(first.deduped).toBe(false);
 		}
 
-		const second = await stub.recordSimilarIncident({
-			originRunId: "run-2",
-			similarIncidentId: "inc-previous-1",
-			sourceIncidentIds: ["inc-previous-1"],
-			summary: "Very similar symptom pattern.",
-			evidence: "Both incidents show API 503 spikes after deploy.",
-			comparisonContext: "shared edge routing regression pattern",
+		const second = await stub.recordAgentInsightEvent({
+			eventType: "SIMILAR_INCIDENT",
+			eventData: {
+				originRunId: "run-2",
+				similarIncidentId: "inc-previous-1",
+				sourceIncidentIds: ["inc-previous-1"],
+				summary: "Very similar symptom pattern.",
+				evidence: "Both incidents show API 503 spikes after deploy.",
+				comparisonContext: "shared edge routing regression pattern",
+			},
+			dedupeKey: "run-2:inc-previous-1",
 		});
 		expect(second).toBeDefined();
 		if (first && second && "eventId" in first && "eventId" in second) {
@@ -345,49 +361,21 @@ describe("Incident DO core contracts", () => {
 		expect(similarEvents[0]?.published_at).toBeNull();
 	});
 
-	it("returns bounded event ranges for provider context ingestion", async () => {
+	it("queues an agent turn from SIMILAR_INCIDENT updates (debounced)", async () => {
 		const { stub, id, identifier } = createIncidentHandle();
 		await seedInitializedIncident(stub, id, identifier);
 
-		await stub.setSeverity("high", "dashboard");
-		await stub.addMessage("Context message A", "U_TEST_1", "msg-range-1", "dashboard");
-		await stub.addMessage("Context message B", "U_TEST_1", "msg-range-2", "dashboard");
-
-		const full = await stub.getAgentContext();
-		expect("error" in full).toBe(false);
-		if ("error" in full) {
-			return;
-		}
-		const lastEventId = full.events.at(-1)?.id ?? 0;
-		const fromEventId = Math.max(0, lastEventId - 1);
-		const range = await stub.getAgentContextRange({
-			fromEventIdExclusive: fromEventId,
-			toEventIdInclusive: lastEventId,
-		});
-
-		expect("error" in range).toBe(false);
-		if ("error" in range) {
-			return;
-		}
-
-		expect(range.fromEventIdExclusive).toBe(fromEventId);
-		expect(range.toEventIdInclusive).toBe(lastEventId);
-		expect(range.events.every((event) => event.id > fromEventId && event.id <= lastEventId)).toBe(true);
-		expect(range.events.length).toBeGreaterThanOrEqual(1);
-	});
-
-	// TODO: @Miquel =>  Prob remove this behavior
-	it("does not trigger a new agent turn from SIMILAR_INCIDENT-only updates", async () => {
-		const { stub, id, identifier } = createIncidentHandle();
-		await seedInitializedIncident(stub, id, identifier);
-
-		await stub.recordSimilarIncident({
-			originRunId: "run-3",
-			similarIncidentId: "inc-previous-2",
-			sourceIncidentIds: ["inc-previous-2"],
-			summary: "Comparable elevated API error spikes.",
-			evidence: "Same error class, similar timeline around deploy.",
-			comparisonContext: "similar mitigation path expected",
+		await stub.recordAgentInsightEvent({
+			eventType: "SIMILAR_INCIDENT",
+			eventData: {
+				originRunId: "run-3",
+				similarIncidentId: "inc-previous-2",
+				sourceIncidentIds: ["inc-previous-2"],
+				summary: "Comparable elevated API error spikes.",
+				evidence: "Same error class, similar timeline around deploy.",
+				comparisonContext: "similar mitigation path expected",
+			},
+			dedupeKey: "run-3:inc-previous-2",
 		});
 
 		const alarmResult = await runInDurableObject(stub, async (instance, state) => {
@@ -403,7 +391,6 @@ describe("Incident DO core contracts", () => {
 		});
 
 		expect(alarmResult.startedAgentTurnCount).toBe(0);
-		expect(alarmResult.agentState?.lastProcessedEventId ?? 0).toBe(0);
-		expect(alarmResult.agentState?.toEventId ?? null).toBeNull();
+		expect(alarmResult.agentState?.toEventId).toBeGreaterThan(0);
 	});
 });
