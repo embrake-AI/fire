@@ -71,3 +71,69 @@ export function formatAgentEventForPrompt(event: AgentEvent): string {
 	}
 	return `${event.event_type}: ${JSON.stringify(event.event_data)}`;
 }
+
+export type ToolCallItems = {
+	functionCall: { type: "function_call"; call_id: string; name: string; arguments: string };
+	functionCallOutput: { type: "function_call_output"; call_id: string; output: string };
+};
+
+export function buildToolCallItemsFromEvent(event: AgentEvent): ToolCallItems | null {
+	if (event.event_type === "CONTEXT_AGENT_TRIGGERED") {
+		const data = event.event_data as { agent?: string; evidence?: string; reason?: string };
+		if (data.agent !== "similar-incidents") return null;
+		const callId = `call_evt_${event.id}`;
+		return {
+			functionCall: {
+				type: "function_call",
+				call_id: callId,
+				name: "similar_incidents",
+				arguments: JSON.stringify({ evidence: data.evidence ?? "", reason: data.reason ?? "" }),
+			},
+			functionCallOutput: { type: "function_call_output", call_id: callId, output: "Triggered. Results will appear as AGENT_SIMILAR_INCIDENT events." },
+		};
+	}
+
+	if (isSuggestionEvent(event)) {
+		const data = event.event_data as Record<string, unknown>;
+		const suggestion = data.suggestion as Record<string, unknown> | undefined;
+		if (!suggestion) return null;
+
+		const action = suggestion.action as string;
+		const callId = `call_evt_${event.id}`;
+		let name: string;
+		let args: Record<string, unknown>;
+		let output: string;
+
+		switch (action) {
+			case "update_status":
+				name = "update_status";
+				args = { status: suggestion.status, message: suggestion.message };
+				output = `Suggested status transition to ${suggestion.status}.`;
+				break;
+			case "update_severity":
+				name = "update_severity";
+				args = { severity: suggestion.severity };
+				output = `Suggested severity change to ${suggestion.severity}.`;
+				break;
+			case "add_status_page_update":
+				name = "add_status_page_update";
+				args = {
+					message: suggestion.message,
+					affectionStatus: suggestion.affectionStatus ?? null,
+					title: suggestion.title ?? null,
+					services: suggestion.services ?? null,
+				};
+				output = `Suggested status page update (${suggestion.affectionStatus ?? "update"}).`;
+				break;
+			default:
+				return null;
+		}
+
+		return {
+			functionCall: { type: "function_call", call_id: callId, name, arguments: JSON.stringify(args) },
+			functionCallOutput: { type: "function_call_output", call_id: callId, output },
+		};
+	}
+
+	return null;
+}

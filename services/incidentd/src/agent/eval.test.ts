@@ -10,6 +10,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import OpenAI from "openai";
+import { isResponsesFunctionToolCall } from "./openai";
 import {
 	buildContextUserMessage,
 	buildEventMessages,
@@ -18,6 +19,7 @@ import {
 	buildSuggestionStateContextMessage,
 	buildSuggestionTools,
 	normalizeSuggestions,
+	parseResponseToolCalls,
 	SYSTEM_PROMPT,
 } from "./suggestions";
 import type { AgentEvent, AgentSuggestion, AgentSuggestionContext } from "./types";
@@ -26,7 +28,7 @@ import type { AgentEvent, AgentSuggestion, AgentSuggestionContext } from "./type
 // Message builder
 // ---------------------------------------------------------------------------
 
-function buildFullInput(context: AgentSuggestionContext, opts: { systemPrompt?: string }): OpenAI.Responses.EasyInputMessage[] {
+function buildFullInput(context: AgentSuggestionContext, opts: { systemPrompt?: string }): OpenAI.Responses.ResponseInputItem[] {
 	const systemPrompt = opts.systemPrompt ?? SYSTEM_PROMPT;
 	const userMessage = buildContextUserMessage(context);
 	const statusPageContextMessage = buildStatusPageContextMessage(context);
@@ -34,7 +36,7 @@ function buildFullInput(context: AgentSuggestionContext, opts: { systemPrompt?: 
 	const incidentStateMessage = buildIncidentStateMessage(context);
 	const eventMessages = buildEventMessages(context.events, context.processedThroughId ?? 0);
 
-	const raw: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+	return [
 		{ role: "system", content: systemPrompt },
 		{ role: "user", content: userMessage },
 		...eventMessages,
@@ -43,8 +45,6 @@ function buildFullInput(context: AgentSuggestionContext, opts: { systemPrompt?: 
 		{ role: "user", content: incidentStateMessage },
 		{ role: "user", content: "Return suggestions." },
 	];
-
-	return raw.map((m) => ({ role: m.role, content: m.content }));
 }
 
 // ---------------------------------------------------------------------------
@@ -53,23 +53,23 @@ function buildFullInput(context: AgentSuggestionContext, opts: { systemPrompt?: 
 
 type ModelUsage = { inputTokens: number; outputTokens: number; cachedInputTokens: number; totalTokens: number };
 type ModelToolCall = { name: string; args: Record<string, unknown> };
-type ModelCallResult = { responseId?: string; usage?: ModelUsage; toolCalls: ModelToolCall[]; suggestions: AgentSuggestion[] };
-type SimilarIncidentsRequest = { evidence: string; reason: string };
+type ModelCallResult = {
+	responseId?: string;
+	usage?: ModelUsage;
+	toolCalls: ModelToolCall[];
+	suggestions: AgentSuggestion[];
+	similarIncidentsRequested: boolean;
+};
 
 type ReasoningEffort = "low" | "medium" | "high";
 
-function isFunctionCallItem(item: OpenAI.Responses.ResponseOutputItem): item is OpenAI.Responses.ResponseFunctionToolCall {
-	return item.type === "function_call";
-}
-
-async function callOpenAI(
-	input: OpenAI.Responses.EasyInputMessage[],
+async function callModel(
+	input: OpenAI.Responses.ResponseInputItem[],
 	tools: OpenAI.Responses.FunctionTool[],
 	apiKey: string,
 	model: string,
 	reasoningEffort: ReasoningEffort,
 ): Promise<ModelCallResult> {
-	const suggestions: AgentSuggestion[] = [];
 	const client = new OpenAI({ apiKey });
 
 	const data = await client.responses.create({
@@ -80,49 +80,18 @@ async function callOpenAI(
 		reasoning: { effort: reasoningEffort },
 		text: { verbosity: "low" },
 	});
-	if (data.usage) {
-		const cached = data.usage.input_tokens_details?.cached_tokens ?? 0;
-		console.log(`    [usage] input=${data.usage.input_tokens} (cached=${cached}) output=${data.usage.output_tokens}`);
-	}
-
-	const parsedToolCalls: ModelToolCall[] = [];
-	for (const call of data.output ?? []) {
-		if (!isFunctionCallItem(call)) {
-			continue;
-		}
+	const output = (data.output ?? []).filter(isResponsesFunctionToolCall);
+	const rawToolCalls: ModelToolCall[] = output.map((call) => {
 		let args: Record<string, unknown> = {};
-		if (call.arguments) {
-			try {
-				args = JSON.parse(call.arguments) as Record<string, unknown>;
-			} catch {
-				args = {};
-			}
+		try {
+			args = JSON.parse(call.arguments ?? "{}") as Record<string, unknown>;
+		} catch {
+			args = {};
 		}
-		parsedToolCalls.push({ name: call.name, args });
-		switch (call.name) {
-			case "update_status":
-				if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.status === "string" && typeof args.message === "string") {
-					suggestions.push({ action: "update_status", status: args.status as "mitigating" | "resolved", message: args.message });
-				}
-				break;
-			case "update_severity":
-				if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.severity === "string") {
-					suggestions.push({ action: "update_severity", severity: args.severity as "low" | "medium" | "high" });
-				}
-				break;
-			case "add_status_page_update":
-				if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.message === "string") {
-					suggestions.push({
-						action: "add_status_page_update",
-						message: args.message,
-						...(typeof args.affectionStatus === "string" ? { affectionStatus: args.affectionStatus as "investigating" | "mitigating" | "resolved" } : {}),
-						...(typeof args.title === "string" ? { title: args.title } : {}),
-						...(Array.isArray(args.services) ? { services: args.services as { id: string; impact: "partial" | "major" }[] } : {}),
-					});
-				}
-				break;
-		}
-	}
+		return { name: call.name, args };
+	});
+
+	const result = parseResponseToolCalls(output);
 
 	const usage = data.usage
 		? {
@@ -133,22 +102,13 @@ async function callOpenAI(
 			}
 		: undefined;
 
-	return { responseId: data.id, usage, toolCalls: parsedToolCalls, suggestions };
-}
-
-function extractSimilarIncidentsRequest(toolCalls: ModelToolCall[]): SimilarIncidentsRequest | undefined {
-	for (const toolCall of toolCalls) {
-		if (toolCall.name !== "similar_incidents") {
-			continue;
-		}
-		const evidence = typeof toolCall.args.evidence === "string" ? toolCall.args.evidence.trim() : "";
-		const reason = typeof toolCall.args.reason === "string" ? toolCall.args.reason.trim() : "";
-		if (!evidence || !reason) {
-			continue;
-		}
-		return { evidence, reason };
-	}
-	return undefined;
+	return {
+		responseId: data.id,
+		usage,
+		toolCalls: rawToolCalls,
+		suggestions: result.suggestions,
+		similarIncidentsRequested: !!result.similarIncidentsRequest,
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -479,6 +439,7 @@ function buildWebIncidentScenario(): LifecycleScenario {
 					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
 					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
 					shouldSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "investigating"),
+					"Should suggest update_severity (severity=high).",
 				],
 			},
 			{
@@ -494,6 +455,7 @@ function buildWebIncidentScenario(): LifecycleScenario {
 				checks: [
 					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
 					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+					"Should suggest add_status_page_update (affectionStatus=mitigating).",
 				],
 			},
 			{
@@ -518,7 +480,10 @@ function buildWebIncidentScenario(): LifecycleScenario {
 					processedThroughId: t4ProcessedThrough,
 					validStatusTransitions: ["resolved"],
 				},
-				checks: [shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+				checks: [
+					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+					"Should suggest add_status_page_update (affectionStatus=resolved).",
+				],
 			},
 		],
 	};
@@ -713,6 +678,7 @@ function buildApiIncidentScenario(): LifecycleScenario {
 					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
 					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
 					shouldSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "investigating"),
+					"Should suggest update_severity (severity=high).",
 				],
 			},
 			{
@@ -729,6 +695,7 @@ function buildApiIncidentScenario(): LifecycleScenario {
 					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
 					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
 					shouldNotSuggest("update_severity", (s) => s.action === "update_severity" && s.severity === "high"),
+					"Should suggest add_status_page_update (affectionStatus=mitigating).",
 				],
 			},
 			{
@@ -756,7 +723,10 @@ function buildApiIncidentScenario(): LifecycleScenario {
 					processedThroughId: t4ProcessedThrough,
 					validStatusTransitions: ["resolved"],
 				},
-				checks: [shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+				checks: [
+					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+					"Should suggest add_status_page_update (affectionStatus=resolved).",
+				],
 			},
 		],
 	};
@@ -1356,7 +1326,10 @@ function buildVagueReportScenario(): LifecycleScenario {
 					processedThroughId: t4ProcessedThrough,
 					validStatusTransitions: ["resolved"],
 				},
-				checks: [shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+				checks: [
+					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+					"Should suggest add_status_page_update (affectionStatus=resolved).",
+				],
 			},
 		],
 	};
@@ -1678,7 +1651,11 @@ function buildSeverityScenario(): LifecycleScenario {
 					processedThroughId: 0,
 					validStatusTransitions: ["mitigating", "resolved"],
 				},
-				checks: [shouldSuggest("update_severity", (s) => s.action === "update_severity" && s.severity === "high"), shouldNotSuggest("update_status")],
+				checks: [
+					shouldSuggest("update_severity", (s) => s.action === "update_severity" && s.severity === "high"),
+					shouldNotSuggest("update_status"),
+					"Should suggest add_status_page_update (affectionStatus=investigating).",
+				],
 			},
 			{
 				name: "Turn 2: Fix deployed — should suggest mitigating, not re-suggest severity",
@@ -1693,6 +1670,7 @@ function buildSeverityScenario(): LifecycleScenario {
 				checks: [
 					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
 					shouldNotSuggest("update_severity", (s) => s.action === "update_severity" && s.severity === "high"),
+					"Should suggest add_status_page_update (affectionStatus=investigating).",
 				],
 			},
 			{
@@ -2021,7 +1999,10 @@ function buildRepeatWithDeltaScenario(): LifecycleScenario {
 					processedThroughId: 0,
 					validStatusTransitions: ["mitigating", "resolved"],
 				},
-				checks: [shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating")],
+				checks: [
+					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
+					"Should suggest add_status_page_update (affectionStatus=investigating).",
+				],
 			},
 			{
 				name: "Turn 2: No new evidence since prior suggestion — should not repeat mitigating",
@@ -2169,6 +2150,7 @@ function buildFirstStatusPageInvestigatingScenario(): LifecycleScenario {
 					shouldSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "investigating"),
 					shouldNotSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "mitigating"),
 					shouldNotSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "resolved"),
+					"Should suggest update_status (status=mitigating).",
 				],
 			},
 			{
@@ -2196,7 +2178,10 @@ function buildFirstStatusPageInvestigatingScenario(): LifecycleScenario {
 					processedThroughId: t3ProcessedThrough,
 					validStatusTransitions: ["resolved"],
 				},
-				checks: [shouldSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "resolved")],
+				checks: [
+					shouldSuggest("add_status_page_update", (s) => s.action === "add_status_page_update" && s.affectionStatus === "resolved"),
+					"Should suggest update_status (status=resolved).",
+				],
 			},
 		],
 	};
@@ -2826,7 +2811,7 @@ function buildMicroTurnNoiseScenario(): LifecycleScenario {
 					processedThroughId: t7ProcessedThrough,
 					validStatusTransitions: ["mitigating", "resolved"],
 				},
-				checks: [shouldSuggest("add_status_page_update")],
+				checks: [shouldSuggest("add_status_page_update"), "Should suggest update_status (status=mitigating)."],
 			},
 			{
 				name: "Turn 8: After follow-up suggestion with no new delta - stay quiet",
@@ -2936,7 +2921,10 @@ function buildStalePendingSuggestionScenario(): LifecycleScenario {
 					processedThroughId: 0,
 					validStatusTransitions: ["mitigating", "resolved"],
 				},
-				checks: [shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating")],
+				checks: [
+					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
+					"Should suggest add_status_page_update (affectionStatus=investigating).",
+				],
 			},
 			{
 				name: "Turn 2: Fresh pending suggestion — do not repeat mitigating",
@@ -3111,6 +3099,7 @@ function buildSimilarIncidentCapabilityScenario(): LifecycleScenario {
 					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
 					"Should prefer at least one operational suggestion (severity high or status mitigating) based on concrete evidence and similar-incident context.",
 					shouldNotRequestSimilarIncidents(),
+					"Should suggest add_status_page_update (affectionStatus=investigating).",
 				],
 			},
 			{
@@ -3127,6 +3116,7 @@ function buildSimilarIncidentCapabilityScenario(): LifecycleScenario {
 					shouldSuggest("update_status", (s) => s.action === "update_status" && s.status === "mitigating"),
 					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
 					shouldNotRequestSimilarIncidents(),
+					"Should suggest add_status_page_update (affectionStatus=investigating).",
 				],
 			},
 			{
@@ -3454,7 +3444,11 @@ function buildSimilarIncidentEarlyTriggerScenario(): LifecycleScenario {
 					processedThroughId: 0,
 					validStatusTransitions: ["mitigating", "resolved"],
 				},
-				checks: [shouldRequestSimilarIncidents(), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+				checks: [
+					shouldRequestSimilarIncidents(),
+					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+					"Should suggest add_status_page_update (affectionStatus=investigating).",
+				],
 			},
 			{
 				name: "Turn 2: Confirmation of problem should also request similar incidents (no prior trigger events)",
@@ -3466,7 +3460,11 @@ function buildSimilarIncidentEarlyTriggerScenario(): LifecycleScenario {
 					processedThroughId: t2ProcessedThrough,
 					validStatusTransitions: ["mitigating", "resolved"],
 				},
-				checks: [shouldRequestSimilarIncidents(), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+				checks: [
+					shouldRequestSimilarIncidents(),
+					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+					"Should suggest add_status_page_update (affectionStatus=investigating).",
+				],
 			},
 		],
 	};
@@ -3511,7 +3509,24 @@ export type EvalOptions = {
 	out?: string;
 	skipJudge?: boolean;
 	reasoningEffort?: ReasoningEffort;
+	concurrency?: number;
 };
+
+async function pMap<T, R>(items: T[], fn: (item: T) => Promise<R>, concurrency: number): Promise<R[]> {
+	const results: R[] = new Array(items.length);
+	let nextIndex = 0;
+
+	async function worker() {
+		while (true) {
+			const i = nextIndex++;
+			if (i >= items.length) break;
+			results[i] = await fn(items[i]!);
+		}
+	}
+
+	await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+	return results;
+}
 
 type TurnRunCapture = {
 	runIndex: number;
@@ -3528,7 +3543,7 @@ type TurnCapture = {
 	name: string;
 	expectations: string[];
 	context: AgentSuggestionContext;
-	input: OpenAI.Responses.EasyInputMessage[];
+	input: OpenAI.Responses.ResponseInputItem[];
 	tools: OpenAI.Responses.FunctionTool[];
 	runs: TurnRunCapture[];
 };
@@ -3919,7 +3934,7 @@ async function judgeTurnWithLLM(payload: ReturnType<typeof toJudgePayload>, apiK
 	});
 	let toolCallArgs: string | undefined;
 	for (const item of data.output ?? []) {
-		if (isFunctionCallItem(item) && item.name === "grade_turn" && typeof item.arguments === "string") {
+		if (isResponsesFunctionToolCall(item) && item.name === "grade_turn" && typeof item.arguments === "string") {
 			toolCallArgs = item.arguments;
 			break;
 		}
@@ -3958,8 +3973,15 @@ async function runTurn(turn: Turn, opts: EvalOptions): Promise<TurnCapture> {
 
 	if (opts.verbose) {
 		console.log(`\n    --- Messages for: ${turn.name} ---`);
-		for (const msg of input) {
-			console.log(`      [${msg.role}] ${msg.content.slice(0, 200)}${msg.content.length > 200 ? "..." : ""}`);
+		for (const item of input) {
+			if ("role" in item && "content" in item) {
+				const content = typeof item.content === "string" ? item.content : JSON.stringify(item.content);
+				console.log(`      [${item.role}] ${content.slice(0, 200)}${content.length > 200 ? "..." : ""}`);
+			} else if ("type" in item && item.type === "function_call") {
+				console.log(`      [function_call] ${item.name}(${item.arguments.slice(0, 150)}${item.arguments.length > 150 ? "..." : ""})`);
+			} else if ("type" in item && item.type === "function_call_output") {
+				console.log(`      [function_call_output] ${item.output}`);
+			}
 		}
 		console.log("    ---\n");
 	}
@@ -3967,8 +3989,7 @@ async function runTurn(turn: Turn, opts: EvalOptions): Promise<TurnCapture> {
 	const runCaptures: TurnRunCapture[] = [];
 	for (let runIndex = 1; runIndex <= runs; runIndex += 1) {
 		const start = Date.now();
-		const result = await callOpenAI(input, tools, apiKey, model, opts.reasoningEffort ?? "medium");
-		const similarRequest = extractSimilarIncidentsRequest(result.toolCalls);
+		const result = await callModel(input, tools, apiKey, model, opts.reasoningEffort ?? "medium");
 		const durationMs = Date.now() - start;
 		const normalizedSuggestions = normalizeSuggestions(result.suggestions, turn.context);
 		runCaptures.push({
@@ -3979,7 +4000,7 @@ async function runTurn(turn: Turn, opts: EvalOptions): Promise<TurnCapture> {
 			rawSuggestions: result.suggestions,
 			suggestions: normalizedSuggestions,
 			durationMs,
-			similarIncidentsRequested: !!similarRequest,
+			similarIncidentsRequested: result.similarIncidentsRequested,
 		});
 	}
 
@@ -3993,47 +4014,41 @@ async function runTurn(turn: Turn, opts: EvalOptions): Promise<TurnCapture> {
 	};
 }
 
-async function runLifecycleScenario(scenario: LifecycleScenario, opts: EvalOptions): Promise<ScenarioCapture> {
-	const turnResults: TurnCapture[] = [];
-	const totalStart = Date.now();
-
-	for (const turn of scenario.turns) {
-		const result = await runTurn(turn, opts);
-		turnResults.push(result);
-	}
-
-	const totalDurationMs = Date.now() - totalStart;
-
-	return { id: scenario.id, name: scenario.name, description: scenario.description, turns: turnResults, totalDurationMs };
-}
-
 async function evaluateArtifactWithJudge(path: string, opts: EvalOptions): Promise<EvaluationArtifact> {
 	const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY;
 	if (!apiKey) throw new Error("OPENAI_API_KEY is required");
 	const judgeModel = opts.judgeModel ?? opts.model ?? "gpt-5.2";
+	const concurrency = opts.concurrency ?? 10;
 	const artifact = await readArtifact(path);
 
-	const records: TurnJudgementRecord[] = [];
+	type JudgeWork = { scenarioId: string; scenarioName: string; turnName: string; run: TurnRunCapture; turn: TurnCapture };
+	const work: JudgeWork[] = artifact.scenarios.flatMap((s) =>
+		s.turns.flatMap((t) => t.runs.map((r) => ({ scenarioId: s.id, scenarioName: s.name, turnName: t.name, run: r, turn: t }))),
+	);
+
+	const judgements = await pMap(
+		work,
+		async (w) => {
+			const payload = toJudgePayload(w.turn, w.run);
+			return judgeTurnWithLLM(payload, apiKey, judgeModel);
+		},
+		concurrency,
+	);
+
+	const records: TurnJudgementRecord[] = work.map((w, i) => ({
+		scenarioId: w.scenarioId,
+		scenarioName: w.scenarioName,
+		turnName: w.turnName,
+		runIndex: w.run.runIndex,
+		durationMs: w.run.durationMs,
+		judgement: judgements[i]!,
+	}));
+
 	let scoreTotal = 0;
 	const overallCounts = { strong: 0, acceptable: 0, poor: 0 };
-
-	for (const scenario of artifact.scenarios) {
-		for (const turn of scenario.turns) {
-			for (const run of turn.runs) {
-				const payload = toJudgePayload(turn, run);
-				const judgement = await judgeTurnWithLLM(payload, apiKey, judgeModel);
-				records.push({
-					scenarioId: scenario.id,
-					scenarioName: scenario.name,
-					turnName: turn.name,
-					runIndex: run.runIndex,
-					durationMs: run.durationMs,
-					judgement,
-				});
-				scoreTotal += judgement.score;
-				overallCounts[judgement.overall] += 1;
-			}
-		}
+	for (const record of records) {
+		scoreTotal += record.judgement.score;
+		overallCounts[record.judgement.overall] += 1;
 	}
 
 	const totalEvaluatedRuns = records.length;
@@ -4124,6 +4139,8 @@ async function main() {
 	const promptFileArg = process.argv.find((a) => a.startsWith("--prompt-file="));
 	const outArg = process.argv.find((a) => a.startsWith("--out="));
 	const reasoningEffortArg = process.argv.find((a) => a.startsWith("--reasoning-effort="));
+	const concurrencyArg = process.argv.find((a) => a.startsWith("--concurrency="));
+	const concurrency = concurrencyArg ? Number.parseInt(concurrencyArg.split("=")[1]!, 10) : 10;
 	const outputPath = resolve(outArg ? outArg.split("=")[1]! : buildDefaultOutputPath());
 	const skipJudge = process.argv.includes("--skip-judge");
 	const reasoningEffortRaw = reasoningEffortArg ? reasoningEffortArg.split("=")[1]! : "medium";
@@ -4140,7 +4157,8 @@ async function main() {
 		process.exit(1);
 	}
 
-	console.log(`Running ${scenarios.length} lifecycle scenario(s) (${scenarios.reduce((n, s) => n + s.turns.length, 0)} turns)${runs > 1 ? ` x${runs} runs` : ""}...`);
+	const totalTurns = scenarios.reduce((n, s) => n + s.turns.length, 0);
+	console.log(`Running ${scenarios.length} scenario(s), ${totalTurns} turns${runs > 1 ? ` x${runs} runs` : ""}, concurrency=${concurrency}...`);
 	if (model) console.log(`Model: ${model}`);
 	if (judgeModel) console.log(`Judge model: ${judgeModel}`);
 	if (promptFileArg) console.log(`Prompt file: ${promptFileArg.split("=")[1]}`);
@@ -4149,13 +4167,38 @@ async function main() {
 
 	const modelName = model ?? "gpt-5.2";
 	const systemPrompt = promptFileArg ? await readFile(resolve(promptFileArg.split("=")[1]!), "utf8") : SYSTEM_PROMPT;
-	const results: ScenarioCapture[] = [];
-	for (const scenario of scenarios) {
-		console.log(`>> ${scenario.name}`);
-		console.log(`   ${scenario.description}\n`);
-		const result = await runLifecycleScenario(scenario, { verbose, runs, model: modelName, systemPrompt, reasoningEffort });
-		results.push(result);
-	}
+	const evalOpts: EvalOptions = { verbose, runs, model: modelName, systemPrompt, reasoningEffort, concurrency };
+
+	// Flatten all turns across scenarios and run in parallel
+	type TurnWorkItem = { scenarioIndex: number; turn: Turn };
+	const turnWork: TurnWorkItem[] = scenarios.flatMap((s, si) => s.turns.map((t) => ({ scenarioIndex: si, turn: t })));
+	let completed = 0;
+
+	const turnResults = await pMap(
+		turnWork,
+		async (w) => {
+			const result = await runTurn(w.turn, evalOpts);
+			completed++;
+			const usageParts = result.runs.map((r) => {
+				if (!r.usage) return "";
+				return `in=${r.usage.inputTokens} cached=${r.usage.cachedInputTokens} out=${r.usage.outputTokens}`;
+			});
+			const usageSuffix = usageParts.filter(Boolean).length ? ` (${usageParts.join("; ")})` : "";
+			console.log(`  [${completed}/${turnWork.length}] ${scenarios[w.scenarioIndex]!.id} / ${w.turn.name}${usageSuffix}`);
+			return result;
+		},
+		concurrency,
+	);
+
+	// Reassemble into scenario captures
+	const results: ScenarioCapture[] = scenarios.map((scenario, si) => {
+		const turns = turnWork
+			.map((w, i) => ({ w, result: turnResults[i]! }))
+			.filter(({ w }) => w.scenarioIndex === si)
+			.map(({ result }) => result);
+		const totalDurationMs = turns.reduce((sum, t) => sum + t.runs.reduce((s, r) => s + r.durationMs, 0), 0);
+		return { id: scenario.id, name: scenario.name, description: scenario.description, turns, totalDurationMs };
+	});
 
 	const artifact: EvaluationArtifact = {
 		version: 4,
@@ -4169,12 +4212,12 @@ async function main() {
 	artifact.metrics = computeDeterministicMetrics(artifact);
 
 	await writeArtifact(outputPath, artifact);
-	console.log(`Wrote raw artifact: ${outputPath}`);
+	console.log(`\nWrote raw artifact: ${outputPath}`);
 
 	let judgedArtifact = artifact;
 	if (!skipJudge) {
 		console.log("Running LLM judge over captured artifact...");
-		judgedArtifact = await evaluateArtifactWithJudge(outputPath, { model: modelName, judgeModel });
+		judgedArtifact = await evaluateArtifactWithJudge(outputPath, { model: modelName, judgeModel, concurrency });
 		console.log(`Updated artifact with judgement: ${outputPath}`);
 	}
 

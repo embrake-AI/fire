@@ -1,6 +1,6 @@
 import { type IS, truncate } from "@fire/common";
 import OpenAI from "openai";
-import { formatAgentEventForPrompt, isInternalAgentEvent } from "./event-format";
+import { buildToolCallItemsFromEvent, formatAgentEventForPrompt, isInternalAgentEvent } from "./event-format";
 import { isResponsesFunctionToolCall, parseJsonObject } from "./openai";
 import type { AgentAffectionInfo, AgentAffectionStatus, AgentEvent, AgentSuggestion, AgentSuggestionContext } from "./types";
 
@@ -15,7 +15,7 @@ Priority:
 Hard rules:
 - Use only concrete evidence from the event log. If ambiguous, suggest nothing.
 - Every tool call MUST include evidence citing specific supporting events.
-- NEVER repeat the same action+target once it appears in AGENT_SUGGESTION events, unless that target has already been applied by a real incident event and a new target is now warranted.
+- NEVER repeat the same action+target once it appears in your prior tool calls, unless that target has already been applied by a real incident event and a new target is now warranted.
 - Treat repeated suggestions as harmful noise. New evidence alone does NOT justify repeating the same action+target.
 - Mapping for "same action+target":
   - update_status: same status
@@ -27,14 +27,14 @@ Hard rules:
 - If you use this exception, your evidence MUST cite the post-boundary event(s) and explain why the earlier pending suggestion was premature or not yet actionable.
 - Staleness: a pending suggestion becomes stale when it was made >10 minutes ago AND >20 events ago (shown as "stale" in the target state summary). You may re-suggest a stale target if current evidence still warrants it, without needing the post-boundary exception.
 - NEVER suggest a status transition that is not in validStatusTransitions.
-- Treat prior AGENT_SUGGESTION add_status_page_update as pending public-update intent until an AFFECTION_UPDATE is logged.
+- Treat your prior add_status_page_update calls as pending public-update intent until an AFFECTION_UPDATE is logged.
 - If a pending add_status_page_update exists and no new external-facing fact appears after it, suggest NO additional status-page update.
 - Never suggest affectionStatus=investigating more than once before the first AFFECTION_UPDATE.
 - Do not speculate about hypothetical/future actions.
 
 Lifecycle guidance:
 - Suggest update_status=mitigating when there is clear ongoing user impact and incident is not resolved.
-- Do NOT suggest update_status=mitigating if AGENT_SUGGESTION already includes update_status=mitigating and it has not been applied yet.
+- Do NOT suggest update_status=mitigating if you have already called update_status with status=mitigating and it has not been applied yet.
 - Suggest update_severity only when evidence supports an actual severity change.
 - Suggest update_status=resolved only when BOTH are true:
   1) remediation happened, and
@@ -43,25 +43,25 @@ Lifecycle guidance:
 
 Severity guidance:
 - Prefer high for confirmed broad external impact (for example widespread errors, major degradation, critical service affected).
-- Do not re-suggest the same severity target while that target is already pending in AGENT_SUGGESTION.
+- Do not re-suggest the same severity target while that target is already pending from a prior call.
 
 Status-page guidance:
 - Suggest status-page updates only for confirmed external-user impact.
 - Compute effectiveHasAffection:
   - true if hasAffection=true, OR
-  - true if any prior AGENT_SUGGESTION already includes add_status_page_update (pending intent).
+  - true if you have already called add_status_page_update (pending intent).
 - If effectiveHasAffection=false, the first status-page update MUST use affectionStatus=investigating and include title + services.
 - If effectiveHasAffection=true, use this decision table for affectionStatus:
   1) If you suggest update_status in this turn, set affectionStatus to that same lifecycle status (mitigating or resolved).
   2) If you do NOT suggest update_status in this turn, set affectionStatus=update for follow-up public communication.
 - If effectiveHasAffection=true and no status change, suggest a status-page update only when there is materially new external information (new impact/scope, renewed errors, mitigation progress, root-cause insight, recovery milestone, or clear next-step/update commitment).
-- New-information gate (strict): for effectiveHasAffection=true with no lifecycle status change, require at least one new external-facing fact that was NOT already communicated in recent AFFECTION_UPDATE or prior add_status_page_update AGENT_SUGGESTION events. Rewording the same state, internal debate, or repeated/ambiguous signals is NOT enough.
+- New-information gate (strict): for effectiveHasAffection=true with no lifecycle status change, require at least one new external-facing fact that was NOT already communicated in recent AFFECTION_UPDATE or your prior add_status_page_update calls. Rewording the same state, internal debate, or repeated/ambiguous signals is NOT enough.
 - Stakeholder cadence: if hasAffection=true and lastUpdatedAt is >10 minutes ago, suggest a status-page update even if no new external facts have appeared (this overrides the new-information gate). Stakeholders expect regular communication during active incidents. Use affectionStatus=update with a brief reassurance or status recap.
 - Anti-spam: do not post near-duplicate public updates that add no new external value (except when the stakeholder cadence rule applies).
 
 Output constraints:
 - Keep suggestion messages concise (~200 chars max).
-- Suggest at most 3 actions total.
+- No hard cap on actions, but prefer fewer, high-confidence suggestions over many speculative ones.
 - If uncertain, suggest nothing.
 
 Allowed actions (use tools):
@@ -98,27 +98,33 @@ export function normalizeEventData(value: unknown): unknown {
 	return Object.fromEntries(entries.map(([key, item]) => [key, normalizeEventData(item)]));
 }
 
-export function buildEventMessages(events: AgentEvent[], processedThroughId: number): Array<{ role: "user" | "assistant"; content: string }> {
+export function buildEventMessages(events: AgentEvent[], processedThroughId: number): OpenAI.Responses.ResponseInputItem[] {
 	if (!events.length) {
 		return [{ role: "user", content: "Recent events:\n(none)" }];
 	}
 
-	const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+	const items: OpenAI.Responses.ResponseInputItem[] = [];
 	let boundaryInserted = false;
 
 	for (const event of events) {
 		if (!boundaryInserted && processedThroughId > 0 && event.id > processedThroughId) {
-			messages.push({ role: "assistant", content: "[TURN BOUNDARY] Events above already processed. New updates start below." });
+			items.push({ role: "assistant", content: "[TURN BOUNDARY] Events above already processed. New updates start below." });
 			boundaryInserted = true;
+		}
+
+		const toolCallItems = buildToolCallItemsFromEvent(event);
+		if (toolCallItems) {
+			items.push(toolCallItems.functionCall, toolCallItems.functionCallOutput);
+			continue;
 		}
 
 		const isInternal = isInternalAgentEvent(event);
 		const role = isInternal ? "assistant" : "user";
 		const content = isInternal ? formatAgentEventForPrompt(event) : `${event.event_type}: ${JSON.stringify(normalizeEventData(event.event_data))}`;
-		messages.push({ role, content });
+		items.push({ role, content });
 	}
 
-	return messages;
+	return items;
 }
 
 export function buildSuggestionTools(context: AgentSuggestionContext): OpenAI.Responses.FunctionTool[] {
@@ -129,9 +135,10 @@ export function buildSuggestionTools(context: AgentSuggestionContext): OpenAI.Re
 			name: "similar_incidents",
 			description: `Request retrieval + analysis of similar incidents to inform triage and mitigation.
 - Call proactively and early. Historical context is most valuable during initial triage.
-- First search (no prior CONTEXT_AGENT_TRIGGERED events): call as soon as the incident has a described symptom and affected area. Don't wait for confirmed root cause.
-- Re-search: require material understanding change since the latest CONTEXT_AGENT_TRIGGERED event.
-- Skip only for monitoring chatter, reworded updates with no new facts, or pure acknowledgements.`,
+- First search (no prior similar_incidents call in the conversation): call as soon as the incident has a described symptom and affected area. Don't wait for confirmed root cause.
+- Do NOT call again if AGENT_SIMILAR_INCIDENT results already appear in the event log unless the incident's nature has fundamentally changed.
+- Re-search requires a material understanding change since your latest similar_incidents call. Material change means: new root cause hypothesis, newly affected system, or fundamentally different failure mechanism. NOT: more confirming events, severity updates, status transitions, or repeated signals of the same problem.
+- Skip for monitoring chatter, reworded updates with no new facts, or pure acknowledgements.`,
 			strict: true,
 			parameters: {
 				type: "object",
@@ -519,10 +526,8 @@ export async function generateIncidentSuggestions(
 
 	const eventMessages = buildEventMessages(context.events, context.processedThroughId ?? 0);
 
-	const suggestions: AgentSuggestion[] = [];
-	let similarIncidentsRequest: SimilarIncidentsToolRequest | undefined;
 	const tools = buildSuggestionTools(context);
-	const input: OpenAI.Responses.EasyInputMessage[] = [
+	const input: OpenAI.Responses.ResponseInputItem[] = [
 		{ role: "system", content: SYSTEM_PROMPT },
 		{ role: "user", content: userMessage },
 		...eventMessages,
@@ -532,7 +537,6 @@ export async function generateIncidentSuggestions(
 		{ role: "user", content: "Return suggestions." },
 	];
 
-	const usedToolNames = new Set<string>();
 	const incidentId = context.incident.id;
 	const promptCacheKey = `is:v1:${incidentId.slice(0, 12)}:${incidentId.slice(-8)}`;
 
@@ -575,10 +579,13 @@ export async function generateIncidentSuggestions(
 		};
 		return safeResponse;
 	});
-	const toolCalls = data.output;
-	if (!toolCalls.length) {
-		return { suggestions };
-	}
+	return parseResponseToolCalls(data.output);
+}
+
+export function parseResponseToolCalls(toolCalls: OpenAI.Responses.ResponseFunctionToolCall[]): GenerateIncidentSuggestionsResult {
+	const suggestions: AgentSuggestion[] = [];
+	let similarIncidentsRequest: SimilarIncidentsToolRequest | undefined;
+	const usedToolNames = new Set<string>();
 
 	for (const toolCall of toolCalls) {
 		if (usedToolNames.has(toolCall.name)) {
@@ -594,10 +601,6 @@ export async function generateIncidentSuggestions(
 					reason: args.reason.trim(),
 				};
 			}
-			continue;
-		}
-
-		if (suggestions.length >= 3) {
 			continue;
 		}
 
