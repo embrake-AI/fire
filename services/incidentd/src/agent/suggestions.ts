@@ -64,12 +64,6 @@ Output constraints:
 - Suggest at most 3 actions total.
 - If uncertain, suggest nothing.
 
-Similarity lookup guidance:
-- If the similar_incidents tool is available, call it when historical incidents are likely to materially improve decision quality. You may call it alongside other tools in the same response.
-- First search: require concrete and stable understanding (specific failure mechanism or error class, affected surface, and impact scope).
-- Re-search: require material understanding change since the latest CONTEXT_AGENT_TRIGGERED or SIMILAR_INCIDENTS_DISCOVERED event (new mechanism, subsystem shift, or invalidated prior model).
-- Do NOT call similar_incidents for monitoring chatter, reworded updates, or ambiguous context.
-
 Allowed actions (use tools):
 1) update_status: move to mitigating or resolved. Must include a concise message. Updating to resolved terminates (closes) the incident.
 2) update_severity: change severity to low/medium/high.
@@ -133,11 +127,11 @@ export function buildSuggestionTools(context: AgentSuggestionContext): OpenAI.Re
 		{
 			type: "function",
 			name: "similar_incidents",
-			description: `Request retrieval + analysis of similar incidents before final action suggestions.
-- Call only when similar history is likely to improve current decision quality.
-- First search: require clear mechanism/error-class context plus concrete affected surface and impact.
-- Re-search: require material understanding change since the latest SIMILAR_INCIDENTS_DISCOVERED event.
-- Skip when context is ambiguous, purely monitoring chatter, or only reworded status updates.`,
+			description: `Request retrieval + analysis of similar incidents to inform triage and mitigation.
+- Call proactively and early. Historical context is most valuable during initial triage.
+- First search (no prior CONTEXT_AGENT_TRIGGERED or SIMILAR_INCIDENTS_DISCOVERED events): call as soon as the incident has a described symptom and affected area. Don't wait for confirmed root cause.
+- Re-search: require material understanding change since the latest CONTEXT_AGENT_TRIGGERED or SIMILAR_INCIDENTS_DISCOVERED event.
+- Skip only for monitoring chatter, reworded updates with no new facts, or pure acknowledgements.`,
 			strict: true,
 			parameters: {
 				type: "object",

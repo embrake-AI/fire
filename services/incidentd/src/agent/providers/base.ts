@@ -258,7 +258,10 @@ export abstract class AgentBase extends DurableObject<Env> {
 		return row?.content ?? "";
 	}
 
-	exportData(): AgentExport {
+	exportData(): AgentExport | null {
+		if (!this.incidentId) {
+			return null;
+		}
 		const steps = this.ctx.storage.sql
 			.exec<ExportedAgentStep>("SELECT id, role, content, name, tool_call_id, source, context_to_event_id, run_id, created_at FROM steps ORDER BY id ASC")
 			.toArray()
@@ -287,7 +290,7 @@ export abstract class AgentBase extends DurableObject<Env> {
 			}));
 		return {
 			provider: this.providerMeta,
-			incidentId: this.incidentId ?? "",
+			incidentId: this.incidentId,
 			steps,
 			contexts,
 		};

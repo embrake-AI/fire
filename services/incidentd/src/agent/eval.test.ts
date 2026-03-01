@@ -3447,7 +3447,7 @@ function buildSimilarIncidentClarityGateScenario(): LifecycleScenario {
 		description: "Ensures similar_incidents is not requested while context is unclear, then requested once mechanism/scope become concrete.",
 		turns: [
 			{
-				name: "Turn 1: Ambiguous context should not request similar incidents",
+				name: "Turn 1: Ambiguous context — similar_incidents is acceptable either way",
 				context: {
 					incident: baseIncident(incidentBase),
 					services: SERVICES,
@@ -3456,7 +3456,7 @@ function buildSimilarIncidentClarityGateScenario(): LifecycleScenario {
 					processedThroughId: 0,
 					validStatusTransitions: ["mitigating", "resolved"],
 				},
-				checks: [shouldNotRequestSimilarIncidents(), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+				checks: [shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
 			},
 			{
 				name: "Turn 2: Concrete mechanism/scope should request similar incidents",
@@ -3469,6 +3469,108 @@ function buildSimilarIncidentClarityGateScenario(): LifecycleScenario {
 					validStatusTransitions: ["mitigating", "resolved"],
 				},
 				checks: [shouldRequestSimilarIncidents(), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+			},
+		],
+	};
+}
+
+function buildSimilarIncidentEarlyTriggerScenario(): LifecycleScenario {
+	const SERVICES: AgentSuggestionContext["services"] = [
+		{ id: "svc_api", name: "API", prompt: "Public REST API" },
+		{ id: "svc_workers", name: "Background Workers", prompt: "Async job processing (enrichments, data sync)" },
+	];
+
+	const incidentBase = {
+		title: "Enrichments are not being processed",
+		description: "Background enrichment jobs are failing to start. Instances may not be picking up jobs from the queue.",
+		prompt: "Investigate enrichment processing failures",
+		status: "open" as const,
+		severity: "medium" as const,
+	};
+
+	// Turn 1: Incident just created with a clear problem statement — no prior similar-incidents events
+	resetIds();
+	const t1Events: AgentEvent[] = [
+		mkEvent(
+			{
+				event_type: "INCIDENT_CREATED",
+				event_data: {
+					status: "open",
+					severity: "medium",
+					createdBy: "U_ONCALL",
+					title: incidentBase.title,
+					description: incidentBase.description,
+					prompt: incidentBase.prompt,
+					source: "slack",
+					assignee: "U_ONCALL",
+					entryPointId: "ep_workers",
+					rotationId: "rot_workers",
+				},
+			},
+			0,
+		),
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "Enrichments are stuck, none have completed in the last 30 minutes. Checking worker instances.",
+					userId: "U_ONCALL",
+				},
+			},
+			1,
+		),
+	];
+
+	// Turn 2: Confirmation message adds clarity — still no prior similar-incidents events
+	const t2Events: AgentEvent[] = [
+		...t1Events,
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "Yes, it looks like instances are not picking up jobs. The queue is growing.",
+					userId: "U_SRE",
+				},
+			},
+			3,
+		),
+	];
+	const t2ProcessedThrough = t1Events[t1Events.length - 1]!.id;
+
+	return {
+		id: "similar-early-trigger",
+		name: "Similar-Incident Early Trigger on Clear Problem",
+		description: "Ensures similar_incidents is requested early when the incident has a clear problem statement, without waiting for confirmed root cause.",
+		turns: [
+			{
+				name: "Turn 1: Clear problem statement at incident creation should request similar incidents",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t1Events,
+					processedThroughId: 0,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [
+					shouldRequestSimilarIncidents(),
+					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+				],
+			},
+			{
+				name: "Turn 2: Confirmation of problem should also request similar incidents (no prior trigger events)",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t2Events,
+					processedThroughId: t2ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [
+					shouldRequestSimilarIncidents(),
+					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+				],
 			},
 		],
 	};
@@ -3496,6 +3598,7 @@ export const SCENARIOS: LifecycleScenario[] = [
 	buildSimilarIncidentCapabilityScenario(),
 	buildSimilarIncidentClarityGateScenario(),
 	buildSimilarIncidentRetriggerScenario(),
+	buildSimilarIncidentEarlyTriggerScenario(),
 ];
 
 // ---------------------------------------------------------------------------

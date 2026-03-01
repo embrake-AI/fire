@@ -74,7 +74,7 @@ export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAn
 			try {
 				const provider = getSimilarIncidentsProvider(this.env, incidentId);
 				const data = await provider.exportData();
-				return { provider: data.provider, incidentId: data.incidentId, steps: data.steps, contexts: data.contexts };
+				return data ? { provider: data.provider, incidentId: data.incidentId, steps: data.steps, contexts: data.contexts } : null;
 			} catch (error) {
 				console.error("Failed to extract agent data", error);
 				return null;

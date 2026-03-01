@@ -25,27 +25,25 @@ export class SimilarIncidentsAgent extends AgentBase {
 
 	async prompt(input: PromptInput): Promise<PromptResult> {
 		const question = input.question.trim();
+
+		const context = this.listModelInputItems();
 		if (question) {
-			this.appendStep({ role: "user", content: question, source: "prompt" });
+			context.push({ role: "user", content: question });
 		}
 
 		let answer = "";
 		try {
 			answer = await answerSimilarProviderPrompt({
 				openaiApiKey: this.env.OPENAI_API_KEY,
-				input: this.listModelInputItems(),
+				input: context,
 			});
 		} catch (error) {
 			console.error("Similar provider prompt mini-call failed", error);
 		}
 
-		if (answer.trim()) {
-			this.appendStep({ role: "assistant", content: answer.trim(), source: "runner" });
-		} else {
+		if (!answer.trim()) {
 			answer = this.latestAssistantStep();
 		}
-
-		await this.ensureRunScheduled();
 
 		if (!answer.trim()) {
 			return {
