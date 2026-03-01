@@ -7,7 +7,7 @@ import { getSimilarIncidentsProvider } from "../agent/providers/registry";
 import type { AgentContextResponse, AgentPromptPayload, AgentSuggestionContext } from "../agent/types";
 import { addReaction, removeReaction } from "../lib/slack";
 
-const SYSTEM_PROMPT = `You are an incident operations assistant.
+const SYSTEM_PROMPT = `You are an incident operations assistant responding in Slack.
 You must choose one mode:
 1) If the user prompt includes an explicit instruction to change incident state or status page, call the matching tool and execute it.
 2) If the user asks to query or prompt a context agent (e.g. similar incidents), forward the prompt by calling the agent's tool.
@@ -15,7 +15,10 @@ You must choose one mode:
 
 Rules:
 - Follow explicit user instructions immediately.
-- Keep text replies concise.`;
+- Only use facts from the conversation and tool results. Do not speculate or list hypothetical causes, signals, or mitigations.
+- Do not suggest actions or offer to do things. Do not present investigation checklists.
+- Use Slack formatting (*bold*, _italic_), never markdown (**bold**, ## headers).
+- Keep text replies short (2-4 sentences).`;
 
 function getPromptWorkflowValidStatusTransitions(currentStatus: IS["status"]): Array<Exclude<IS["status"], "open">> {
 	switch (currentStatus) {
@@ -203,13 +206,11 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 				const incidentStub = this.env.INCIDENT.get(incidentId);
 				const response = await incidentStub.getAgentContext();
 				if (!response || "error" in response) {
-					const errorText = response && "error" in response ? await response.error : "FAILED_TO_LOAD_AGENT_CONTEXT";
+					const errorText = response && "error" in response ? response.error : "FAILED_TO_LOAD_AGENT_CONTEXT";
 					return { error: String(errorText) };
 				}
 
-				const [incident, metadata, services, affection, events] = await Promise.all([response.incident, response.metadata, response.services, response.affection, response.events]);
-
-				return { incident, metadata, services, affection, events };
+				return response;
 			},
 		);
 		if ("error" in contextResponse || !contextResponse.incident) {
@@ -301,30 +302,6 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 						}
 						break;
 					}
-					case "prompt_similar_incidents": {
-						const promptText = typeof args.prompt === "string" ? args.prompt.trim() : "";
-						if (promptText) {
-							const result = await step.do<{ answer: string }>(
-								`agent-prompt.similar:${payload.incidentId}:${payload.ts}`,
-								{ retries: { limit: 3, delay: "2 seconds" } },
-								async () => {
-									const provider = getSimilarIncidentsProvider(this.env, payload.incidentId);
-									const response = await provider.addPrompt({ question: promptText, requestedAt: new Date().toISOString() });
-									return { answer: response?.answer ?? "" };
-								},
-							);
-							const answer = result.answer.trim();
-							if (answer) {
-								await step.do(`agent-prompt.similar-respond:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
-									const incidentStub = this.env.INCIDENT.get(incidentId);
-									await incidentStub.addMessage(answer, "", `fire-prompt:${payload.ts}`, "fire", undefined, eventMetadata);
-									return null;
-								});
-								handledToolCall = true;
-							}
-						}
-						break;
-					}
 					case "add_status_page_update": {
 						const messageText = typeof args.message === "string" ? args.message.trim() : "";
 						if (messageText) {
@@ -344,6 +321,52 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 								});
 							});
 							handledToolCall = true;
+						}
+						break;
+					}
+					case "prompt_similar_incidents": {
+						const promptText = typeof args.prompt === "string" ? args.prompt.trim() : "";
+						if (promptText) {
+							const agentResult = await step.do<{ answer: string }>(
+								`agent-prompt.similar:${payload.incidentId}:${payload.ts}`,
+								{ retries: { limit: 3, delay: "2 seconds" } },
+								async () => {
+									const provider = getSimilarIncidentsProvider(this.env, payload.incidentId);
+									const response = await provider.addPrompt({ question: promptText, requestedAt: new Date().toISOString() });
+									return { answer: response?.answer ?? "" };
+								},
+							);
+							const agentAnswer = agentResult.answer.trim();
+							const synthesized = await step.do<{ text: string }>(
+								`agent-prompt.synthesize:${payload.incidentId}:${payload.ts}`,
+								{ retries: { limit: 3, delay: "2 seconds" } },
+								async () => {
+									const client = new OpenAI({ apiKey: this.env.OPENAI_API_KEY });
+									const response = await client.responses.create({
+										model: "gpt-5.2",
+										input: [
+											...input,
+											toolCall,
+											{
+												type: "function_call_output",
+												call_id: toolCall.call_id,
+												output: agentAnswer || "No similar-incident information available yet.",
+											},
+										],
+										text: { verbosity: "low" },
+									});
+									return { text: response.output_text.trim() };
+								},
+							);
+							const answer = synthesized.text;
+							if (answer) {
+								await step.do(`agent-prompt.similar-respond:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
+									const incidentStub = this.env.INCIDENT.get(incidentId);
+									await incidentStub.addMessage(answer, "", `fire-prompt:${payload.ts}`, "fire", undefined, eventMetadata);
+									return null;
+								});
+								handledToolCall = true;
+							}
 						}
 						break;
 					}

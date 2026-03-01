@@ -190,64 +190,6 @@ describe("Incident DO core contracts", () => {
 		expect(eventData<{ services?: Array<{ id: string; impact: string }> }>(affectionEvents[0]!).services).toEqual([{ id: "svc-api", impact: "major" }]);
 	});
 
-	it("stores SIMILAR_INCIDENTS_DISCOVERED as auto-published internal event", async () => {
-		const { stub, id, identifier } = createIncidentHandle();
-		await seedInitializedIncident(stub, id, identifier);
-
-		const first = await stub.recordAgentContextEvent({
-			eventType: "SIMILAR_INCIDENTS_DISCOVERED",
-			eventData: {
-				runId: "run-1",
-				searchedAt: "2026-02-27T12:00:00.000Z",
-				contextSnapshot: "Customers see elevated 5xx on API endpoints.",
-				gateDecision: "insufficient_context",
-				gateReason: "Need clearer scope confirmation.",
-				openCandidateCount: 0,
-				closedCandidateCount: 0,
-				rankedIncidentIds: [],
-				selectedIncidentIds: [],
-			},
-			dedupeKey: "run-1",
-		});
-
-		expect(first).toBeDefined();
-		expect(first).not.toEqual({ error: "NOT_FOUND" });
-		expect(first).not.toEqual({ error: "NOT_INITIALIZED" });
-		expect(first).not.toEqual({ error: "RESOLVED" });
-
-		const second = await stub.recordAgentContextEvent({
-			eventType: "SIMILAR_INCIDENTS_DISCOVERED",
-			eventData: {
-				runId: "run-1",
-				searchedAt: "2026-02-27T12:00:00.000Z",
-				contextSnapshot: "Customers see elevated 5xx on API endpoints.",
-				gateDecision: "insufficient_context",
-				gateReason: "Need clearer scope confirmation.",
-				openCandidateCount: 0,
-				closedCandidateCount: 0,
-				rankedIncidentIds: [],
-				selectedIncidentIds: [],
-			},
-			dedupeKey: "run-1",
-		});
-		expect(second).toBeDefined();
-		if (first && second && "eventId" in first && "eventId" in second) {
-			expect(second.eventId).toBe(first.eventId);
-		}
-
-		const result = assertReady(await stub.get());
-		const discoveryEvents = result.events.filter((event) => event.event_type === "SIMILAR_INCIDENTS_DISCOVERED");
-		expect(discoveryEvents).toHaveLength(1);
-		const discoveryEvent = discoveryEvents[0];
-		expect(discoveryEvent).toBeDefined();
-		expect(discoveryEvent?.adapter).toBe("fire");
-		expect(discoveryEvent?.published_at).not.toBeNull();
-		expect(eventData<{ runId: string; gateDecision: string }>(discoveryEvent!)).toMatchObject({
-			runId: "run-1",
-			gateDecision: "insufficient_context",
-		});
-	});
-
 	it("stores SIMILAR_INCIDENT as unpublished outbox event and deduplicates by run+incident", async () => {
 		const { stub, id, identifier } = createIncidentHandle();
 		await seedInitializedIncident(stub, id, identifier);
@@ -310,24 +252,21 @@ describe("Incident DO core contracts", () => {
 		await seedInitializedIncident(stub, id, identifier);
 
 		const contextEvent = {
-			runId: "run-generic-1",
-			searchedAt: "2026-02-27T12:05:00.000Z",
-			contextSnapshot: "Search context snapshot",
-			gateDecision: "run" as const,
-			openCandidateCount: 3,
-			closedCandidateCount: 2,
-			rankedIncidentIds: ["inc-a", "inc-b"],
-			selectedIncidentIds: ["inc-a"],
+			agent: "similar-incidents",
+			turnId: "turn-generic-1",
+			evidence: "Elevated 5xx errors on API endpoints",
+			reason: "Initial triage context needed",
+			triggeredAt: "2026-02-27T12:05:00.000Z",
 		};
 		const contextFirst = await stub.recordAgentContextEvent({
-			eventType: "SIMILAR_INCIDENTS_DISCOVERED",
+			eventType: "CONTEXT_AGENT_TRIGGERED",
 			eventData: contextEvent,
-			dedupeKey: "generic-discovery-key",
+			dedupeKey: "generic-trigger-key",
 		});
 		const contextSecond = await stub.recordAgentContextEvent({
-			eventType: "SIMILAR_INCIDENTS_DISCOVERED",
+			eventType: "CONTEXT_AGENT_TRIGGERED",
 			eventData: contextEvent,
-			dedupeKey: "generic-discovery-key",
+			dedupeKey: "generic-trigger-key",
 		});
 		if (contextFirst && contextSecond && "eventId" in contextFirst && "eventId" in contextSecond) {
 			expect(contextSecond.eventId).toBe(contextFirst.eventId);
@@ -359,11 +298,11 @@ describe("Incident DO core contracts", () => {
 		}
 
 		const result = assertReady(await stub.get());
-		const discoveryEvents = result.events.filter((event) => event.event_type === "SIMILAR_INCIDENTS_DISCOVERED");
+		const triggerEvents = result.events.filter((event) => event.event_type === "CONTEXT_AGENT_TRIGGERED");
 		const similarEvents = result.events.filter((event) => event.event_type === "SIMILAR_INCIDENT");
-		expect(discoveryEvents).toHaveLength(1);
+		expect(triggerEvents).toHaveLength(1);
 		expect(similarEvents).toHaveLength(1);
-		expect(discoveryEvents[0]?.published_at).not.toBeNull();
+		expect(triggerEvents[0]?.published_at).not.toBeNull();
 		expect(similarEvents[0]?.published_at).toBeNull();
 	});
 

@@ -26,20 +26,13 @@ const ALARM_INTERVAL_MS = 200;
 const MAX_ATTEMPTS = 3;
 
 type AffectionUpdateData = Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
-type SimilarIncidentsDiscoveredData = Extract<IS_Event, { event_type: "SIMILAR_INCIDENTS_DISCOVERED" }>["event_data"];
 type SimilarIncidentData = Extract<IS_Event, { event_type: "SIMILAR_INCIDENT" }>["event_data"];
 type ContextAgentTriggeredData = Extract<IS_Event, { event_type: "CONTEXT_AGENT_TRIGGERED" }>["event_data"];
-type AgentContextEventPayload =
-	| {
-			eventType: "SIMILAR_INCIDENTS_DISCOVERED";
-			eventData: SimilarIncidentsDiscoveredData;
-			dedupeKey: string;
-	  }
-	| {
-			eventType: "CONTEXT_AGENT_TRIGGERED";
-			eventData: ContextAgentTriggeredData;
-			dedupeKey: string;
-	  };
+type AgentContextEventPayload = {
+	eventType: "CONTEXT_AGENT_TRIGGERED";
+	eventData: ContextAgentTriggeredData;
+	dedupeKey: string;
+};
 type AgentInsightEventPayload = {
 	eventType: "SIMILAR_INCIDENT";
 	eventData: SimilarIncidentData;

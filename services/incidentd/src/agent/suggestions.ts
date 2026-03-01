@@ -129,8 +129,8 @@ export function buildSuggestionTools(context: AgentSuggestionContext): OpenAI.Re
 			name: "similar_incidents",
 			description: `Request retrieval + analysis of similar incidents to inform triage and mitigation.
 - Call proactively and early. Historical context is most valuable during initial triage.
-- First search (no prior CONTEXT_AGENT_TRIGGERED or SIMILAR_INCIDENTS_DISCOVERED events): call as soon as the incident has a described symptom and affected area. Don't wait for confirmed root cause.
-- Re-search: require material understanding change since the latest CONTEXT_AGENT_TRIGGERED or SIMILAR_INCIDENTS_DISCOVERED event.
+- First search (no prior CONTEXT_AGENT_TRIGGERED events): call as soon as the incident has a described symptom and affected area. Don't wait for confirmed root cause.
+- Re-search: require material understanding change since the latest CONTEXT_AGENT_TRIGGERED event.
 - Skip only for monitoring chatter, reworded updates with no new facts, or pure acknowledgements.`,
 			strict: true,
 			parameters: {

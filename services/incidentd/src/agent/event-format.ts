@@ -20,29 +20,6 @@ function formatSuggestionPayload(value: Record<string, unknown>) {
 	return `action=${action}`;
 }
 
-function formatSimilarDiscoveryEvent(event: AgentEvent) {
-	const data = event.event_data as {
-		runId?: string;
-		gateDecision?: string;
-		gateReason?: string;
-		contextSnapshot?: string;
-		changedUnderstanding?: string;
-		openCandidateCount?: number;
-		closedCandidateCount?: number;
-		selectedIncidentIds?: string[];
-	};
-	const runId = data.runId ?? "unknown";
-	const gateDecision = data.gateDecision ?? "unknown";
-	const reason = data.gateReason ? ` reason="${truncate(data.gateReason, 140)}"` : "";
-	const context = data.contextSnapshot ? ` context="${truncate(data.contextSnapshot, 180)}"` : "";
-	const changed = data.changedUnderstanding ? ` changed="${truncate(data.changedUnderstanding, 160)}"` : "";
-	const openCount = typeof data.openCandidateCount === "number" ? data.openCandidateCount : 0;
-	const closedCount = typeof data.closedCandidateCount === "number" ? data.closedCandidateCount : 0;
-	const selected = Array.isArray(data.selectedIncidentIds) ? data.selectedIncidentIds : [];
-	const selectedText = selected.length ? selected.join(", ") : "none";
-	return `AGENT_SIMILAR_SEARCH run=${runId} decision=${gateDecision}${reason}${context}${changed} candidates=open:${openCount},closed:${closedCount} selected=[${selectedText}]`;
-}
-
 function formatSimilarIncidentEvent(event: AgentEvent) {
 	const data = event.event_data as {
 		similarIncidentId?: string;
@@ -62,9 +39,7 @@ export function isSuggestionEvent(event: AgentEvent) {
 }
 
 export function isInternalAgentEvent(event: AgentEvent) {
-	return (
-		isSuggestionEvent(event) || event.event_type === "SIMILAR_INCIDENTS_DISCOVERED" || event.event_type === "SIMILAR_INCIDENT" || event.event_type === "CONTEXT_AGENT_TRIGGERED"
-	);
+	return isSuggestionEvent(event) || event.event_type === "SIMILAR_INCIDENT" || event.event_type === "CONTEXT_AGENT_TRIGGERED";
 }
 
 function formatContextAgentTriggeredEvent(event: AgentEvent) {
@@ -82,9 +57,6 @@ function formatContextAgentTriggeredEvent(event: AgentEvent) {
 export function formatAgentEventForPrompt(event: AgentEvent): string {
 	if (event.event_type === "CONTEXT_AGENT_TRIGGERED") {
 		return formatContextAgentTriggeredEvent(event);
-	}
-	if (event.event_type === "SIMILAR_INCIDENTS_DISCOVERED") {
-		return formatSimilarDiscoveryEvent(event);
 	}
 	if (event.event_type === "SIMILAR_INCIDENT") {
 		return formatSimilarIncidentEvent(event);

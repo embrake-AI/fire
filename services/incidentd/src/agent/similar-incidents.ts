@@ -21,11 +21,6 @@ export const SIMILAR_PROVIDER_SUMMARIZATION_PROMPT =
 type SimilarIncidentEvent = Extract<IS_Event, { event_type: "SIMILAR_INCIDENT" }>["event_data"];
 
 export type SimilarIncidentPersistenceApi = {
-	recordAgentContextEvent: (
-		eventType: "SIMILAR_INCIDENTS_DISCOVERED",
-		eventData: Extract<IS_Event, { event_type: "SIMILAR_INCIDENTS_DISCOVERED" }>["event_data"],
-		dedupeKey: string,
-	) => Promise<{ eventId: number; createdAt: string } | { error: string }>;
 	recordAgentInsightEvent: (
 		eventType: "SIMILAR_INCIDENT",
 		eventData: SimilarIncidentEvent,

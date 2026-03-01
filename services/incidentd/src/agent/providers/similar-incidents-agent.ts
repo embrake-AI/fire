@@ -18,8 +18,6 @@ import {
 import { AgentBase, RUN_STATUS_IDLE, RUN_STATUS_RUNNING } from "./base";
 import type { PromptInput, PromptResult } from "./types";
 
-type SimilarIncidentsDiscoveredEvent = Extract<IS_Event, { event_type: "SIMILAR_INCIDENTS_DISCOVERED" }>["event_data"];
-
 const CANDIDATES_LOADED_KEY = "candidatesLoaded";
 const CANDIDATES_KEY = "candidates";
 const PROMPT_PENDING_KEY = "promptPending";
@@ -41,7 +39,7 @@ export class SimilarIncidentsAgent extends AgentBase {
 
 		const context = this.listModelInputItems();
 		const questionWithConstraints = question
-			? `${question}\n\nAnswer constraints: Only use facts from the conversation above (incident events, similar incidents found, investigation results). Do not speculate or list hypothetical causes, signals, or mitigations. If no similar incidents have been found yet, say so briefly. Keep your response short.`
+			? `${question}\n\nAnswer constraints: Only use facts from the conversation above (incident events, similar incidents found, investigation results). Do not speculate or list hypothetical causes, signals, or mitigations. Do not suggest actions or offer to do things. If no similar incidents have been found yet, say so briefly. Keep your response short.`
 			: null;
 		if (questionWithConstraints) {
 			context.push({ role: "user", content: questionWithConstraints });
@@ -55,7 +53,12 @@ export class SimilarIncidentsAgent extends AgentBase {
 				input: context,
 			});
 
-			stepContent = structured.explanation;
+			if (structured.incidents.length) {
+				const refs = structured.incidents.map((inc) => `- ${inc.id}: ${inc.summary}`).join("\n");
+				stepContent = `${structured.explanation}\n\nReferenced incidents:\n${refs}`;
+			} else {
+				stepContent = structured.explanation;
+			}
 			const candidates = this.getLoadedCandidates();
 			const frontendUrl = this.env.FRONTEND_URL;
 
@@ -142,17 +145,15 @@ export class SimilarIncidentsAgent extends AgentBase {
 		const runId = `similar:${Date.now()}`;
 		this.setRunStatus(RUN_STATUS_RUNNING);
 		try {
-			// Process pending event batches
 			while (this.getLastProcessedEventId() < this.getMaxQueuedToEventId()) {
 				const toEventId = this.getMaxQueuedToEventId();
-				await this.runSingleIteration(runId, toEventId);
+				await this.runSingleIteration(runId);
 				this.setLastProcessedEventId(toEventId);
 			}
 
-			// Run once more if a prompt added new context to the step history
 			if (hasPromptPending) {
 				this.ctx.storage.kv.delete(PROMPT_PENDING_KEY);
-				await this.runSingleIteration(runId, this.getLastProcessedEventId());
+				await this.runSingleIteration(runId);
 			}
 		} catch (error) {
 			console.error("Similar provider background run failed", error);
@@ -208,7 +209,7 @@ export class SimilarIncidentsAgent extends AgentBase {
 		return this.ctx.storage.kv.get<SimilarIncidentCandidate[]>(CANDIDATES_KEY) ?? [];
 	}
 
-	private async runSingleIteration(runId: string, toEventId: number) {
+	private async runSingleIteration(runId: string) {
 		const decision = await decideSimilarProviderAction({
 			openaiApiKey: this.env.OPENAI_API_KEY,
 			input: this.listModelInputItems(),
@@ -239,10 +240,6 @@ export class SimilarIncidentsAgent extends AgentBase {
 			});
 		}
 
-		// Emit SIMILAR_INCIDENTS_DISCOVERED event once before investigations
-		const selectedIncidentIds = decision.toolCalls.map((tc) => tc.incidentId);
-		await this.emitDiscoveryEvent(runId, toEventId, selectedIncidentIds);
-
 		// Load candidates and run all investigations in parallel
 		const candidates = this.getLoadedCandidates();
 
@@ -269,8 +266,6 @@ export class SimilarIncidentsAgent extends AgentBase {
 			incident: context.incident,
 			metadata: context.metadata,
 			persistence: {
-				recordAgentContextEvent: (eventType: "SIMILAR_INCIDENTS_DISCOVERED", eventData: SimilarIncidentsDiscoveredEvent, dedupeKey: string) =>
-					incident.recordAgentContextEvent({ eventType, eventData, dedupeKey }),
 				recordAgentInsightEvent: (eventType: "SIMILAR_INCIDENT", eventData: Extract<IS_Event, { event_type: "SIMILAR_INCIDENT" }>["event_data"], dedupeKey: string) =>
 					incident.recordAgentInsightEvent({ eventType, eventData, dedupeKey }),
 			},
@@ -310,30 +305,6 @@ export class SimilarIncidentsAgent extends AgentBase {
 					runId,
 				});
 			}
-		}
-	}
-
-	private async emitDiscoveryEvent(runId: string, toEventId: number, selectedIncidentIds: string[]) {
-		try {
-			const incident = this.getIncidentStub();
-			const candidates = this.getLoadedCandidates();
-			const openCount = candidates.filter((c) => c.kind === "open").length;
-			const closedCount = candidates.filter((c) => c.kind === "completed").length;
-
-			const discoveryEventData: SimilarIncidentsDiscoveredEvent = {
-				runId,
-				searchedAt: new Date().toISOString(),
-				contextSnapshot: `Provider selected ${selectedIncidentIds.length} candidate(s) for deep-dive.`,
-				gateDecision: "run",
-				openCandidateCount: openCount,
-				closedCandidateCount: closedCount,
-				rankedIncidentIds: selectedIncidentIds,
-				selectedIncidentIds,
-			};
-			const dedupeKey = `${runId}:${toEventId}`;
-			await incident.recordAgentContextEvent({ eventType: "SIMILAR_INCIDENTS_DISCOVERED", eventData: discoveryEventData, dedupeKey });
-		} catch (error) {
-			console.error("Failed to emit discovery event", error);
 		}
 	}
 }

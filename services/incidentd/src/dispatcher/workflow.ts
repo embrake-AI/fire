@@ -206,7 +206,6 @@ async function dispatchEvent(step: WorkflowStep, env: Env, payload: WorkflowEven
 				eventMetadata: payload.eventMetadata,
 			});
 		}
-		case "SIMILAR_INCIDENTS_DISCOVERED":
 		case "CONTEXT_AGENT_TRIGGERED": {
 			// Internal capability trace. Persisted in timeline context but never dispatched to senders.
 			return;

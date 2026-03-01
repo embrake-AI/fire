@@ -3012,23 +3012,6 @@ function buildSimilarIncidentCapabilityScenario(): LifecycleScenario {
 			},
 			1,
 		),
-		mkEvent(
-			{
-				event_type: "SIMILAR_INCIDENTS_DISCOVERED",
-				adapter: "fire",
-				event_data: {
-					runId: "sim-run-1",
-					searchedAt: ts(1),
-					contextSnapshot: "Initial report is still ambiguous and lacks concrete scope.",
-					gateDecision: "insufficient_context",
-					openCandidateCount: 0,
-					closedCandidateCount: 0,
-					rankedIncidentIds: [],
-					selectedIncidentIds: [],
-				},
-			},
-			1,
-		),
 	];
 
 	const t2Events: AgentEvent[] = [
@@ -3039,23 +3022,6 @@ function buildSimilarIncidentCapabilityScenario(): LifecycleScenario {
 				event_data: {
 					message: "Deploy 1743 rolled out right before spike. Error class is DB connection timeout for multiple customers.",
 					userId: "U_DB",
-				},
-			},
-			4,
-		),
-		mkEvent(
-			{
-				event_type: "SIMILAR_INCIDENTS_DISCOVERED",
-				adapter: "fire",
-				event_data: {
-					runId: "sim-run-2",
-					searchedAt: ts(4),
-					contextSnapshot: "Likely deployment-induced DB timeout issue with broad customer impact.",
-					gateDecision: "run",
-					openCandidateCount: 7,
-					closedCandidateCount: 12,
-					rankedIncidentIds: ["inc_prev_20", "inc_prev_11"],
-					selectedIncidentIds: ["inc_prev_20"],
 				},
 			},
 			4,
@@ -3092,23 +3058,6 @@ function buildSimilarIncidentCapabilityScenario(): LifecycleScenario {
 			},
 			8,
 		),
-		mkEvent(
-			{
-				event_type: "SIMILAR_INCIDENTS_DISCOVERED",
-				adapter: "fire",
-				event_data: {
-					runId: "sim-run-3",
-					searchedAt: ts(8),
-					contextSnapshot: "Mitigation action applied; incident understanding moved from diagnosis to active mitigation.",
-					gateDecision: "run",
-					openCandidateCount: 8,
-					closedCandidateCount: 12,
-					rankedIncidentIds: ["inc_prev_20", "inc_prev_11"],
-					selectedIncidentIds: ["inc_prev_20", "inc_prev_11"],
-				},
-			},
-			8,
-		),
 	];
 	const t3ProcessedThrough = t2Events[t2Events.length - 1]!.id;
 
@@ -3120,23 +3069,6 @@ function buildSimilarIncidentCapabilityScenario(): LifecycleScenario {
 				event_data: {
 					message: "Monitoring thread: no new user reports in the last 5 minutes.",
 					userId: "U_OBSERVER",
-				},
-			},
-			10,
-		),
-		mkEvent(
-			{
-				event_type: "SIMILAR_INCIDENTS_DISCOVERED",
-				adapter: "fire",
-				event_data: {
-					runId: "sim-run-4",
-					searchedAt: ts(10),
-					contextSnapshot: "No material understanding change since last search.",
-					gateDecision: "no_material_change",
-					openCandidateCount: 0,
-					closedCandidateCount: 0,
-					rankedIncidentIds: [],
-					selectedIncidentIds: [],
 				},
 			},
 			10,
@@ -3263,23 +3195,6 @@ function buildSimilarIncidentRetriggerScenario(): LifecycleScenario {
 		),
 		mkEvent(
 			{
-				event_type: "SIMILAR_INCIDENTS_DISCOVERED",
-				adapter: "fire",
-				event_data: {
-					runId: "sim-retrigger-1",
-					searchedAt: ts(2),
-					contextSnapshot: "Auth token verification latency suspected after rollout.",
-					gateDecision: "run",
-					openCandidateCount: 10,
-					closedCandidateCount: 22,
-					rankedIncidentIds: ["inc_prev_auth_1"],
-					selectedIncidentIds: ["inc_prev_auth_1"],
-				},
-			},
-			2,
-		),
-		mkEvent(
-			{
 				event_type: "SIMILAR_INCIDENT",
 				adapter: "fire",
 				event_data: {
@@ -3301,23 +3216,6 @@ function buildSimilarIncidentRetriggerScenario(): LifecycleScenario {
 				event_data: {
 					message: "No new evidence since last search; still monitoring current mitigation.",
 					userId: "U_ONCALL",
-				},
-			},
-			4,
-		),
-		mkEvent(
-			{
-				event_type: "SIMILAR_INCIDENTS_DISCOVERED",
-				adapter: "fire",
-				event_data: {
-					runId: "sim-retrigger-2",
-					searchedAt: ts(4),
-					contextSnapshot: "No material understanding change since prior search.",
-					gateDecision: "no_material_change",
-					openCandidateCount: 0,
-					closedCandidateCount: 0,
-					rankedIncidentIds: [],
-					selectedIncidentIds: [],
 				},
 			},
 			4,

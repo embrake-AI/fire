@@ -68,21 +68,6 @@ export type IS_Event =
 			};
 	  }
 	| {
-			event_type: "SIMILAR_INCIDENTS_DISCOVERED";
-			event_data: {
-				runId: string;
-				searchedAt: string;
-				contextSnapshot: string;
-				gateDecision: "run" | "insufficient_context" | "no_material_change" | "error";
-				openCandidateCount: number;
-				closedCandidateCount: number;
-				rankedIncidentIds: string[];
-				selectedIncidentIds: string[];
-				gateReason?: string;
-				changedUnderstanding?: string;
-			};
-	  }
-	| {
 			event_type: "SIMILAR_INCIDENT";
 			event_data: {
 				originRunId: string;

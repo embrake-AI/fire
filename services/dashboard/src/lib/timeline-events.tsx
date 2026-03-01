@@ -176,29 +176,6 @@ export const eventRegistry: EventConfigMap = {
 			);
 		},
 	},
-	SIMILAR_INCIDENTS_DISCOVERED: {
-		icon: MessageSquare,
-		iconBg: "bg-slate-100",
-		iconColor: "text-slate-600",
-		label: "Similar Incident Search",
-		render: ({ data }) => {
-			const selected = data.selectedIncidentIds.length ? data.selectedIncidentIds.join(", ") : "none";
-			return (
-				<div class="space-y-2">
-					<p class="text-sm text-muted-foreground">
-						Run <span class="font-mono">{data.runId}</span> ({data.gateDecision})
-					</p>
-					<p class="text-sm text-muted-foreground">{data.gateReason ?? "No gate reason provided."}</p>
-					<p class="text-sm text-muted-foreground">
-						Candidates: open {data.openCandidateCount}, closed {data.closedCandidateCount}. Selected: {selected}
-					</p>
-					<p class="text-sm text-muted-foreground italic">
-						<EmojiText text={data.contextSnapshot} />
-					</p>
-				</div>
-			);
-		},
-	},
 	SIMILAR_INCIDENT: {
 		icon: MessageSquare,
 		iconBg: "bg-amber-100",
