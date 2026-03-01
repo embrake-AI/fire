@@ -258,7 +258,6 @@ async function callJsonSchema<T>(params: { openaiApiKey: string; systemPrompt: s
 				schema: params.schema as Record<string, unknown>,
 				strict: true,
 			},
-			verbosity: "low",
 		},
 	});
 	const content = response.output_text.trim();

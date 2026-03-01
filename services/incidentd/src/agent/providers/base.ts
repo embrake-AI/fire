@@ -126,7 +126,7 @@ export abstract class AgentBase extends DurableObject<Env> {
 		const response = await client.responses.create({
 			model: "gpt-5.2",
 			input,
-			text: { verbosity: "low" },
+			text: {},
 		});
 
 		const text = response.output_text.trim();
