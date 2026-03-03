@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
-import OpenAI from "openai";
+import type OpenAI from "openai";
+import { callOpenAIWithLogging } from "../../lib/openai-logging";
 import { formatAgentEventForPrompt, isInternalAgentEvent } from "../event-format";
 import { normalizeEventData } from "../suggestions";
 import type { AgentEvent } from "../types";
@@ -122,11 +123,18 @@ export abstract class AgentBase extends DurableObject<Env> {
 
 		const input: OpenAI.Responses.ResponseInputItem[] = [...params.existingInput, { role: "user", content: `New incident events:\n${formatted}\n\n${this.summarizationPrompt}` }];
 
-		const client = new OpenAI({ apiKey: this.env.OPENAI_API_KEY });
-		const response = await client.responses.create({
-			model: "gpt-5.2",
-			input,
-			text: {},
+		const response = await callOpenAIWithLogging({
+			openaiApiKey: this.env.OPENAI_API_KEY,
+			request: {
+				model: "gpt-5.2",
+				input,
+				text: {},
+			},
+			context: {
+				operation: "agentProvider.summarizeNewContext",
+				incidentId: this.incidentId,
+				agentName: this.providerMeta.name,
+			},
 		});
 
 		const text = response.output_text.trim();

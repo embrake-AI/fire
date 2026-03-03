@@ -1,9 +1,10 @@
 import { type IS_Event, truncate } from "@fire/common";
 import { incidentAnalysis } from "@fire/db/schema";
 import { and, desc, eq, gte, inArray, ne } from "drizzle-orm";
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import type { Metadata } from "../handler";
 import { getDB } from "../lib/db";
+import { callOpenAIWithLogging } from "../lib/openai-logging";
 import { isResponsesFunctionToolCall, parseJsonObject } from "./openai";
 import type { AgentEvent, AgentIncidentSnapshot } from "./types";
 
@@ -67,6 +68,18 @@ export type SimilarProviderDecision = {
 	assistantContent: string;
 	toolCalls: SimilarProviderToolCall[];
 };
+
+export type SimilarIncidentsLogContext = {
+	incidentId?: string;
+};
+
+function buildSimilarLogContext(operation: string, logContext?: SimilarIncidentsLogContext) {
+	return {
+		operation,
+		agentName: "similar-incidents",
+		incidentId: logContext?.incidentId,
+	} as const;
+}
 
 export const DEEP_DIVE_SYSTEM_PROMPT = `You are a strict deep-dive validator for incident similarity.
 Return isSimilar=true only if the candidate can directly inform current diagnosis or mitigation.
@@ -204,20 +217,24 @@ export async function answerSimilarProviderPromptStructured(params: {
 	openaiApiKey: string;
 	input: OpenAI.Responses.ResponseInputItem[];
 	model?: string;
+	logContext?: SimilarIncidentsLogContext;
 }): Promise<StructuredPromptAnswer> {
-	const client = new OpenAI({ apiKey: params.openaiApiKey });
-	const response = await client.responses.create({
-		model: params.model ?? "gpt-5.2",
-		input: params.input,
-		text: {
-			format: {
-				type: "json_schema",
-				name: "similar_prompt_answer",
-				schema: STRUCTURED_PROMPT_SCHEMA as Record<string, unknown>,
-				strict: true,
+	const response = await callOpenAIWithLogging({
+		openaiApiKey: params.openaiApiKey,
+		request: {
+			model: params.model ?? "gpt-5.2",
+			input: params.input,
+			text: {
+				format: {
+					type: "json_schema",
+					name: "similar_prompt_answer",
+					schema: STRUCTURED_PROMPT_SCHEMA as Record<string, unknown>,
+					strict: true,
+				},
+				verbosity: "low",
 			},
-			verbosity: "low",
 		},
+		context: buildSimilarLogContext("answerSimilarProviderPromptStructured", params.logContext),
 	});
 	const content = response.output_text.trim();
 	if (!content) {
@@ -226,12 +243,20 @@ export async function answerSimilarProviderPromptStructured(params: {
 	return JSON.parse(content) as StructuredPromptAnswer;
 }
 
-export async function answerSimilarProviderPrompt(params: { openaiApiKey: string; input: OpenAI.Responses.ResponseInputItem[]; model?: string }): Promise<string> {
-	const client = new OpenAI({ apiKey: params.openaiApiKey });
-	const response = await client.responses.create({
-		model: params.model ?? "gpt-5.2",
-		input: params.input,
-		text: { verbosity: "low" },
+export async function answerSimilarProviderPrompt(params: {
+	openaiApiKey: string;
+	input: OpenAI.Responses.ResponseInputItem[];
+	model?: string;
+	logContext?: SimilarIncidentsLogContext;
+}): Promise<string> {
+	const response = await callOpenAIWithLogging({
+		openaiApiKey: params.openaiApiKey,
+		request: {
+			model: params.model ?? "gpt-5.2",
+			input: params.input,
+			text: { verbosity: "low" },
+		},
+		context: buildSimilarLogContext("answerSimilarProviderPrompt", params.logContext),
 	});
 	const content = response.output_text.trim();
 	if (content) {
@@ -240,31 +265,39 @@ export async function answerSimilarProviderPrompt(params: { openaiApiKey: string
 	return "No additional similar-incident insight is available yet.";
 }
 
-export async function decideSimilarProviderAction(params: { openaiApiKey: string; input: OpenAI.Responses.ResponseInputItem[]; model?: string }): Promise<SimilarProviderDecision> {
-	const client = new OpenAI({ apiKey: params.openaiApiKey });
-	const response = await client.responses.create({
-		model: params.model ?? "gpt-5.2",
-		input: params.input,
-		tools: [
-			{
-				type: "function",
-				name: "investigate_incident",
-				description:
-					"Run deep-dive investigation on a single candidate incident. Call once per incident you want to investigate. You may call this multiple times in parallel for different candidates.",
-				strict: true,
-				parameters: {
-					type: "object",
-					properties: {
-						incidentId: { type: "string", description: "The ID of the candidate incident to investigate." },
-						reason: { type: "string", description: "Why this candidate is worth investigating for the current incident." },
+export async function decideSimilarProviderAction(params: {
+	openaiApiKey: string;
+	input: OpenAI.Responses.ResponseInputItem[];
+	model?: string;
+	logContext?: SimilarIncidentsLogContext;
+}): Promise<SimilarProviderDecision> {
+	const response = await callOpenAIWithLogging({
+		openaiApiKey: params.openaiApiKey,
+		request: {
+			model: params.model ?? "gpt-5.2",
+			input: params.input,
+			tools: [
+				{
+					type: "function",
+					name: "investigate_incident",
+					description:
+						"Run deep-dive investigation on a single candidate incident. Call once per incident you want to investigate. You may call this multiple times in parallel for different candidates.",
+					strict: true,
+					parameters: {
+						type: "object",
+						properties: {
+							incidentId: { type: "string", description: "The ID of the candidate incident to investigate." },
+							reason: { type: "string", description: "Why this candidate is worth investigating for the current incident." },
+						},
+						required: ["incidentId", "reason"],
+						additionalProperties: false,
 					},
-					required: ["incidentId", "reason"],
-					additionalProperties: false,
 				},
-			},
-		],
-		tool_choice: "auto",
-		text: { verbosity: "low" },
+			],
+			tool_choice: "auto",
+			text: { verbosity: "low" },
+		},
+		context: buildSimilarLogContext("decideSimilarProviderAction", params.logContext),
 	});
 
 	const assistantContent = response.output_text.trim();
@@ -296,22 +329,32 @@ export async function decideSimilarProviderAction(params: { openaiApiKey: string
 	};
 }
 
-async function callJsonSchema<T>(params: { openaiApiKey: string; systemPrompt: string; userPrompt: string; schemaName: string; schema: unknown }): Promise<T> {
-	const client = new OpenAI({ apiKey: params.openaiApiKey });
-	const response = await client.responses.create({
-		model: "gpt-5.2",
-		input: [
-			{ role: "system", content: params.systemPrompt },
-			{ role: "user", content: params.userPrompt },
-		],
-		text: {
-			format: {
-				type: "json_schema",
-				name: params.schemaName,
-				schema: params.schema as Record<string, unknown>,
-				strict: true,
+async function callJsonSchema<T>(params: {
+	openaiApiKey: string;
+	systemPrompt: string;
+	userPrompt: string;
+	schemaName: string;
+	schema: unknown;
+	logContext?: SimilarIncidentsLogContext;
+}): Promise<T> {
+	const response = await callOpenAIWithLogging({
+		openaiApiKey: params.openaiApiKey,
+		request: {
+			model: "gpt-5.2",
+			input: [
+				{ role: "system", content: params.systemPrompt },
+				{ role: "user", content: params.userPrompt },
+			],
+			text: {
+				format: {
+					type: "json_schema",
+					name: params.schemaName,
+					schema: params.schema as Record<string, unknown>,
+					strict: true,
+				},
 			},
 		},
+		context: buildSimilarLogContext("callJsonSchema", params.logContext),
 	});
 	const content = response.output_text.trim();
 	if (!content) {
@@ -388,6 +431,7 @@ export type RunDeepDiveParams = {
 	incidentId: string;
 	incident: AgentIncidentSnapshot;
 	metadata: Metadata;
+	logContext?: SimilarIncidentsLogContext;
 	persistence: SimilarIncidentPersistenceApi;
 	knownEventIds: Set<number>;
 };
@@ -435,6 +479,9 @@ export async function runDeepDive(
 		userPrompt: deepDiveUserPrompt,
 		schemaName: "similar_incident_deep_dive",
 		schema: DEEP_DIVE_SCHEMA,
+		logContext: {
+			...(params.logContext ?? {}),
+		},
 	});
 
 	const candidateStatus = candidate.kind === "open" ? candidate.status : candidate.terminalStatus;

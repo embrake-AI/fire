@@ -1,5 +1,6 @@
 import { type IS, truncate } from "@fire/common";
-import OpenAI from "openai";
+import type OpenAI from "openai";
+import { callOpenAIWithLogging } from "../lib/openai-logging";
 import { buildToolCallItemsFromEvent, formatAgentEventForPrompt, isInternalAgentEvent } from "./event-format";
 import { isResponsesFunctionToolCall, parseJsonObject } from "./openai";
 import type { AgentAffectionInfo, AgentAffectionStatus, AgentEvent, AgentSuggestion, AgentSuggestionContext } from "./types";
@@ -559,8 +560,15 @@ export async function generateIncidentSuggestions(
 		};
 		output: OpenAI.Responses.ResponseFunctionToolCall[];
 	}>(`agent-suggest.fetch:${stepLabel}`, async () => {
-		const client = new OpenAI({ apiKey: openaiApiKey });
-		const responseJson = await client.responses.create(requestBody);
+		const responseJson = await callOpenAIWithLogging({
+			openaiApiKey,
+			request: requestBody,
+			context: {
+				operation: "generateIncidentSuggestions",
+				agentName: "agent-turn",
+				incidentId,
+			},
+		});
 		const output = (responseJson.output ?? []).filter(isResponsesFunctionToolCall).map((item) => ({
 			...item,
 			arguments: typeof item.arguments === "string" ? item.arguments : "{}",

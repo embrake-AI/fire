@@ -51,6 +51,9 @@ export class SimilarIncidentsAgent extends AgentBase {
 			const structured = await answerSimilarProviderPromptStructured({
 				openaiApiKey: this.env.OPENAI_API_KEY,
 				input: context,
+				logContext: {
+					incidentId: this.incidentId,
+				},
 			});
 
 			if (structured.incidents.length) {
@@ -86,6 +89,9 @@ export class SimilarIncidentsAgent extends AgentBase {
 				answer = await answerSimilarProviderPrompt({
 					openaiApiKey: this.env.OPENAI_API_KEY,
 					input: context,
+					logContext: {
+						incidentId: this.incidentId,
+					},
 				});
 				stepContent = answer;
 			} catch (fallbackError) {
@@ -213,6 +219,9 @@ export class SimilarIncidentsAgent extends AgentBase {
 		const decision = await decideSimilarProviderAction({
 			openaiApiKey: this.env.OPENAI_API_KEY,
 			input: this.listModelInputItems(),
+			logContext: {
+				incidentId: this.incidentId,
+			},
 		});
 
 		if (decision.assistantContent) {
@@ -265,6 +274,9 @@ export class SimilarIncidentsAgent extends AgentBase {
 			incidentId: incident.id.toString(),
 			incident: context.incident,
 			metadata: context.metadata,
+			logContext: {
+				incidentId: this.incidentId,
+			},
 			persistence: {
 				recordAgentInsightEvent: (eventType: "SIMILAR_INCIDENT", eventData: Extract<IS_Event, { event_type: "SIMILAR_INCIDENT" }>["event_data"], dedupeKey: string) =>
 					incident.recordAgentInsightEvent({ eventType, eventData, dedupeKey }),

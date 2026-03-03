@@ -1,6 +1,6 @@
 import type { EntryPoint, IS, IS_Event } from "@fire/common";
-import OpenAI from "openai";
 import type { AgentExport } from "../agent/providers/types";
+import { callOpenAIWithLogging } from "../lib/openai-logging";
 import { ASSERT } from "../lib/utils";
 
 type IncidentInfo = {
@@ -64,7 +64,6 @@ const RESPONSE_SCHEMA = (indices: number[]) =>
 
 export async function calculateIncidentInfo(prompt: string, entryPoints: EntryPoint[], openaiApiKey: string): Promise<IncidentInfo> {
 	ASSERT(entryPoints.length > 0, "At least one entry point is required");
-	const client = new OpenAI({ apiKey: openaiApiKey });
 
 	const entryPointsDescription = entryPoints
 		.map((ep, i) => `Index ${i}: Assignee: ${ep.assignee.id}\n   Choose when: ${ep.prompt}${ep.isFallback ? " (FALLBACK - Choose if no others match)" : ""}`)
@@ -78,20 +77,26 @@ ${prompt}
 
 Select the most appropriate entry point and provide the incident details.`;
 
-	const response = await client.responses.create({
-		model: "gpt-5.2",
-		input: [
-			{ role: "system", content: SYSTEM_PROMPT },
-			{ role: "user", content: userMessage },
-		],
-		text: {
-			format: {
-				type: "json_schema",
-				name: "incident_info",
-				schema: RESPONSE_SCHEMA(entryPoints.map((_, i) => i)) as Record<string, unknown>,
-				strict: true,
+	const response = await callOpenAIWithLogging({
+		openaiApiKey,
+		request: {
+			model: "gpt-5.2",
+			input: [
+				{ role: "system", content: SYSTEM_PROMPT },
+				{ role: "user", content: userMessage },
+			],
+			text: {
+				format: {
+					type: "json_schema",
+					name: "incident_info",
+					schema: RESPONSE_SCHEMA(entryPoints.map((_, i) => i)) as Record<string, unknown>,
+					strict: true,
+				},
+				verbosity: "low",
 			},
-			verbosity: "low",
+		},
+		context: {
+			operation: "calculateIncidentInfo",
 		},
 	});
 	const content = response.output_text.trim();
@@ -182,7 +187,6 @@ export async function generateIncidentPostmortem(
 	openaiApiKey: string,
 	agentData?: AgentExport | null,
 ): Promise<IncidentPostmortem> {
-	const client = new OpenAI({ apiKey: openaiApiKey });
 	const startedAt = events.find((event) => event.event_type === "INCIDENT_CREATED")?.created_at ?? events[0]?.created_at ?? null;
 	const startedAtMs = startedAt ? new Date(startedAt).getTime() : NaN;
 	const isOnOrAfterStart = (createdAt: string) => {
@@ -219,20 +223,26 @@ ${eventDescriptions}${agentSection}
 
 Generate the post-mortem.`;
 
-	const response = await client.responses.create({
-		model: "gpt-5.2",
-		input: [
-			{ role: "system", content: POSTMORTEM_SYSTEM_PROMPT },
-			{ role: "user", content: userMessage },
-		],
-		text: {
-			format: {
-				type: "json_schema",
-				name: "incident_postmortem",
-				schema: POSTMORTEM_RESPONSE_SCHEMA as Record<string, unknown>,
-				strict: true,
+	const response = await callOpenAIWithLogging({
+		openaiApiKey,
+		request: {
+			model: "gpt-5.2",
+			input: [
+				{ role: "system", content: POSTMORTEM_SYSTEM_PROMPT },
+				{ role: "user", content: userMessage },
+			],
+			text: {
+				format: {
+					type: "json_schema",
+					name: "incident_postmortem",
+					schema: POSTMORTEM_RESPONSE_SCHEMA as Record<string, unknown>,
+					strict: true,
+				},
+				verbosity: "low",
 			},
-			verbosity: "low",
+		},
+		context: {
+			operation: "generateIncidentPostmortem",
 		},
 	});
 	const content = response.output_text.trim();

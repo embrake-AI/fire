@@ -1,10 +1,11 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import type { IS } from "@fire/common";
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import { formatAgentEventForPrompt } from "../agent/event-format";
 import { isResponsesFunctionToolCall, parseJsonObject } from "../agent/openai";
 import { getSimilarIncidentsProvider } from "../agent/providers/registry";
 import type { AgentContextResponse, AgentPromptPayload, AgentSuggestionContext } from "../agent/types";
+import { callOpenAIWithLogging } from "../lib/openai-logging";
 import { addReaction, removeReaction } from "../lib/slack";
 
 const SYSTEM_PROMPT = `You are an incident operations assistant responding in Slack.
@@ -258,13 +259,20 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 				`agent-prompt.fetch:${payload.incidentId}:${payload.ts}`,
 				{ retries: { limit: 3, delay: "3 seconds" } },
 				async () => {
-					const client = new OpenAI({ apiKey: this.env.OPENAI_API_KEY });
-					const response = await client.responses.create({
-						model: "gpt-5.2",
-						input,
-						tools,
-						tool_choice: "auto",
-						text: { verbosity: "low" },
+					const response = await callOpenAIWithLogging({
+						openaiApiKey: this.env.OPENAI_API_KEY,
+						request: {
+							model: "gpt-5.2",
+							input,
+							tools,
+							tool_choice: "auto",
+							text: { verbosity: "low" },
+						},
+						context: {
+							operation: "promptWorkflow.fetch",
+							agentName: "prompt-assistant",
+							incidentId: payload.incidentId,
+						},
 					});
 					const toolCall = (response.output ?? []).find(isResponsesFunctionToolCall) ?? null;
 					return {
@@ -341,19 +349,26 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 								`agent-prompt.synthesize:${payload.incidentId}:${payload.ts}`,
 								{ retries: { limit: 3, delay: "2 seconds" } },
 								async () => {
-									const client = new OpenAI({ apiKey: this.env.OPENAI_API_KEY });
-									const response = await client.responses.create({
-										model: "gpt-5.2",
-										input: [
-											...input,
-											toolCall,
-											{
-												type: "function_call_output",
-												call_id: toolCall.call_id,
-												output: agentAnswer || "No similar-incident information available yet.",
-											},
-										],
-										text: { verbosity: "low" },
+									const response = await callOpenAIWithLogging({
+										openaiApiKey: this.env.OPENAI_API_KEY,
+										request: {
+											model: "gpt-5.2",
+											input: [
+												...input,
+												toolCall,
+												{
+													type: "function_call_output",
+													call_id: toolCall.call_id,
+													output: agentAnswer || "No similar-incident information available yet.",
+												},
+											],
+											text: { verbosity: "low" },
+										},
+										context: {
+											operation: "promptWorkflow.synthesize",
+											agentName: "prompt-assistant",
+											incidentId: payload.incidentId,
+										},
 									});
 									return { text: response.output_text.trim() };
 								},
