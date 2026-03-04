@@ -34,7 +34,7 @@ function buildFullInput(context: AgentSuggestionContext, opts: { systemPrompt?: 
 	const statusPageContextMessage = buildStatusPageContextMessage(context);
 	const suggestionStateContextMessage = buildSuggestionStateContextMessage(context);
 	const incidentStateMessage = buildIncidentStateMessage(context);
-	const eventMessages = buildEventMessages(context.events, context.processedThroughId ?? 0);
+	const eventMessages = buildEventMessages(context.events);
 
 	return [
 		{ role: "system", content: systemPrompt },
@@ -3945,18 +3945,62 @@ async function judgeTurnWithLLM(payload: ReturnType<typeof toJudgePayload>, apiK
 
 	const parsed = JSON.parse(toolCallArgs) as JudgeFunctionOutput;
 	const normalizedScore = Number.isFinite(parsed.score) ? Math.min(1, Math.max(0, parsed.score)) : 0;
+	const rawExpectations: JudgedExpectation[] = Array.isArray(parsed.expectations)
+		? parsed.expectations.map((item) => ({
+				expectation: item.expectation ?? "",
+				result: item.result ?? "unclear",
+				reason: item.reason ?? "",
+			}))
+		: [];
+	const normalizeExpectations = (expected: string[], actual: JudgedExpectation[], similarIncidentsRequested: boolean): JudgedExpectation[] => {
+		const grouped = new Map<string, JudgedExpectation[]>();
+		for (const item of actual) {
+			const key = item.expectation.trim();
+			if (!key) {
+				continue;
+			}
+			const bucket = grouped.get(key) ?? [];
+			bucket.push(item);
+			grouped.set(key, bucket);
+		}
+
+		const normalized: JudgedExpectation[] = [];
+		for (const expectation of expected) {
+			const bucket = grouped.get(expectation);
+			const match = bucket?.shift();
+			if (bucket && !bucket.length) {
+				grouped.delete(expectation);
+			}
+
+			let result: JudgedExpectation["result"] = match?.result ?? "unclear";
+			let reason = match?.reason?.trim() ?? "";
+
+			const rule = parseExpectationRule(expectation);
+			if (rule?.kind === "similar_incidents_request") {
+				const corrected = rule.isNegative ? !similarIncidentsRequested : similarIncidentsRequested;
+				const correctedResult: JudgedExpectation["result"] = corrected ? "met" : "not_met";
+				if (result !== correctedResult) {
+					const details = `Corrected using similarIncidentsRequested=${similarIncidentsRequested}.`;
+					reason = reason ? `${reason} ${details}` : details;
+					result = correctedResult;
+				}
+			}
+
+			if (!reason) {
+				reason = "No reason provided.";
+			}
+			normalized.push({ expectation, result, reason });
+		}
+
+		return normalized;
+	};
+	const expectations = normalizeExpectations(payload.expectations, rawExpectations, payload.similarIncidentsRequested);
 
 	return {
 		overall: parsed.overall ?? "poor",
 		score: normalizedScore,
 		summary: parsed.summary ?? "",
-		expectations: Array.isArray(parsed.expectations)
-			? parsed.expectations.map((item) => ({
-					expectation: item.expectation ?? "",
-					result: item.result ?? "unclear",
-					reason: item.reason ?? "",
-				}))
-			: [],
+		expectations,
 		positives: Array.isArray(parsed.positives) ? parsed.positives : [],
 		issues: Array.isArray(parsed.issues) ? parsed.issues : [],
 	};

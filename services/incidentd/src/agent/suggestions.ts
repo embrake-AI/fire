@@ -24,9 +24,9 @@ Hard rules:
   - add_status_page_update: same affectionStatus (or same no-affectionStatus/update case) for the same external state
 - For add_status_page_update, do not re-suggest the same external-state update while it is still pending (no matching AFFECTION_UPDATE yet).
 - You will receive a "Suggestion target state" summary. Treat any target listed as pending as blocked by default.
-- Exception: you may re-suggest the same action+target only when decisive new evidence appears after [TURN BOUNDARY] that makes that exact target newly correct (not just more discussion or rewording).
-- If you use this exception, your evidence MUST cite the post-boundary event(s) and explain why the earlier pending suggestion was premature or not yet actionable.
-- Staleness: a pending suggestion becomes stale when it was made >10 minutes ago AND >20 events ago (shown as "stale" in the target state summary). You may re-suggest a stale target if current evidence still warrants it, without needing the post-boundary exception.
+- Exception: you may re-suggest the same action+target only when decisive new evidence appears after the prior pending suggestion that makes that exact target newly correct (not just more discussion or rewording).
+- If you use this exception, your evidence MUST cite the new event(s) after that prior suggestion and explain why the earlier pending suggestion was premature or not yet actionable.
+- Staleness: a pending suggestion becomes stale when it was made >10 minutes ago AND >20 events ago (shown as "stale" in the target state summary). You may re-suggest a stale target if current evidence still warrants it, without needing the new-evidence exception.
 - NEVER suggest a status transition that is not in validStatusTransitions.
 - Treat your prior add_status_page_update calls as pending public-update intent until an AFFECTION_UPDATE is logged.
 - If a pending add_status_page_update exists and no new external-facing fact appears after it, suggest NO additional status-page update.
@@ -99,20 +99,14 @@ export function normalizeEventData(value: unknown): unknown {
 	return Object.fromEntries(entries.map(([key, item]) => [key, normalizeEventData(item)]));
 }
 
-export function buildEventMessages(events: AgentEvent[], processedThroughId: number): OpenAI.Responses.ResponseInputItem[] {
+export function buildEventMessages(events: AgentEvent[]): OpenAI.Responses.ResponseInputItem[] {
 	if (!events.length) {
 		return [{ role: "user", content: "Recent events:\n(none)" }];
 	}
 
 	const items: OpenAI.Responses.ResponseInputItem[] = [];
-	let boundaryInserted = false;
 
 	for (const event of events) {
-		if (!boundaryInserted && processedThroughId > 0 && event.id > processedThroughId) {
-			items.push({ role: "assistant", content: "[TURN BOUNDARY] Events above already processed. New updates start below." });
-			boundaryInserted = true;
-		}
-
 		const toolCallItems = buildToolCallItemsFromEvent(event);
 		if (toolCallItems) {
 			items.push(toolCallItems.functionCall, toolCallItems.functionCallOutput);
@@ -525,7 +519,7 @@ export async function generateIncidentSuggestions(
 	const suggestionStateContextMessage = buildSuggestionStateContextMessage(context);
 	const incidentStateMessage = buildIncidentStateMessage(context);
 
-	const eventMessages = buildEventMessages(context.events, context.processedThroughId ?? 0);
+	const eventMessages = buildEventMessages(context.events);
 
 	const tools = buildSuggestionTools(context);
 	const input: OpenAI.Responses.ResponseInputItem[] = [
