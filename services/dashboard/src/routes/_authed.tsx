@@ -60,7 +60,7 @@ function AuthedLayout() {
 	const slackConnected = createMemo(() => {
 		if (role() === "VIEWER") return true;
 		if (isDemoMode()) return true;
-		if (!integrationsQuery.data) return true; // Don't block while loading
+		if (!integrationsQuery.isSuccess) return true; // Don't block while loading
 		return integrationsQuery.data.some((i) => i.platform === "slack");
 	});
 

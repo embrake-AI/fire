@@ -61,7 +61,7 @@ type ModelCallResult = {
 	similarIncidentsRequested: boolean;
 };
 
-type ReasoningEffort = "low" | "medium" | "high";
+type ReasoningEffort = "none" | "low" | "medium" | "high";
 
 async function callModel(
 	input: OpenAI.Responses.ResponseInputItem[],
@@ -72,14 +72,18 @@ async function callModel(
 ): Promise<ModelCallResult> {
 	const client = new OpenAI({ apiKey });
 
-	const data = await client.responses.create({
+	const request: OpenAI.Responses.ResponseCreateParamsNonStreaming = {
 		model,
 		input,
 		tools,
 		tool_choice: "auto",
-		reasoning: { effort: reasoningEffort },
 		text: { verbosity: "low" },
-	});
+	};
+	if (reasoningEffort !== "none") {
+		request.reasoning = { effort: reasoningEffort };
+	}
+
+	const data = await client.responses.create(request);
 	const output = (data.output ?? []).filter(isResponsesFunctionToolCall);
 	const rawToolCalls: ModelToolCall[] = output.map((call) => {
 		let args: Record<string, unknown> = {};
@@ -4188,8 +4192,8 @@ async function main() {
 	const outputPath = resolve(outArg ? outArg.split("=")[1]! : buildDefaultOutputPath());
 	const skipJudge = process.argv.includes("--skip-judge");
 	const reasoningEffortRaw = reasoningEffortArg ? reasoningEffortArg.split("=")[1]! : "medium";
-	if (!["low", "medium", "high"].includes(reasoningEffortRaw)) {
-		console.error(`Invalid --reasoning-effort value "${reasoningEffortRaw}". Use low|medium|high.`);
+	if (!["none", "low", "medium", "high"].includes(reasoningEffortRaw)) {
+		console.error(`Invalid --reasoning-effort value "${reasoningEffortRaw}". Use none|low|medium|high.`);
 		process.exit(1);
 	}
 	const reasoningEffort = reasoningEffortRaw as ReasoningEffort;
