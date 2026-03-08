@@ -39,7 +39,7 @@
 		"stripe": "^18.3.0",
 		"solid-js": "^1.9.10",
 		"tailwind-merge": "^3.4.0",
-		"workflow": "4.1.0-beta.60"
+		"workflow": "4.2.0-beta.66"
 	},
 	"devDependencies": {
 		"@tailwindcss/vite": "^4.1.18",
