@@ -49,7 +49,18 @@ export async function incidentStarted(params: SenderParams["incidentStarted"]): 
 	const identifiers = buildIncidentIdentifiers(metadata);
 	await step("d1.incident.insert", async () => {
 		await env.incidents
-			.prepare("INSERT INTO incident (id, identifier, status, assignee, severity, title, description, client_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")
+			.prepare(
+				`INSERT INTO incident (id, identifier, status, assignee, severity, title, description, client_id)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(id) DO UPDATE SET
+					identifier = excluded.identifier,
+					status = excluded.status,
+					assignee = excluded.assignee,
+					severity = excluded.severity,
+					title = excluded.title,
+					description = excluded.description,
+					client_id = excluded.client_id`,
+			)
 			.bind(id, JSON.stringify(identifiers), status, assignee, severity, title, description, clientId)
 			.run();
 		return true;

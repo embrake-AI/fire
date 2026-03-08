@@ -657,22 +657,3 @@ export async function getIncidentIdFromMessageMetadata({ botToken, channel, mess
 		return null;
 	}
 }
-
-export async function getIncidentIdFromIdentifier({ incidents, identifiers }: { incidents: Env["incidents"]; identifiers: string[] }): Promise<string | null> {
-	const normalizedIdentifiers = Array.from(new Set(identifiers.filter((identifier) => identifier)));
-	if (!normalizedIdentifiers.length) {
-		return null;
-	}
-
-	try {
-		const placeholders = normalizedIdentifiers.map(() => "?").join(", ");
-		const result = await incidents
-			.prepare(`SELECT id FROM incident WHERE EXISTS (SELECT 1 FROM json_each(identifier) WHERE value IN (${placeholders})) LIMIT 1`)
-			.bind(...normalizedIdentifiers)
-			.all<{ id: string }>();
-		return result.results[0]?.id ?? null;
-	} catch (error) {
-		console.error("Failed to fetch incident by identifier", error);
-		return null;
-	}
-}

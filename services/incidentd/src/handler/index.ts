@@ -1,16 +1,19 @@
 import type { EntryPoint, IS, IS_Event, ListIncidentsElement } from "@fire/common";
 import type { Context } from "hono";
+import { getIncidentIdByIdentifiers } from "../lib/incident-identifiers";
 
 export type BasicContext = { Bindings: Env };
 export type AuthContext = BasicContext & { Variables: { auth: { clientId: string } } };
 export type Metadata = Record<string, string> & { clientId: string; identifier: string };
 type BootstrapMessage = { message: string; userId: string; messageId: string; createdAt: string };
+type IncidentIdOrIdentifier = { id: string } | { identifier: string; clientId: string };
 
-// identifier -> idFromName
+// identifier -> D1 lookup -> idFromString
 // id -> idFromString
 
-export async function startIncident<E extends AuthContext>({
+export async function startIncident<E extends BasicContext>({
 	c,
+	clientId,
 	m,
 	prompt,
 	createdBy,
@@ -21,15 +24,15 @@ export async function startIncident<E extends AuthContext>({
 	bootstrapMessages,
 }: {
 	c: Context<E>;
+	clientId: string;
 	m: Omit<Metadata, "clientId">;
 	identifier: string;
 	entryPoints: EntryPoint[];
 	services: { id: string; name: string; prompt: string | null }[];
 	bootstrapMessages?: BootstrapMessage[];
 } & Pick<IS, "prompt" | "createdBy" | "source">) {
-	const clientId = c.var.auth.clientId;
 	const metadata = { ...m, clientId, identifier };
-	const incidentId = c.env.INCIDENT.idFromName(identifier);
+	const incidentId = c.env.INCIDENT.newUniqueId();
 	const incident = c.env.INCIDENT.get(incidentId);
 	await incident.start(
 		{
@@ -43,6 +46,14 @@ export async function startIncident<E extends AuthContext>({
 		services,
 		bootstrapMessages,
 	);
+	try {
+		await c.env.incidents
+			.prepare("INSERT INTO incident (id, identifier, status, assignee, severity, title, description, client_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+			.bind(incidentId.toString(), JSON.stringify([metadata.identifier]), "open", "", "medium", "Starting incident", "", clientId)
+			.run();
+	} catch (error) {
+		console.error("Failed to insert incident placeholder row", { incidentId: incidentId.toString(), identifier: metadata.identifier, error });
+	}
 	return incidentId.toString();
 }
 
@@ -59,6 +70,17 @@ export async function getIncident<E extends BasicContext>({ c, id }: { c: Contex
 	const incidentId = c.env.INCIDENT.idFromString(id);
 	const incident = c.env.INCIDENT.get(incidentId);
 	return incident.get();
+}
+
+async function resolveIncidentId<E extends BasicContext>({ c, idOrIdentifier }: { c: Context<E>; idOrIdentifier: IncidentIdOrIdentifier }) {
+	if ("id" in idOrIdentifier) {
+		return idOrIdentifier.id;
+	}
+	return getIncidentIdByIdentifiers({
+		incidents: c.env.incidents,
+		clientId: idOrIdentifier.clientId,
+		identifiers: [idOrIdentifier.identifier],
+	});
 }
 
 export async function updateSeverity<E extends BasicContext>({
@@ -135,8 +157,7 @@ export async function updateAffection<E extends BasicContext>({
 
 export async function addMessage<E extends BasicContext>({
 	c,
-	identifier,
-	id,
+	idOrIdentifier,
 	message,
 	userId,
 	messageId,
@@ -145,22 +166,25 @@ export async function addMessage<E extends BasicContext>({
 	eventMetadata,
 }: {
 	c: Context<E>;
+	idOrIdentifier: IncidentIdOrIdentifier;
 	message: string;
 	userId: string;
 	messageId: string;
 	adapter: "slack" | "dashboard" | "fire";
 	slackUserToken?: string;
 	eventMetadata?: Record<string, string>;
-} & ({ identifier: string; id?: never } | { id: string; identifier?: never })) {
-	const incidentId = id ? c.env.INCIDENT.idFromString(id) : c.env.INCIDENT.idFromName(identifier!);
-	const incident = c.env.INCIDENT.get(incidentId);
+}) {
+	const incidentId = await resolveIncidentId({ c, idOrIdentifier });
+	if (!incidentId) {
+		return { error: "NOT_FOUND" };
+	}
+	const incident = c.env.INCIDENT.get(c.env.INCIDENT.idFromString(incidentId));
 	await incident.addMessage(message, userId, messageId, adapter, slackUserToken, eventMetadata);
 }
 
 export async function addPrompt<E extends BasicContext>({
 	c,
-	identifier,
-	id,
+	idOrIdentifier,
 	prompt,
 	userId,
 	ts,
@@ -169,20 +193,24 @@ export async function addPrompt<E extends BasicContext>({
 	adapter,
 }: {
 	c: Context<E>;
+	idOrIdentifier: IncidentIdOrIdentifier;
 	prompt: string;
 	userId: string;
 	ts: string;
 	channel: string;
 	threadTs?: string;
 	adapter: "slack" | "dashboard" | "fire";
-} & ({ identifier: string; id?: never } | { id: string; identifier?: never })) {
-	const incidentId = id ? c.env.INCIDENT.idFromString(id) : c.env.INCIDENT.idFromName(identifier!);
+}) {
+	const incidentId = await resolveIncidentId({ c, idOrIdentifier });
+	if (!incidentId) {
+		return { error: "NOT_FOUND" };
+	}
 	const safeTs = ts.replaceAll(".", "-");
 	const workflowId = `prompt-${channel.toLowerCase()}-${safeTs}`;
 	await c.env.INCIDENT_PROMPT_WORKFLOW.create({
 		id: workflowId,
 		params: {
-			incidentId: incidentId.toString(),
+			incidentId,
 			prompt,
 			userId,
 			ts,

@@ -50,6 +50,7 @@ dashboardRoutes.post("/", async (c) => {
 
 	const incidentId = await startIncident({
 		c,
+		clientId: auth.clientId,
 		identifier: id,
 		prompt,
 		createdBy: auth.userId,
@@ -131,7 +132,7 @@ dashboardRoutes.post("/:id/message", async (c) => {
 		slackUserToken?: string;
 	}>();
 
-	await addMessage({ c, id, message, userId: slackUserId, messageId, adapter: "dashboard", slackUserToken });
+	await addMessage({ c, idOrIdentifier: { id }, message, userId: slackUserId, messageId, adapter: "dashboard", slackUserToken });
 	return c.json({ success: true });
 });
 

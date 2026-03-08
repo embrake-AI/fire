@@ -1,15 +1,14 @@
 import type { IS } from "@fire/common";
-import type { Context } from "hono";
 import { Hono } from "hono";
 import { parseAgentSuggestionPayload } from "../../../agent/slack";
-import { type AuthContext, addMessage, addPrompt, startIncident, updateAffection, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
+import { addMessage, addPrompt, startIncident, updateAffection, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
+import { getIncidentIdByIdentifiers } from "../../../lib/incident-identifiers";
 import { addReaction, incidentChannelIdentifier, slackThreadIdentifier } from "../../../lib/slack";
 import { ASSERT_NEVER } from "../../../lib/utils";
 import { verifySlackRequestMiddleware } from "./middleware";
 import {
 	buildThreadIncidentPrompt,
 	fetchSlackThreadMessages,
-	getIncidentIdFromIdentifier,
 	getIncidentIdFromMessageMetadata,
 	getSlackIntegration,
 	handleStatusUpdate,
@@ -53,34 +52,32 @@ slackRoutes.post("/events", async (c) => {
 					return c.text("OK");
 				}
 
-				const [slackIntegration, incidentIdForChannel] = await Promise.all([
-					getSlackIntegration({
-						hyperdrive: c.env.db,
-						teamId,
-						enterpriseId,
-						isEnterpriseInstall,
-						withEntryPoints: true,
-					}),
-					getIncidentIdFromIdentifier({
-						incidents: c.env.incidents,
-						identifiers: [incidentChannelIdentifier(channel)],
-					}),
-				]);
-
+				const slackIntegration = await getSlackIntegration({
+					hyperdrive: c.env.db,
+					teamId,
+					enterpriseId,
+					isEnterpriseInstall,
+					withEntryPoints: true,
+				});
 				if (!slackIntegration) {
 					console.error(`No Slack integration found for ${teamId}`);
 					return c.text("OK");
 				}
 				const { clientId, data: integrationData, services } = slackIntegration;
 				c.set("auth", { clientId });
+				const incidentIdForChannel = await getIncidentIdByIdentifiers({
+					incidents: c.env.incidents,
+					clientId,
+					identifiers: [incidentChannelIdentifier(channel)],
+				});
 
 				const botToken = integrationData.botToken;
 
 				const isThread = !!promptThread && promptThread !== event.ts;
 				if (incidentIdForChannel) {
 					await addPrompt({
-						c: c as Context<AuthContext>,
-						id: incidentIdForChannel,
+						c,
+						idOrIdentifier: { id: incidentIdForChannel },
 						prompt,
 						userId: user,
 						ts: event.ts,
@@ -91,14 +88,15 @@ slackRoutes.post("/events", async (c) => {
 					return c.text("OK");
 				}
 				if (isThread) {
-					const incidentId = await getIncidentIdFromIdentifier({
+					const incidentId = await getIncidentIdByIdentifiers({
 						incidents: c.env.incidents,
+						clientId,
 						identifiers: [slackThreadIdentifier(channel, promptThread), promptThread],
 					});
 					if (incidentId) {
 						await addPrompt({
-							c: c as Context<AuthContext>,
-							id: incidentId,
+							c,
+							idOrIdentifier: { id: incidentId },
 							prompt,
 							userId: user,
 							ts: event.ts,
@@ -134,14 +132,16 @@ slackRoutes.post("/events", async (c) => {
 					});
 
 					const threadForIncident = promptThread;
+					const incidentIdentifier = slackThreadIdentifier(channel, threadForIncident);
 					const isRetry = c.req.header("x-slack-retry-num") !== undefined;
 					if (!isRetry) {
 						c.executionCtx.waitUntil(addReaction(botToken, channel, threadForIncident, "fire"));
 					}
 
 					await startIncident({
-						c: c as Context<AuthContext>,
-						identifier: threadForIncident,
+						c,
+						clientId,
+						identifier: incidentIdentifier,
 						prompt: threadPrompt,
 						createdBy: user,
 						source: "slack",
@@ -168,14 +168,16 @@ slackRoutes.post("/events", async (c) => {
 				}
 
 				const threadForIncident = event.ts;
+				const incidentIdentifier = slackThreadIdentifier(channel, threadForIncident);
 				const isRetry = c.req.header("x-slack-retry-num") !== undefined;
 				if (!isRetry) {
 					c.executionCtx.waitUntil(addReaction(botToken, channel, threadForIncident, "fire"));
 				}
 
 				await startIncident({
-					c: c as Context<AuthContext>,
-					identifier: threadForIncident,
+					c,
+					clientId,
+					identifier: incidentIdentifier,
 					prompt,
 					createdBy: user,
 					source: "slack",
@@ -242,8 +244,8 @@ slackRoutes.post("/events", async (c) => {
 						});
 						if (incidentIdFromMetadata) {
 							await addMessage({
-								c: c as Context<AuthContext>,
-								id: incidentIdFromMetadata,
+								c,
+								idOrIdentifier: { id: incidentIdFromMetadata },
 								message: text,
 								userId: user,
 								messageId: message.ts,
@@ -251,10 +253,10 @@ slackRoutes.post("/events", async (c) => {
 							});
 						}
 					} else {
-						const identifier = thread;
+						const identifier = slackThreadIdentifier(channel, thread);
 						await addMessage({
-							c: c as Context<AuthContext>,
-							identifier,
+							c,
+							idOrIdentifier: { identifier, clientId: slackIntegration.clientId },
 							message: text,
 							userId: user,
 							messageId: message.ts,
@@ -262,14 +264,15 @@ slackRoutes.post("/events", async (c) => {
 						});
 					}
 				} else {
-					const incidentId = await getIncidentIdFromIdentifier({
+					const incidentId = await getIncidentIdByIdentifiers({
 						incidents: c.env.incidents,
+						clientId: slackIntegration.clientId,
 						identifiers: [incidentChannelIdentifier(channel)],
 					});
 					if (incidentId) {
 						await addMessage({
-							c: c as Context<AuthContext>,
-							id: incidentId,
+							c,
+							idOrIdentifier: { id: incidentId },
 							message: text,
 							userId: user,
 							messageId: message.ts,
