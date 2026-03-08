@@ -81,7 +81,7 @@
 		},
 	],
 	"vars": {
-		"FRONTEND_URL": "https://app.firedash.ai/",
+		"FRONTEND_URL": "https://app.firedash.ai",
 	},
 	/**
 	 * Smart Placement
