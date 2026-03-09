@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { ArrowLeft } from "lucide-solid";
-import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, Show, Suspense } from "solid-js";
 import { IncidentAffectionSection } from "~/components/incidents/IncidentAffectionSection";
 import { IncidentHeader } from "~/components/incidents/IncidentHeader";
 import { SlackMessageInput } from "~/components/SlackMessageInput";
@@ -153,11 +153,15 @@ function IncidentDetail() {
 										<TabsIndicator />
 									</TabsList>
 									<TabsContent value="updates">
-										<IncidentAffectionSection incidentId={state().id} incidentStatus={state().status} />
+										<Suspense fallback={<IncidentSkeleton />}>
+											<IncidentAffectionSection incidentId={state().id} incidentStatus={state().status} />
+										</Suspense>
 									</TabsContent>
 									<TabsContent value="timeline">
-										<Show when={incident()?.events}>{(events) => <Timeline events={events()} />}</Show>
-										<Show when={incident()?.events}>{(_) => <SlackMessageInput incidentId={state().id} hasSlackContext={hasSlackContext()} />}</Show>
+										<Suspense fallback={<IncidentSkeleton />}>
+											<Show when={incident()?.events}>{(events) => <Timeline events={events()} />}</Show>
+											<Show when={incident()?.events}>{(_) => <SlackMessageInput incidentId={state().id} hasSlackContext={hasSlackContext()} />}</Show>
+										</Suspense>
 									</TabsContent>
 								</Tabs>
 							</div>
