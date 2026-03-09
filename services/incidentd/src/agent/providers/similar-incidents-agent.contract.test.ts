@@ -207,8 +207,8 @@ describe("SimilarIncidentsAgent base contracts", () => {
 		});
 	});
 
-	it("appends no context step when LLM returns SKIP", async () => {
-		vi.stubGlobal("fetch", makeMockFetch("SKIP"));
+	it("appends context step even for low-signal summary", async () => {
+		vi.stubGlobal("fetch", makeMockFetch("Still monitoring, no status change."));
 		const { incidentId, stub } = createProviderHandle();
 
 		await runInDurableObject(stub, async (instance, state) => {
@@ -222,11 +222,19 @@ describe("SimilarIncidentsAgent base contracts", () => {
 			});
 			await state.storage.deleteAlarm();
 
-			const rows = state.storage.sql.exec<{ role: string; source: string }>("SELECT role, source FROM steps ORDER BY id ASC").toArray();
+			const rows = state.storage.sql
+				.exec<{ role: string; content: string; source: string; context_to_event_id: number | null }>("SELECT role, content, source, context_to_event_id FROM steps ORDER BY id ASC")
+				.toArray();
 
-			// Only system prompt, no context step
-			expect(rows).toHaveLength(1);
+			// system prompt + summarized context step
+			expect(rows).toHaveLength(2);
 			expect(rows[0]).toMatchObject({ role: "system", source: "system" });
+			expect(rows[1]).toMatchObject({
+				role: "user",
+				content: "Still monitoring, no status change.",
+				source: "context",
+				context_to_event_id: 2,
+			});
 		});
 	});
 

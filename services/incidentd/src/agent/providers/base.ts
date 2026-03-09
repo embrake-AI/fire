@@ -138,7 +138,7 @@ export abstract class AgentBase extends DurableObject<Env> {
 		});
 
 		const text = response.output_text.trim();
-		if (!text || text === "SKIP") {
+		if (!text) {
 			return null;
 		}
 		return text;

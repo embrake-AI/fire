@@ -129,8 +129,8 @@ export function buildSuggestionTools(context: AgentSuggestionContext): OpenAI.Re
 			type: "function",
 			name: "similar_incidents",
 			description: `Request retrieval + analysis of similar incidents to inform triage and mitigation.
-- Call proactively and early. Historical context is most valuable during initial triage.
-- First search (no prior similar_incidents call in the conversation): call as soon as the incident has a described symptom and affected area. Don't wait for confirmed root cause.
+- Do NOT call on the very first events or when only a vague symptom is described. Wait for enough diagnostic context to produce a targeted search.
+- First search (no prior similar_incidents call in the conversation): call once the incident has a specific error class or failure mechanism AND an identified affected system or scope. A vague symptom alone (e.g. "seeing errors", "something is broken", "checking logs") is NOT enough. You need at least one concrete technical signal (error type, affected component, failure pattern) confirmed by investigation.
 - Do NOT call again if AGENT_SIMILAR_INCIDENT results already appear in the event log unless the incident's nature has fundamentally changed.
 - Re-search requires a material understanding change since your latest similar_incidents call. Material change means: new root cause hypothesis, newly affected system, or fundamentally different failure mechanism. NOT: more confirming events, severity updates, status transitions, or repeated signals of the same problem.
 - Skip for monitoring chatter, reworded updates with no new facts, or pure acknowledgements.`,

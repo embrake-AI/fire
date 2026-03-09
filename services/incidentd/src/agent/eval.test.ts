@@ -3343,7 +3343,7 @@ function buildSimilarIncidentClarityGateScenario(): LifecycleScenario {
 		description: "Ensures similar_incidents is not requested while context is unclear, then requested once mechanism/scope become concrete.",
 		turns: [
 			{
-				name: "Turn 1: Ambiguous context — similar_incidents is acceptable either way",
+				name: "Turn 1: Ambiguous context — should NOT request similar_incidents",
 				context: {
 					incident: baseIncident(incidentBase),
 					services: SERVICES,
@@ -3352,7 +3352,7 @@ function buildSimilarIncidentClarityGateScenario(): LifecycleScenario {
 					processedThroughId: 0,
 					validStatusTransitions: ["mitigating", "resolved"],
 				},
-				checks: [shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+				checks: [shouldNotRequestSimilarIncidents(), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
 			},
 			{
 				name: "Turn 2: Concrete mechanism/scope should request similar incidents",
@@ -3417,14 +3417,15 @@ function buildSimilarIncidentEarlyTriggerScenario(): LifecycleScenario {
 		),
 	];
 
-	// Turn 2: Confirmation message adds clarity — still no prior similar-incidents events
+	// Turn 2: Concrete mechanism identified — still no prior similar-incidents events
 	const t2Events: AgentEvent[] = [
 		...t1Events,
 		mkEvent(
 			{
 				event_type: "MESSAGE_ADDED",
 				event_data: {
-					message: "Yes, it looks like instances are not picking up jobs. The queue is growing.",
+					message:
+						"Confirmed: worker instances are failing to acquire job locks from Redis. ConnectionRefusedError in the lock client. Queue depth is growing — 1200 pending jobs. Looks like a Redis connectivity issue affecting the job scheduler.",
 					userId: "U_SRE",
 				},
 			},
@@ -3436,10 +3437,10 @@ function buildSimilarIncidentEarlyTriggerScenario(): LifecycleScenario {
 	return {
 		id: "similar-early-trigger",
 		name: "Similar-Incident Early Trigger on Clear Problem",
-		description: "Ensures similar_incidents is requested early when the incident has a clear problem statement, without waiting for confirmed root cause.",
+		description: "Ensures similar_incidents is requested once the incident has a confirmed error class and affected system, without waiting for confirmed root cause.",
 		turns: [
 			{
-				name: "Turn 1: Clear problem statement at incident creation should request similar incidents",
+				name: "Turn 1: Initial report without confirmed mechanism should NOT request similar incidents",
 				context: {
 					incident: baseIncident(incidentBase),
 					services: SERVICES,
@@ -3449,13 +3450,13 @@ function buildSimilarIncidentEarlyTriggerScenario(): LifecycleScenario {
 					validStatusTransitions: ["mitigating", "resolved"],
 				},
 				checks: [
-					shouldRequestSimilarIncidents(),
+					shouldNotRequestSimilarIncidents(),
 					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
 					"Should suggest add_status_page_update (affectionStatus=investigating).",
 				],
 			},
 			{
-				name: "Turn 2: Confirmation of problem should also request similar incidents (no prior trigger events)",
+				name: "Turn 2: Confirmed mechanism (instances not picking up jobs, queue growing) should request similar incidents",
 				context: {
 					incident: baseIncident(incidentBase),
 					services: SERVICES,

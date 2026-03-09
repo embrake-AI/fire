@@ -62,15 +62,14 @@ type DeepDiveScenario = {
 type SummarizationScenario = {
 	id: string;
 	name: string;
-	expectSkip: boolean;
-	/** If not SKIP, keywords that should appear (case-insensitive) in the summary */
+	/** Keywords that should appear (case-insensitive) in the summary */
 	expectedSignals?: string[];
 	events: AgentEvent[];
 	existingInput?: OpenAI.Responses.ResponseInputItem[];
 };
 
 type SummarizationResult = {
-	summary: string | null;
+	summary: string;
 };
 
 type ScenarioRunResult = {
@@ -447,23 +446,12 @@ async function runSummarizationScenario(scenario: SummarizationScenario, apiKey:
 		text: { verbosity: "low" },
 	});
 
-	const text = response.output_text.trim();
-	const summary = !text || text === "SKIP" ? null : text;
-
-	if (scenario.expectSkip) {
-		const ok = summary === null;
-		return {
-			ok,
-			note: `expectSkip=true got=${summary === null ? "SKIP" : `"${summary.slice(0, 80)}..."`}`,
-			result: { summary },
-		};
-	}
-
-	if (summary === null) {
+	const summary = response.output_text.trim();
+	if (!summary) {
 		return {
 			ok: false,
-			note: "expectSkip=false but got SKIP",
-			result: { summary },
+			note: "got empty summary",
+			result: { summary: "" },
 		};
 	}
 
@@ -482,7 +470,6 @@ const SUMMARIZATION_SCENARIOS: SummarizationScenario[] = [
 	{
 		id: "summarization-technical-signals",
 		name: "Clear technical events produce summary with key signals",
-		expectSkip: false,
 		expectedSignals: ["deploy", "timeout"],
 		events: [
 			evt(
@@ -497,9 +484,9 @@ const SUMMARIZATION_SCENARIOS: SummarizationScenario[] = [
 		],
 	},
 	{
-		id: "summarization-skip-chatter",
-		name: "Monitoring chatter with no new signal produces SKIP",
-		expectSkip: true,
+		id: "summarization-low-signal-chatter",
+		name: "Monitoring chatter produces brief status summary",
+		expectedSignals: ["monitoring"],
 		events: [
 			msgEvt(5, "Still monitoring. No change.", "2026-02-27T10:11:00.000Z"),
 			msgEvt(6, "Same errors, waiting for rollback to complete.", "2026-02-27T10:12:00.000Z"),
@@ -516,7 +503,6 @@ const SUMMARIZATION_SCENARIOS: SummarizationScenario[] = [
 	{
 		id: "summarization-root-cause-shift",
 		name: "Root cause shift produces summary with new mechanism",
-		expectSkip: false,
 		expectedSignals: ["pool", "config"],
 		events: [
 			msgEvt(4, "Root cause identified: connection pool exhaustion from config drift in sidecar proxy.", "2026-02-27T10:15:00.000Z"),
