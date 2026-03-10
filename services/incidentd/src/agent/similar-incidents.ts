@@ -224,6 +224,7 @@ export async function answerSimilarProviderPromptStructured(params: {
 		request: {
 			model: params.model ?? "gpt-5.2",
 			input: params.input,
+			prompt_cache_retention: "24h",
 			text: {
 				format: {
 					type: "json_schema",
@@ -254,6 +255,7 @@ export async function answerSimilarProviderPrompt(params: {
 		request: {
 			model: params.model ?? "gpt-5.2",
 			input: params.input,
+			prompt_cache_retention: "24h",
 			text: { verbosity: "low" },
 		},
 		context: buildSimilarLogContext("answerSimilarProviderPrompt", params.logContext),
@@ -295,6 +297,7 @@ export async function decideSimilarProviderAction(params: {
 				},
 			],
 			tool_choice: "auto",
+			prompt_cache_retention: "24h",
 			text: { verbosity: "low" },
 		},
 		context: buildSimilarLogContext("decideSimilarProviderAction", params.logContext),
@@ -345,6 +348,7 @@ async function callJsonSchema<T>(params: {
 				{ role: "system", content: params.systemPrompt },
 				{ role: "user", content: params.userPrompt },
 			],
+			prompt_cache_retention: "24h",
 			text: {
 				format: {
 					type: "json_schema",

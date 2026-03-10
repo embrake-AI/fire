@@ -266,6 +266,7 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 							input,
 							tools,
 							tool_choice: "auto",
+							prompt_cache_retention: "24h",
 							text: { verbosity: "low" },
 						},
 						context: {
@@ -362,6 +363,7 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 													output: agentAnswer || "No similar-incident information available yet.",
 												},
 											],
+											prompt_cache_retention: "24h",
 											text: { verbosity: "low" },
 										},
 										context: {

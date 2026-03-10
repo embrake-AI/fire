@@ -543,6 +543,7 @@ export async function generateIncidentSuggestions(
 		reasoning: { effort: "medium" },
 		text: { verbosity: "low" },
 		prompt_cache_key: promptCacheKey,
+		prompt_cache_retention: "24h",
 	};
 	const data = await stepDo<{
 		id?: string;

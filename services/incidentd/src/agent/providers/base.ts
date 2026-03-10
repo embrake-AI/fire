@@ -128,6 +128,7 @@ export abstract class AgentBase extends DurableObject<Env> {
 			request: {
 				model: "gpt-5.2",
 				input,
+				prompt_cache_retention: "24h",
 				text: {},
 			},
 			context: {
