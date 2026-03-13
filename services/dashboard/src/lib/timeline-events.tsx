@@ -203,6 +203,30 @@ export const eventRegistry: EventConfigMap = {
 			);
 		},
 	},
+	GITHUB_COMMIT: {
+		icon: MessageSquare,
+		iconBg: "bg-slate-100",
+		iconColor: "text-slate-700",
+		label: "Relevant GitHub Commit",
+		render: ({ data }) => {
+			return (
+				<div class="space-y-2">
+					<p class="text-sm text-muted-foreground">
+						Repository <span class="font-mono">{data.repo}</span> commit <span class="font-mono">{data.sha.slice(0, 12)}</span>
+					</p>
+					<p class="text-sm text-muted-foreground">
+						<EmojiText text={data.title} />
+					</p>
+					<p class="text-sm text-muted-foreground italic">
+						<EmojiText text={data.summary} />
+					</p>
+					<p class="text-xs text-muted-foreground">
+						Why it matters: <EmojiText text={data.relevance} />
+					</p>
+				</div>
+			);
+		},
+	},
 	CONTEXT_AGENT_TRIGGERED: {
 		icon: MessageSquare,
 		iconBg: "bg-slate-100",

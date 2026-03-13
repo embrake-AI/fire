@@ -2,7 +2,7 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloud
 import type { IS, IS_Event } from "@fire/common";
 import { type IncidentEventData, incidentAction, incidentAnalysis } from "@fire/db/schema";
 import { and, eq } from "drizzle-orm";
-import { getSimilarIncidentsProvider } from "../agent/providers/registry";
+import { getGitHubCommitsProvider, getSimilarIncidentsProvider } from "../agent/providers/registry";
 import type { AgentExport } from "../agent/providers/types";
 import { archiveKey, type IncidentArchive } from "../core/archive";
 import { generateIncidentPostmortem } from "../core/idontknowhowtonamethisitswhereillplacecallstoai";
@@ -70,16 +70,28 @@ export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAn
 		const shouldGeneratePostmortem = terminalStatus !== "declined";
 
 		// Step 1: Extract agent data before cleanup
-		const agentData = await step.do(`extract-agent-data:${incidentId}`, async (): Promise<AgentExport | null> => {
-			try {
-				const provider = getSimilarIncidentsProvider(this.env, incidentId);
-				const data = await provider.exportData();
-				return data ? { provider: data.provider, incidentId: data.incidentId, steps: data.steps, contexts: data.contexts } : null;
-			} catch (error) {
-				console.error("Failed to extract agent data", error);
-				return null;
-			}
-		});
+		const [similarAgentData, githubAgentData] = await Promise.all([
+			step.do(`extract-similar-agent-data:${incidentId}`, async (): Promise<AgentExport | null> => {
+				try {
+					const provider = getSimilarIncidentsProvider(this.env, incidentId);
+					const data = await provider.exportData();
+					return data ? { provider: data.provider, incidentId: data.incidentId, steps: data.steps, contexts: data.contexts } : null;
+				} catch (error) {
+					console.error("Failed to extract similar agent data", error);
+					return null;
+				}
+			}),
+			step.do(`extract-github-agent-data:${incidentId}`, async (): Promise<AgentExport | null> => {
+				try {
+					const provider = getGitHubCommitsProvider(this.env, incidentId);
+					const data = await provider.exportData();
+					return data ? { provider: data.provider, incidentId: data.incidentId, steps: data.steps, contexts: data.contexts } : null;
+				} catch (error) {
+					console.error("Failed to extract github agent data", error);
+					return null;
+				}
+			}),
+		]);
 
 		// Step 2: Upload archive to R2
 		await step.do(`upload-archive:${incidentId}`, async () => {
@@ -88,7 +100,7 @@ export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAn
 				incidentId,
 				archivedAt: new Date().toISOString(),
 				events,
-				agents: { similarIncidents: agentData },
+				agents: { similarIncidents: similarAgentData, githubCommits: githubAgentData },
 			};
 			const key = archiveKey(metadata.clientId, incidentId);
 			await this.env.INCIDENT_ARCHIVE.put(key, JSON.stringify(archive), {
@@ -113,7 +125,7 @@ export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAn
 							created_at: eventItem.created_at,
 						})),
 						this.env.OPENAI_API_KEY,
-						agentData,
+						[similarAgentData, githubAgentData].filter((value): value is AgentExport => !!value),
 					),
 				)
 			: null;
@@ -178,12 +190,24 @@ export class IncidentAnalysisWorkflow extends WorkflowEntrypoint<Env, IncidentAn
 
 		// Step 5: Cleanup agent DOs
 		await step.do(`cleanup-agents:${incidentId}`, async () => {
-			try {
-				const provider = getSimilarIncidentsProvider(this.env, incidentId);
-				await provider.cleanup();
-			} catch (error) {
-				console.error("Failed to cleanup agent DO", error);
-			}
+			await Promise.allSettled([
+				(async () => {
+					try {
+						const provider = getSimilarIncidentsProvider(this.env, incidentId);
+						await provider.cleanup();
+					} catch (error) {
+						console.error("Failed to cleanup similar agent DO", error);
+					}
+				})(),
+				(async () => {
+					try {
+						const provider = getGitHubCommitsProvider(this.env, incidentId);
+						await provider.cleanup();
+					} catch (error) {
+						console.error("Failed to cleanup github agent DO", error);
+					}
+				})(),
+			]);
 		});
 	}
 }

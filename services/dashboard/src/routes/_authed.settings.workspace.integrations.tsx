@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { LoaderCircle } from "lucide-solid";
-import { createEffect, createSignal, onMount, Show, Suspense } from "solid-js";
+import { createEffect, createSignal, For, onMount, Show, Suspense } from "solid-js";
+import { GitHubIcon } from "~/components/icons/GitHubIcon";
 import { IntercomIcon } from "~/components/icons/IntercomIcon";
 import { NotionIcon } from "~/components/icons/NotionIcon";
 import { SlackIcon } from "~/components/icons/SlackIcon";
@@ -10,11 +11,19 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
+import { Textarea } from "~/components/ui/textarea";
 import { showToast } from "~/components/ui/toast";
 import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
-import { connectWorkspaceIntegrationDemo, disconnectWorkspaceIntegrationDemo, getIntercomWorkspaceConfigDemo, setIntercomStatusPageDemo } from "~/lib/demo/store";
-import { disconnectWorkspaceIntegration, getInstallUrl } from "~/lib/integrations/integrations";
+import {
+	connectWorkspaceIntegrationDemo,
+	disconnectWorkspaceIntegrationDemo,
+	getGitHubWorkspaceConfigDemo,
+	getIntercomWorkspaceConfigDemo,
+	setIntercomStatusPageDemo,
+	updateGitHubRepositoryDescriptionsDemo,
+} from "~/lib/demo/store";
+import { disconnectWorkspaceIntegration, getGitHubWorkspaceConfig, getInstallUrl, updateGitHubRepositoryDescriptions } from "~/lib/integrations/integrations";
 import { useIntegrations } from "~/lib/integrations/integrations.hooks";
 import { getIntercomWorkspaceConfig, setIntercomStatusPage } from "~/lib/intercom/intercom";
 import { useStatusPages } from "~/lib/status-pages/status-pages.hooks";
@@ -27,7 +36,7 @@ export const Route = createFileRoute("/_authed/settings/workspace/integrations")
 	}),
 });
 
-type WorkspacePlatform = "slack" | "notion" | "intercom";
+type WorkspacePlatform = "slack" | "notion" | "intercom" | "github";
 
 function WorkspaceIntegrationsPage() {
 	return (
@@ -68,9 +77,12 @@ function IntegrationsContent() {
 	const statusPagesQuery = useStatusPages();
 	const getInstallUrlFn = useServerFn(getInstallUrl);
 	const getIntercomWorkspaceConfigFn = useServerFn(getIntercomWorkspaceConfig);
+	const getGitHubWorkspaceConfigFn = useServerFn(getGitHubWorkspaceConfig);
 	const setIntercomStatusPageFn = useServerFn(setIntercomStatusPage);
+	const updateGitHubRepositoryDescriptionsFn = useServerFn(updateGitHubRepositoryDescriptions);
 	const [isConnecting, setIsConnecting] = createSignal(false);
 	const [selectedStatusPageId, setSelectedStatusPageId] = createSignal("");
+	const [githubDescriptionDrafts, setGitHubDescriptionDrafts] = createSignal<Record<string, string>>({});
 
 	const intercomConfigQuery = useQuery(() => ({
 		queryKey: ["workspace_intercom_config"],
@@ -82,8 +94,23 @@ function IntegrationsContent() {
 		staleTime: 60_000,
 	}));
 
+	const githubConfigQuery = useQuery(() => ({
+		queryKey: ["workspace_github_config"],
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getGitHubWorkspaceConfigDemo(),
+				remote: () => getGitHubWorkspaceConfigFn(),
+			}),
+		staleTime: 60_000,
+	}));
+
 	createEffect(() => {
 		setSelectedStatusPageId(intercomConfigQuery.data?.statusPageId ?? "");
+	});
+
+	createEffect(() => {
+		const repositories = githubConfigQuery.data?.repositories ?? [];
+		setGitHubDescriptionDrafts(Object.fromEntries(repositories.map((repo) => [`${repo.owner}/${repo.name}`, repo.description])));
 	});
 
 	onMount(() => {
@@ -107,6 +134,7 @@ function IntegrationsContent() {
 					await connectWorkspaceIntegrationDemo(platform);
 					await queryClient.invalidateQueries({ queryKey: ["workspace_integrations"] });
 					await queryClient.invalidateQueries({ queryKey: ["workspace_intercom_config"] });
+					await queryClient.invalidateQueries({ queryKey: ["workspace_github_config"] });
 					return null;
 				},
 				remote: () => getInstallUrlFn({ data: { platform, type: "workspace" } }),
@@ -129,10 +157,27 @@ function IntegrationsContent() {
 		onSuccess: async (_, platform) => {
 			await queryClient.invalidateQueries({ queryKey: ["workspace_integrations"] });
 			await queryClient.invalidateQueries({ queryKey: ["workspace_intercom_config"] });
+			await queryClient.invalidateQueries({ queryKey: ["workspace_github_config"] });
 			await queryClient.invalidateQueries({ queryKey: ["users"] });
 			showToast({
 				title: "Integration disconnected",
 				description: `${platform} has been successfully disconnected from your workspace.`,
+				variant: "success",
+			});
+		},
+	}));
+
+	const updateGitHubDescriptionsMutation = useMutation(() => ({
+		mutationFn: (repositories: Array<{ owner: string; name: string; description: string }>) =>
+			runDemoAware({
+				demo: () => updateGitHubRepositoryDescriptionsDemo({ repositories }),
+				remote: () => updateGitHubRepositoryDescriptionsFn({ data: { repositories } }),
+			}),
+		onSuccess: async () => {
+			await queryClient.invalidateQueries({ queryKey: ["workspace_github_config"] });
+			showToast({
+				title: "GitHub updated",
+				description: "Repository descriptions were saved.",
 				variant: "success",
 			});
 		},
@@ -164,6 +209,13 @@ function IntegrationsContent() {
 	const configuredStatusPageId = () => intercomConfigQuery.data?.statusPageId ?? "";
 	const isIntercomMissingConfiguration = () => isConnected("intercom") && !configuredStatusPageId();
 	const isSaveDisabled = () => !hasSelectedStatusPage() || selectedStatusPageId() === configuredStatusPageId() || setStatusPageMutation.isPending;
+	const githubAccountLogin = () => githubConfigQuery.data?.accountLogin ?? "";
+	const githubRepositories = () => githubConfigQuery.data?.repositories ?? [];
+	const hasGitHubDraftChanges = () =>
+		githubRepositories().some((repo) => {
+			const key = `${repo.owner}/${repo.name}`;
+			return (githubDescriptionDrafts()[key] ?? "") !== repo.description;
+		});
 
 	return (
 		<div class="rounded-xl bg-muted/20 px-4 py-2">
@@ -226,6 +278,99 @@ function IntegrationsContent() {
 						</Button>
 					</Show>
 				</div>
+				<div class="py-3 space-y-3">
+					<div class="flex items-center justify-between">
+						<div class="flex items-center gap-3">
+							<div class="flex items-center justify-center size-10 rounded-lg bg-muted">
+								<GitHubIcon class="size-5" />
+							</div>
+							<span class="text-sm font-medium text-foreground">GitHub</span>
+							<Show when={isConnected("github")}>
+								<Badge class="bg-emerald-100 text-emerald-700 border-emerald-200">Connected</Badge>
+							</Show>
+						</div>
+						<Show
+							when={isConnected("github")}
+							fallback={
+								<Button onClick={() => handleConnect("github")} disabled={isConnecting()}>
+									<Show when={isConnecting()}>
+										<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+									</Show>
+									Connect
+								</Button>
+							}
+						>
+							<Button onClick={() => disconnectMutation.mutate("github")} disabled={disconnectMutation.isPending} variant="outline">
+								<Show when={disconnectMutation.isPending}>
+									<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+								</Show>
+								Disconnect
+							</Button>
+						</Show>
+					</div>
+
+					<Show when={isConnected("github")}>
+						<div class="rounded-lg border border-border/60 bg-background/60 p-4 space-y-4">
+							<div class="flex items-start justify-between gap-4">
+								<div>
+									<p class="text-sm font-medium text-foreground">{githubAccountLogin() ? `${githubAccountLogin()} repositories` : "Repositories"}</p>
+									<p class="text-xs text-muted-foreground">
+										Repository descriptions are included in the agent’s first prompt. Keep them specific to ownership, deploy surface, and likely incident signals.
+									</p>
+								</div>
+								<Button
+									onClick={() =>
+										updateGitHubDescriptionsMutation.mutate(
+											githubRepositories().map((repo) => ({
+												owner: repo.owner,
+												name: repo.name,
+												description: githubDescriptionDrafts()[`${repo.owner}/${repo.name}`] ?? repo.description,
+											})),
+										)
+									}
+									disabled={!hasGitHubDraftChanges() || updateGitHubDescriptionsMutation.isPending}
+								>
+									<Show when={updateGitHubDescriptionsMutation.isPending}>
+										<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+									</Show>
+									Save descriptions
+								</Button>
+							</div>
+
+							<div class="space-y-4">
+								<For each={githubRepositories()}>
+									{(repo) => {
+										const key = `${repo.owner}/${repo.name}`;
+										return (
+											<div class="space-y-2">
+												<div class="flex items-center justify-between gap-4">
+													<div>
+														<p class="text-sm font-medium text-foreground">
+															{repo.owner}/{repo.name}
+														</p>
+														<p class="text-xs text-muted-foreground">Default branch: {repo.defaultBranch}</p>
+													</div>
+												</div>
+												<Textarea
+													value={githubDescriptionDrafts()[key] ?? repo.description}
+													onInput={(event) =>
+														setGitHubDescriptionDrafts((current) => ({
+															...current,
+															[key]: event.currentTarget.value,
+														}))
+													}
+													rows={3}
+													placeholder="Describe what this repository owns and what kinds of incidents it commonly explains."
+												/>
+											</div>
+										);
+									}}
+								</For>
+							</div>
+						</div>
+					</Show>
+				</div>
+
 				<div class="py-3 space-y-3">
 					<div class="flex items-center justify-between">
 						<div class="flex items-center gap-3">

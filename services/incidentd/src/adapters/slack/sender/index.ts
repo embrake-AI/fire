@@ -731,6 +731,71 @@ export async function similarIncident(params: SenderParams["similarIncident"]) {
 	);
 }
 
+export async function githubCommit(params: SenderParams["githubCommit"]) {
+	const { step: stepDo, metadata, event } = params;
+	const { botToken, channel, thread, incidentChannelId } = metadata;
+	if (!botToken) {
+		return;
+	}
+
+	const targetChannel = incidentChannelId ?? channel;
+	const targetThreadTs = incidentChannelId ? undefined : thread;
+	if (!targetChannel) {
+		return;
+	}
+
+	const shortSha = event.sha.slice(0, 12);
+	const text = `:github: Relevant commit found: ${event.title}`;
+	const blocks: KnownBlock[] = [
+		{
+			type: "section",
+			text: {
+				type: "mrkdwn",
+				text: `:github: *Relevant GitHub commit found*`,
+			},
+		},
+		{
+			type: "section",
+			text: {
+				type: "mrkdwn",
+				text: `*<${event.url}|${event.title}>* \`${shortSha}\` in \`${event.repo}\``,
+			},
+		},
+		{
+			type: "section",
+			text: {
+				type: "mrkdwn",
+				text: `*Summary:* ${event.summary}`,
+			},
+		},
+		{
+			type: "section",
+			text: {
+				type: "mrkdwn",
+				text: `*Why it matters:* ${event.relevance}`,
+			},
+		},
+	];
+
+	await stepDo(
+		"slack.post-github-commit",
+		{
+			retries: {
+				limit: 3,
+				delay: "1 second",
+			},
+		},
+		() =>
+			postSlackMessage({
+				botToken,
+				channel: targetChannel,
+				threadTs: targetThreadTs ?? undefined,
+				text,
+				blocks,
+			}),
+	);
+}
+
 async function updateIncidentMessage({
 	stepDo,
 	stepName,

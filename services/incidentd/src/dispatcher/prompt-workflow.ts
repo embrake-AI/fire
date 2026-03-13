@@ -3,7 +3,7 @@ import type { IS } from "@fire/common";
 import type OpenAI from "openai";
 import { formatAgentEventForPrompt } from "../agent/event-format";
 import { isResponsesFunctionToolCall, parseJsonObject } from "../agent/openai";
-import { getSimilarIncidentsProvider } from "../agent/providers/registry";
+import { getGitHubCommitsProvider, getSimilarIncidentsProvider } from "../agent/providers/registry";
 import type { AgentContextResponse, AgentPromptPayload, AgentSuggestionContext } from "../agent/types";
 import { callOpenAIWithLogging } from "../lib/openai-logging";
 import { addReaction, removeReaction } from "../lib/slack";
@@ -74,6 +74,20 @@ function buildPromptTools(context: AgentSuggestionContext): OpenAI.Responses.Fun
 				type: "object",
 				properties: {
 					prompt: { type: "string", description: "The question to forward to the similar-incidents agent." },
+				},
+				required: ["prompt"],
+				additionalProperties: false,
+			},
+		},
+		{
+			type: "function",
+			name: "prompt_github_commits",
+			description: "Forward a question to the github-commits agent. Use when the user asks about recent commits, deploy changes, or likely code changes behind the incident.",
+			strict: true,
+			parameters: {
+				type: "object",
+				properties: {
+					prompt: { type: "string", description: "The question to forward to the github-commits agent." },
 				},
 				required: ["prompt"],
 				additionalProperties: false,
@@ -378,6 +392,60 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 							const answer = synthesized.text;
 							if (answer) {
 								await step.do(`agent-prompt.similar-respond:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
+									const incidentStub = this.env.INCIDENT.get(incidentId);
+									await incidentStub.addMessage(answer, "", `fire-prompt:${payload.ts}`, "fire", undefined, eventMetadata);
+									return null;
+								});
+								handledToolCall = true;
+							}
+						}
+						break;
+					}
+					case "prompt_github_commits": {
+						const promptText = typeof args.prompt === "string" ? args.prompt.trim() : "";
+						if (promptText) {
+							const agentResult = await step.do<{ answer: string }>(
+								`agent-prompt.github:${payload.incidentId}:${payload.ts}`,
+								{ retries: { limit: 3, delay: "2 seconds" } },
+								async () => {
+									const provider = getGitHubCommitsProvider(this.env, payload.incidentId);
+									const response = await provider.addPrompt({ question: promptText, requestedAt: new Date().toISOString() });
+									return { answer: response?.answer ?? "" };
+								},
+							);
+							const agentAnswer = agentResult.answer.trim();
+							const synthesized = await step.do<{ text: string }>(
+								`agent-prompt.github-synthesize:${payload.incidentId}:${payload.ts}`,
+								{ retries: { limit: 3, delay: "2 seconds" } },
+								async () => {
+									const response = await callOpenAIWithLogging({
+										openaiApiKey: this.env.OPENAI_API_KEY,
+										request: {
+											model: "gpt-5.2",
+											input: [
+												...input,
+												toolCall,
+												{
+													type: "function_call_output",
+													call_id: toolCall.call_id,
+													output: agentAnswer || "No GitHub commit information is available yet.",
+												},
+											],
+											prompt_cache_retention: "24h",
+											text: { verbosity: "low" },
+										},
+										context: {
+											operation: "promptWorkflow.synthesizeGitHub",
+											agentName: "prompt-assistant",
+											incidentId: payload.incidentId,
+										},
+									});
+									return { text: response.output_text.trim() };
+								},
+							);
+							const answer = synthesized.text;
+							if (answer) {
+								await step.do(`agent-prompt.github-respond:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
 									const incidentStub = this.env.INCIDENT.get(incidentId);
 									await incidentStub.addMessage(answer, "", `fire-prompt:${payload.ts}`, "fire", undefined, eventMetadata);
 									return null;

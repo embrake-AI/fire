@@ -142,6 +142,10 @@ export function getIntercomWorkspaceConfigDemo(...args: Parameters<StoreModule["
 	return callDemo("getIntercomWorkspaceConfigDemo", ...args) as ReturnType<StoreModule["getIntercomWorkspaceConfigDemo"]>;
 }
 
+export function getGitHubWorkspaceConfigDemo(...args: Parameters<StoreModule["getGitHubWorkspaceConfigDemo"]>): ReturnType<StoreModule["getGitHubWorkspaceConfigDemo"]> {
+	return callDemo("getGitHubWorkspaceConfigDemo", ...args) as ReturnType<StoreModule["getGitHubWorkspaceConfigDemo"]>;
+}
+
 export function getUserIntegrationsDemo(...args: Parameters<StoreModule["getUserIntegrationsDemo"]>): ReturnType<StoreModule["getUserIntegrationsDemo"]> {
 	return callDemo("getUserIntegrationsDemo", ...args) as ReturnType<StoreModule["getUserIntegrationsDemo"]>;
 }
@@ -162,6 +166,12 @@ export function disconnectWorkspaceIntegrationDemo(
 
 export function setIntercomStatusPageDemo(...args: Parameters<StoreModule["setIntercomStatusPageDemo"]>): ReturnType<StoreModule["setIntercomStatusPageDemo"]> {
 	return callDemo("setIntercomStatusPageDemo", ...args) as ReturnType<StoreModule["setIntercomStatusPageDemo"]>;
+}
+
+export function updateGitHubRepositoryDescriptionsDemo(
+	...args: Parameters<StoreModule["updateGitHubRepositoryDescriptionsDemo"]>
+): ReturnType<StoreModule["updateGitHubRepositoryDescriptionsDemo"]> {
+	return callDemo("updateGitHubRepositoryDescriptionsDemo", ...args) as ReturnType<StoreModule["updateGitHubRepositoryDescriptionsDemo"]>;
 }
 
 export function disconnectUserIntegrationDemo(...args: Parameters<StoreModule["disconnectUserIntegrationDemo"]>): ReturnType<StoreModule["disconnectUserIntegrationDemo"]> {

@@ -23,6 +23,7 @@ import { Route as AuthedMetricsIndexRouteImport } from './routes/_authed.metrics
 import { Route as SlackOauthCallbackRouteImport } from './routes/slack/oauth/callback'
 import { Route as NotionOauthCallbackRouteImport } from './routes/notion/oauth/callback'
 import { Route as IntercomOauthCallbackRouteImport } from './routes/intercom/oauth/callback'
+import { Route as GithubOauthCallbackRouteImport } from './routes/github/oauth/callback'
 import { Route as ApiRotationsStartWorkflowRouteImport } from './routes/api/rotations/start-workflow'
 import { Route as ApiBillingWebhookRouteImport } from './routes/api/billing/webhook'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -116,6 +117,11 @@ const NotionOauthCallbackRoute = NotionOauthCallbackRouteImport.update({
 const IntercomOauthCallbackRoute = IntercomOauthCallbackRouteImport.update({
   id: '/intercom/oauth/callback',
   path: '/intercom/oauth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GithubOauthCallbackRoute = GithubOauthCallbackRouteImport.update({
+  id: '/github/oauth/callback',
+  path: '/github/oauth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiRotationsStartWorkflowRoute =
@@ -283,6 +289,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/rotations/start-workflow': typeof ApiRotationsStartWorkflowRoute
+  '/github/oauth/callback': typeof GithubOauthCallbackRoute
   '/intercom/oauth/callback': typeof IntercomOauthCallbackRoute
   '/notion/oauth/callback': typeof NotionOauthCallbackRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
@@ -323,6 +330,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/rotations/start-workflow': typeof ApiRotationsStartWorkflowRoute
+  '/github/oauth/callback': typeof GithubOauthCallbackRoute
   '/intercom/oauth/callback': typeof IntercomOauthCallbackRoute
   '/notion/oauth/callback': typeof NotionOauthCallbackRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
@@ -365,6 +373,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/rotations/start-workflow': typeof ApiRotationsStartWorkflowRoute
+  '/github/oauth/callback': typeof GithubOauthCallbackRoute
   '/intercom/oauth/callback': typeof IntercomOauthCallbackRoute
   '/notion/oauth/callback': typeof NotionOauthCallbackRoute
   '/slack/oauth/callback': typeof SlackOauthCallbackRoute
@@ -407,6 +416,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/billing/webhook'
     | '/api/rotations/start-workflow'
+    | '/github/oauth/callback'
     | '/intercom/oauth/callback'
     | '/notion/oauth/callback'
     | '/slack/oauth/callback'
@@ -447,6 +457,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/billing/webhook'
     | '/api/rotations/start-workflow'
+    | '/github/oauth/callback'
     | '/intercom/oauth/callback'
     | '/notion/oauth/callback'
     | '/slack/oauth/callback'
@@ -488,6 +499,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/billing/webhook'
     | '/api/rotations/start-workflow'
+    | '/github/oauth/callback'
     | '/intercom/oauth/callback'
     | '/notion/oauth/callback'
     | '/slack/oauth/callback'
@@ -515,6 +527,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBillingWebhookRoute: typeof ApiBillingWebhookRoute
   ApiRotationsStartWorkflowRoute: typeof ApiRotationsStartWorkflowRoute
+  GithubOauthCallbackRoute: typeof GithubOauthCallbackRoute
   IntercomOauthCallbackRoute: typeof IntercomOauthCallbackRoute
   NotionOauthCallbackRoute: typeof NotionOauthCallbackRoute
   SlackOauthCallbackRoute: typeof SlackOauthCallbackRoute
@@ -619,6 +632,13 @@ declare module '@tanstack/solid-router' {
       path: '/intercom/oauth/callback'
       fullPath: '/intercom/oauth/callback'
       preLoaderRoute: typeof IntercomOauthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/github/oauth/callback': {
+      id: '/github/oauth/callback'
+      path: '/github/oauth/callback'
+      fullPath: '/github/oauth/callback'
+      preLoaderRoute: typeof GithubOauthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/rotations/start-workflow': {
@@ -902,6 +922,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBillingWebhookRoute: ApiBillingWebhookRoute,
   ApiRotationsStartWorkflowRoute: ApiRotationsStartWorkflowRoute,
+  GithubOauthCallbackRoute: GithubOauthCallbackRoute,
   IntercomOauthCallbackRoute: IntercomOauthCallbackRoute,
   NotionOauthCallbackRoute: NotionOauthCallbackRoute,
   SlackOauthCallbackRoute: SlackOauthCallbackRoute,

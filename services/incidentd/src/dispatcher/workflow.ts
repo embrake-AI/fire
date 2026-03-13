@@ -97,16 +97,28 @@ export type SenderParams = {
 		eventId: number;
 		eventMetadata?: Record<string, string>;
 	};
+	githubCommit: {
+		step: StepDo;
+		env: Env;
+		id: string;
+		incident: Incident;
+		metadata: Metadata;
+		sourceAdapter: "slack" | "dashboard" | "fire";
+		event: Extract<IS_Event, { event_type: "GITHUB_COMMIT" }>["event_data"];
+		eventId: number;
+		eventMetadata?: Record<string, string>;
+	};
 };
 
 interface Sender {
-	incidentStarted: ((params: SenderParams["incidentStarted"]) => Promise<void>) | undefined;
-	incidentSeverityUpdated: ((params: SenderParams["incidentSeverityUpdated"]) => Promise<void>) | undefined;
-	incidentAssigneeUpdated: ((params: SenderParams["incidentAssigneeUpdated"]) => Promise<void>) | undefined;
-	incidentStatusUpdated: ((params: SenderParams["incidentStatusUpdated"]) => Promise<void>) | undefined;
-	messageAdded: ((params: SenderParams["messageAdded"]) => Promise<void>) | undefined;
-	affectionUpdated: ((params: SenderParams["affectionUpdated"]) => Promise<void>) | undefined;
-	similarIncident: ((params: SenderParams["similarIncident"]) => Promise<void>) | undefined;
+	incidentStarted?: (params: SenderParams["incidentStarted"]) => Promise<void>;
+	incidentSeverityUpdated?: (params: SenderParams["incidentSeverityUpdated"]) => Promise<void>;
+	incidentAssigneeUpdated?: (params: SenderParams["incidentAssigneeUpdated"]) => Promise<void>;
+	incidentStatusUpdated?: (params: SenderParams["incidentStatusUpdated"]) => Promise<void>;
+	messageAdded?: (params: SenderParams["messageAdded"]) => Promise<void>;
+	affectionUpdated?: (params: SenderParams["affectionUpdated"]) => Promise<void>;
+	similarIncident?: (params: SenderParams["similarIncident"]) => Promise<void>;
+	githubCommit?: (params: SenderParams["githubCommit"]) => Promise<void>;
 }
 
 const senders: Sender[] = [dashboardSender, slackSender, statusPageDispatcher];
@@ -168,6 +180,10 @@ async function dispatchSimilarIncidentEvent(params: SenderParams["similarInciden
 	await settleDispatch("similar-incident", [...senders.map((sender) => sender.similarIncident?.(params))]);
 }
 
+async function dispatchGitHubCommitEvent(params: SenderParams["githubCommit"]) {
+	await settleDispatch("github-commit", [...senders.map((sender) => sender.githubCommit?.(params))]);
+}
+
 type WorkflowEventPayload = Extract<IncidentWorkflowPayload, { kind: "event" }>;
 
 async function dispatchEvent(step: WorkflowStep, env: Env, payload: WorkflowEventPayload) {
@@ -212,6 +228,14 @@ async function dispatchEvent(step: WorkflowStep, env: Env, payload: WorkflowEven
 		}
 		case "SIMILAR_INCIDENT": {
 			return dispatchSimilarIncidentEvent({
+				...baseParams,
+				event: payload.event.event_data,
+				eventId: payload.event.event_id,
+				eventMetadata: payload.eventMetadata,
+			});
+		}
+		case "GITHUB_COMMIT": {
+			return dispatchGitHubCommitEvent({
 				...baseParams,
 				event: payload.event.event_data,
 				eventId: payload.event.event_id,

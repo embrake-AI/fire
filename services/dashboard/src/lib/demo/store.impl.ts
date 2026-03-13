@@ -1,4 +1,5 @@
 import type { IS, IS_Event, ListIncidentsElement } from "@fire/common";
+import type { GitHubRepositoryConfig } from "@fire/db/schema";
 import type { createEntryPoint, createEntryPointFromSlackUser, getEntryPoints, updateEntryPointPrompt } from "../entry-points/entry-points";
 import type { AffectionImpact, AffectionStatus, IncidentAffectionData } from "../incident-affections/incident-affections";
 import type { getAnalysisById, getMetrics, IncidentAction, IncidentEvent, ResolvedIncident } from "../incidents/incidents";
@@ -17,7 +18,7 @@ type VerifyCustomDomainResponse = Awaited<ReturnType<typeof verifyCustomDomain>>
 type GetAnalysisByIdResponse = Awaited<ReturnType<typeof getAnalysisById>>;
 type GetMetricsResponse = Awaited<ReturnType<typeof getMetrics>>;
 
-type WorkspacePlatform = "slack" | "notion" | "intercom";
+type WorkspacePlatform = "slack" | "notion" | "intercom" | "github";
 type UserPlatform = "slack";
 type DemoUserRole = "VIEWER" | "MEMBER" | "ADMIN" | "SUPER_ADMIN";
 type ManageableUserRole = Exclude<DemoUserRole, "SUPER_ADMIN">;
@@ -191,6 +192,12 @@ type DemoIntegrationRow<T extends string> = {
 	installedAt: Date | null;
 };
 
+type DemoGitHubConfig = {
+	accountLogin: string;
+	accountType: "User" | "Organization";
+	repositories: GitHubRepositoryConfig[];
+};
+
 type DemoState = {
 	version: 1;
 	client: DemoClient;
@@ -204,6 +211,7 @@ type DemoState = {
 	statusPages: DemoStatusPage[];
 	apiKeys: DemoApiKey[];
 	workspaceIntegrations: DemoIntegrationRow<WorkspacePlatform>[];
+	githubConfig: DemoGitHubConfig | null;
 	intercomStatusPageId: string | null;
 	userIntegrations: DemoIntegrationRow<UserPlatform>[];
 	slackUsers: SlackUser[];
@@ -735,6 +743,7 @@ function makeInitialState(): DemoState {
 			{ platform: "slack", installedAt: now },
 			{ platform: "notion", installedAt: now },
 		],
+		githubConfig: null,
 		intercomStatusPageId: null,
 		userIntegrations: [{ platform: "slack", installedAt: now }],
 		slackUsers: [
@@ -1979,6 +1988,17 @@ export async function getIntercomWorkspaceConfigDemo() {
 	};
 }
 
+export async function getGitHubWorkspaceConfigDemo() {
+	const state = await loadState();
+	const connected = state.workspaceIntegrations.some((integration) => integration.platform === "github");
+	return {
+		connected,
+		accountLogin: connected ? (state.githubConfig?.accountLogin ?? "demo-org") : null,
+		accountType: connected ? (state.githubConfig?.accountType ?? "Organization") : null,
+		repositories: connected ? (state.githubConfig?.repositories ?? []) : [],
+	};
+}
+
 export async function getUserIntegrationsDemo() {
 	const state = await loadState();
 	return state.userIntegrations.map((integration) => ({ ...integration }));
@@ -1991,6 +2011,26 @@ export async function connectWorkspaceIntegrationDemo(platform: WorkspacePlatfor
 			existing.installedAt = new Date();
 		} else {
 			state.workspaceIntegrations.push({ platform, installedAt: new Date() });
+		}
+		if (platform === "github" && !state.githubConfig) {
+			state.githubConfig = {
+				accountLogin: "firedash-demo",
+				accountType: "Organization",
+				repositories: [
+					{
+						owner: "firedash-demo",
+						name: "api",
+						defaultBranch: "main",
+						description: "Backend API and incident ingestion paths. Check here for deploys, worker changes, and incident lifecycle regressions.",
+					},
+					{
+						owner: "firedash-demo",
+						name: "dashboard",
+						defaultBranch: "main",
+						description: "Customer-facing dashboard and status views. Use this for UI regressions, broken flows, and client-side deploy issues.",
+					},
+				],
+			};
 		}
 		return { success: true };
 	});
@@ -2014,6 +2054,9 @@ export async function disconnectWorkspaceIntegrationDemo(platform: WorkspacePlat
 		if (platform === "intercom") {
 			state.intercomStatusPageId = null;
 		}
+		if (platform === "github") {
+			state.githubConfig = null;
+		}
 		return { success: true };
 	});
 }
@@ -2036,6 +2079,21 @@ export async function setIntercomStatusPageDemo(data: { statusPageId: string }) 
 		}
 
 		state.intercomStatusPageId = statusPageId;
+		return { success: true };
+	});
+}
+
+export async function updateGitHubRepositoryDescriptionsDemo(data: { repositories: Array<{ owner: string; name: string; description: string }> }) {
+	return withState(async (state) => {
+		if (!state.githubConfig) {
+			throw new Error("Connect GitHub before editing repository descriptions");
+		}
+
+		const descriptions = new Map(data.repositories.map((repo) => [`${repo.owner}/${repo.name}`, repo.description.trim()]));
+		state.githubConfig.repositories = state.githubConfig.repositories.map((repo) => ({
+			...repo,
+			description: descriptions.get(`${repo.owner}/${repo.name}`) || repo.description,
+		}));
 		return { success: true };
 	});
 }

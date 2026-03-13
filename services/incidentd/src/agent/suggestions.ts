@@ -78,9 +78,15 @@ export type SimilarIncidentsToolRequest = {
 	reason: string;
 };
 
+export type GitHubRecentCommitsToolRequest = {
+	evidence: string;
+	reason: string;
+};
+
 export type GenerateIncidentSuggestionsResult = {
 	suggestions: AgentSuggestion[];
 	similarIncidentsRequest?: SimilarIncidentsToolRequest;
+	githubRecentCommitsRequest?: GitHubRecentCommitsToolRequest;
 };
 
 export function normalizeEventData(value: unknown): unknown {
@@ -140,6 +146,26 @@ export function buildSuggestionTools(context: AgentSuggestionContext): OpenAI.Re
 				properties: {
 					evidence: { type: "string", description: "Specific events proving why similar-incident search is useful now." },
 					reason: { type: "string", description: "Concise reason to run similar-incident search now." },
+				},
+				required: ["evidence", "reason"],
+				additionalProperties: false,
+			},
+		},
+		{
+			type: "function",
+			name: "github_recent_commits",
+			description: `Request investigation of recent GitHub commits across configured repositories.
+- Use when the incident plausibly correlates with a recent code/config deploy or change.
+- Prefer this once there is a concrete affected subsystem, service, repo area, or deploy/change suspicion.
+- Do NOT call for vague symptoms with no technical signal.
+- Do NOT call again if AGENT_GITHUB_COMMIT results already exist unless understanding materially changes (different subsystem, repo area, or failure mechanism).
+- Skip for pure monitoring chatter or repeated confirmations with no change-related hypothesis.`,
+			strict: true,
+			parameters: {
+				type: "object",
+				properties: {
+					evidence: { type: "string", description: "Specific events showing why recent commit investigation is warranted now." },
+					reason: { type: "string", description: "Concise reason to inspect recent GitHub commits now." },
 				},
 				required: ["evidence", "reason"],
 				additionalProperties: false,
@@ -588,6 +614,7 @@ export async function generateIncidentSuggestions(
 export function parseResponseToolCalls(toolCalls: OpenAI.Responses.ResponseFunctionToolCall[]): GenerateIncidentSuggestionsResult {
 	const suggestions: AgentSuggestion[] = [];
 	let similarIncidentsRequest: SimilarIncidentsToolRequest | undefined;
+	let githubRecentCommitsRequest: GitHubRecentCommitsToolRequest | undefined;
 	const usedToolNames = new Set<string>();
 
 	for (const toolCall of toolCalls) {
@@ -600,6 +627,16 @@ export function parseResponseToolCalls(toolCalls: OpenAI.Responses.ResponseFunct
 		if (toolCall.name === "similar_incidents") {
 			if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.reason === "string" && args.reason.trim()) {
 				similarIncidentsRequest = {
+					evidence: args.evidence.trim(),
+					reason: args.reason.trim(),
+				};
+			}
+			continue;
+		}
+
+		if (toolCall.name === "github_recent_commits") {
+			if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.reason === "string" && args.reason.trim()) {
+				githubRecentCommitsRequest = {
 					evidence: args.evidence.trim(),
 					reason: args.reason.trim(),
 				};
@@ -645,5 +682,5 @@ export function parseResponseToolCalls(toolCalls: OpenAI.Responses.ResponseFunct
 		}
 	}
 
-	return { suggestions, similarIncidentsRequest };
+	return { suggestions, similarIncidentsRequest, githubRecentCommitsRequest };
 }
