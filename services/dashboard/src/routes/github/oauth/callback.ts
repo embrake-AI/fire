@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/solid-router";
-import { installGitHubWorkspaceIntegration } from "~/lib/integrations/integrations";
+import { installGitHubWorkspaceIntegration } from "~/lib/integrations/integrations.server";
 import { extractSigned } from "~/lib/utils/server";
 
 export const Route = createFileRoute("/github/oauth/callback")({

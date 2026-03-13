@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { Link, useNavigate } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
 import { Check, ChevronDown, Hash, Lock, Plus } from "lucide-solid";
@@ -12,11 +12,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover
 import { Switch, SwitchControl, SwitchLabel, SwitchThumb } from "~/components/ui/switch";
 import { Textarea } from "~/components/ui/textarea";
 import { runDemoAware } from "~/lib/demo/runtime";
-import { getSlackBotChannelsDemo, startIncidentDemo } from "~/lib/demo/store";
+import { startIncidentDemo } from "~/lib/demo/store";
 import { useEntryPoints } from "~/lib/entry-points/entry-points.hooks";
 import { startIncident } from "~/lib/incidents/incidents";
-import { getSlackBotChannels } from "~/lib/integrations/integrations";
-import { useIntegrations } from "~/lib/integrations/integrations.hooks";
+import { useIntegrations, useSlackBotChannels } from "~/lib/integrations/integrations.hooks";
 import type { SlackChannel } from "~/lib/slack";
 
 export default function StartIncidentButton() {
@@ -67,17 +66,7 @@ function StartIncidentDialogContent(props: { onClose: () => void }) {
 	const someEntryPoint = createMemo(() => !!entryPointsQuery.data?.some((ep) => !!ep.prompt || ep.isFallback));
 	const isSlackConnected = createMemo(() => integrationsQuery.data?.some((i) => i.platform === "slack"));
 
-	const getSlackBotChannelsFn = useServerFn(getSlackBotChannels);
-	const slackChannelsQuery = useQuery(() => ({
-		queryKey: ["slack-bot-channels"],
-		queryFn: () =>
-			runDemoAware({
-				demo: () => getSlackBotChannelsDemo(),
-				remote: () => getSlackBotChannelsFn(),
-			}),
-		enabled: postToSlack(),
-		staleTime: Infinity,
-	}));
+	const slackChannelsQuery = useSlackBotChannels({ enabled: postToSlack });
 
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();

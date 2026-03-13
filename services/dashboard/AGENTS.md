@@ -51,6 +51,17 @@ lib/{domain}/
 
 Examples: `rotations/`, `teams/`, `services/`, `incidents/`, `status-pages/`, `entry-points/`.
 
+### Important TanStack Start Boundary
+
+For dashboard domain modules that are imported by hooks or other client-reachable code:
+
+- `{domain}.ts` must export only `createServerFn(...)` values.
+- Do not export plain helpers, constants, or other runtime values from `{domain}.ts`.
+- Do not `export type ...` from `{domain}.ts` either.
+- Move server-only helpers and implementation details to `{domain}.server.ts`.
+
+This avoids build regressions where a client-reachable import of `{domain}.ts` pulls server-only code into the browser bundle.
+
 ---
 
 ## Server Functions with Auth Middleware

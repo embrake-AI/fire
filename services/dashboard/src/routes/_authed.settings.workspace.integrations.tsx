@@ -15,16 +15,14 @@ import { Textarea } from "~/components/ui/textarea";
 import { showToast } from "~/components/ui/toast";
 import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
+import { connectWorkspaceIntegrationDemo, getIntercomWorkspaceConfigDemo, setIntercomStatusPageDemo } from "~/lib/demo/store";
 import {
-	connectWorkspaceIntegrationDemo,
-	disconnectWorkspaceIntegrationDemo,
-	getGitHubWorkspaceConfigDemo,
-	getIntercomWorkspaceConfigDemo,
-	setIntercomStatusPageDemo,
-	updateGitHubRepositoryDescriptionsDemo,
-} from "~/lib/demo/store";
-import { disconnectWorkspaceIntegration, getGitHubWorkspaceConfig, getInstallUrl, updateGitHubRepositoryDescriptions } from "~/lib/integrations/integrations";
-import { useIntegrations } from "~/lib/integrations/integrations.hooks";
+	useDisconnectWorkspaceIntegration,
+	useGitHubWorkspaceConfig,
+	useInstallUrl,
+	useIntegrations,
+	useUpdateGitHubRepositoryDescriptions,
+} from "~/lib/integrations/integrations.hooks";
 import { getIntercomWorkspaceConfig, setIntercomStatusPage } from "~/lib/intercom/intercom";
 import { useStatusPages } from "~/lib/status-pages/status-pages.hooks";
 
@@ -75,11 +73,9 @@ function IntegrationsContent() {
 	const queryClient = useQueryClient();
 	const integrationsQuery = useIntegrations({ type: "workspace" });
 	const statusPagesQuery = useStatusPages();
-	const getInstallUrlFn = useServerFn(getInstallUrl);
+	const getInstallUrlFn = useInstallUrl();
 	const getIntercomWorkspaceConfigFn = useServerFn(getIntercomWorkspaceConfig);
-	const getGitHubWorkspaceConfigFn = useServerFn(getGitHubWorkspaceConfig);
 	const setIntercomStatusPageFn = useServerFn(setIntercomStatusPage);
-	const updateGitHubRepositoryDescriptionsFn = useServerFn(updateGitHubRepositoryDescriptions);
 	const [isConnecting, setIsConnecting] = createSignal(false);
 	const [selectedStatusPageId, setSelectedStatusPageId] = createSignal("");
 	const [githubDescriptionDrafts, setGitHubDescriptionDrafts] = createSignal<Record<string, string>>({});
@@ -94,15 +90,7 @@ function IntegrationsContent() {
 		staleTime: 60_000,
 	}));
 
-	const githubConfigQuery = useQuery(() => ({
-		queryKey: ["workspace_github_config"],
-		queryFn: () =>
-			runDemoAware({
-				demo: () => getGitHubWorkspaceConfigDemo(),
-				remote: () => getGitHubWorkspaceConfigFn(),
-			}),
-		staleTime: 60_000,
-	}));
+	const githubConfigQuery = useGitHubWorkspaceConfig();
 
 	createEffect(() => {
 		setSelectedStatusPageId(intercomConfigQuery.data?.statusPageId ?? "");
@@ -147,41 +135,25 @@ function IntegrationsContent() {
 		}
 	};
 
-	const disconnectFn = useServerFn(disconnectWorkspaceIntegration);
-	const disconnectMutation = useMutation(() => ({
-		mutationFn: (platform: WorkspacePlatform) =>
-			runDemoAware({
-				demo: () => disconnectWorkspaceIntegrationDemo(platform),
-				remote: () => disconnectFn({ data: platform }),
-			}),
-		onSuccess: async (_, platform) => {
-			await queryClient.invalidateQueries({ queryKey: ["workspace_integrations"] });
-			await queryClient.invalidateQueries({ queryKey: ["workspace_intercom_config"] });
-			await queryClient.invalidateQueries({ queryKey: ["workspace_github_config"] });
-			await queryClient.invalidateQueries({ queryKey: ["users"] });
+	const disconnectMutation = useDisconnectWorkspaceIntegration({
+		onSuccess: async (platform) => {
 			showToast({
 				title: "Integration disconnected",
 				description: `${platform} has been successfully disconnected from your workspace.`,
 				variant: "success",
 			});
 		},
-	}));
+	});
 
-	const updateGitHubDescriptionsMutation = useMutation(() => ({
-		mutationFn: (repositories: Array<{ owner: string; name: string; description: string }>) =>
-			runDemoAware({
-				demo: () => updateGitHubRepositoryDescriptionsDemo({ repositories }),
-				remote: () => updateGitHubRepositoryDescriptionsFn({ data: { repositories } }),
-			}),
+	const updateGitHubDescriptionsMutation = useUpdateGitHubRepositoryDescriptions({
 		onSuccess: async () => {
-			await queryClient.invalidateQueries({ queryKey: ["workspace_github_config"] });
 			showToast({
 				title: "GitHub updated",
 				description: "Repository descriptions were saved.",
 				variant: "success",
 			});
 		},
-	}));
+	});
 
 	const setStatusPageMutation = useMutation(() => ({
 		mutationFn: (statusPageId: string) =>
