@@ -101,12 +101,12 @@ async function createGitHubInstallationAccessToken(installationId: string): Prom
 }
 
 function normalizeGitHubDescription(value: string, fallback: string) {
-	const compact = value.replace(/\s+/g, " ").trim();
-	if (!compact) {
+	const normalized = value.replace(/\r\n?/g, "\n").trim();
+	if (!normalized) {
 		return fallback;
 	}
 
-	return compact.slice(0, 500);
+	return normalized;
 }
 
 async function fetchGitHubRepositoryDescription(params: { token: string; owner: string; name: string; fallback: string }): Promise<string> {

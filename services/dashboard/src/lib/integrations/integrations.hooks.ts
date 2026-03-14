@@ -108,8 +108,25 @@ export function useUpdateGitHubRepositoryDescriptions(options?: { onSuccess?: ()
 				demo: () => updateGitHubRepositoryDescriptionsDemo({ repositories }),
 				remote: () => updateGitHubRepositoryDescriptionsFn({ data: { repositories } }),
 			}),
-		onSuccess: async () => {
-			queryClient.invalidateQueries({ queryKey: ["workspace_github_config"] });
+		onSuccess: async (_, repositories) => {
+			const updates = new Map(repositories.map((repo) => [`${repo.owner}/${repo.name}`, repo.description]));
+			queryClient.setQueryData(["workspace_github_config"], (current) => {
+				if (!current || typeof current !== "object" || !("repositories" in current) || !Array.isArray(current.repositories)) {
+					return current;
+				}
+
+				return {
+					...current,
+					repositories: current.repositories.map((repo) => {
+						if (!repo || typeof repo !== "object" || !("owner" in repo) || !("name" in repo) || typeof repo.owner !== "string" || typeof repo.name !== "string") {
+							return repo;
+						}
+
+						const description = updates.get(`${repo.owner}/${repo.name}`);
+						return description === undefined ? repo : { ...repo, description };
+					}),
+				};
+			});
 			await options?.onSuccess?.();
 		},
 	}));
