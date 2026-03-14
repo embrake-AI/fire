@@ -2869,6 +2869,7 @@ export async function getResolvedIncidentsDemo() {
 				title: analysis.title,
 				description: analysis.description,
 				severity: analysis.severity,
+				assignee: analysis.assignee,
 				createdAt: analysis.createdAt,
 				resolvedAt: analysis.resolvedAt!,
 				terminalStatus: terminal.terminalStatus,

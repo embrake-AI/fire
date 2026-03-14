@@ -302,6 +302,7 @@ export type ResolvedIncident = {
 	title: string;
 	description: string;
 	severity: "low" | "medium" | "high";
+	assignee: string;
 	createdAt: Date;
 	resolvedAt: Date;
 	terminalStatus: TerminalIncidentStatus;
@@ -317,6 +318,7 @@ export const getResolvedIncidents = createServerFn({ method: "GET" })
 				title: incidentAnalysis.title,
 				description: incidentAnalysis.description,
 				severity: incidentAnalysis.severity,
+				assignee: incidentAnalysis.assignee,
 				createdAt: incidentAnalysis.createdAt,
 				resolvedAt: incidentAnalysis.resolvedAt,
 				terminalStatus: incidentAnalysis.terminalStatus,

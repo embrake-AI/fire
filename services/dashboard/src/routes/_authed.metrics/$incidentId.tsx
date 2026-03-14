@@ -18,7 +18,7 @@ import { showToast } from "~/components/ui/toast";
 import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { isDemoMode } from "~/lib/demo/mode";
 import { runDemoAware } from "~/lib/demo/runtime";
-import { getAnalysisByIdDemo, getIncidentsDemo, getNotionPagesDemo } from "~/lib/demo/store";
+import { getAnalysisByIdDemo, getNotionPagesDemo } from "~/lib/demo/store";
 import { errorToastMeta } from "~/lib/errors/user-facing-error";
 import { getSeverity, getStatus } from "~/lib/incident-config";
 import {
@@ -29,7 +29,7 @@ import {
 	useUpdateAnalysisTimeline,
 	useUpdateIncidentAction,
 } from "~/lib/incidents/incident-analysis.hooks";
-import { computeIncidentMetrics, getAnalysisById, getIncidents, type IncidentAction, type IncidentAnalysis, type IncidentTimelineItem } from "~/lib/incidents/incidents";
+import { computeIncidentMetrics, getAnalysisById, type IncidentAction, type IncidentAnalysis, type IncidentTimelineItem } from "~/lib/incidents/incidents";
 import { useIntegrations } from "~/lib/integrations/integrations.hooks";
 import { exportToNotion, getNotionPages } from "~/lib/notion/notion-export";
 import { useDebounce } from "~/lib/useDebounce";
@@ -112,7 +112,6 @@ export const Route = createFileRoute("/_authed/metrics/$incidentId")({
 function AnalysisDetail() {
 	const params = Route.useParams();
 	const getAnalysisByIdFn = useServerFn(getAnalysisById);
-	const queryClient = useQueryClient();
 
 	const analysisQuery = useQuery(() => ({
 		queryKey: ["analysis", params().incidentId],
@@ -127,34 +126,16 @@ function AnalysisDetail() {
 
 	const analysis = () => analysisQuery.data;
 
-	const getIncidentsFn = useServerFn(getIncidents);
-	const prefetchIncidents = () => {
-		const state = queryClient.getQueryState(["incidents"]);
-		if (state?.status === "success" && !state.isInvalidated) {
-			return;
-		}
-		void queryClient.prefetchQuery({
-			queryKey: ["incidents"],
-			queryFn: () =>
-				runDemoAware({
-					demo: () => getIncidentsDemo(),
-					remote: () => getIncidentsFn(),
-				}),
-			staleTime: 10_000,
-		});
-	};
-
 	return (
 		<div class="flex-1 bg-background p-6 md:p-8">
 			<div class="max-w-5xl mx-auto">
 				<Link
-					to="/"
+					to="/post-incidents"
+					search={{ severity: undefined, status: undefined, assignee: undefined }}
 					class="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6"
-					onMouseEnter={prefetchIncidents}
-					onFocusIn={prefetchIncidents}
 				>
 					<ArrowLeft class="w-4 h-4" />
-					Back to incidents
+					Back to post-incidents
 				</Link>
 
 				<Suspense fallback={<AnalysisSkeleton />}>
