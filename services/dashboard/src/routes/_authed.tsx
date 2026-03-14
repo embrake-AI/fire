@@ -1,5 +1,4 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/solid-router";
-import { useServerFn } from "@tanstack/solid-start";
 import { LoaderCircle } from "lucide-solid";
 import { createMemo, createSignal, onMount, Show } from "solid-js";
 import { SlackIcon } from "~/components/icons/SlackIcon";
@@ -11,8 +10,7 @@ import { isDemoMode } from "~/lib/demo/mode";
 import { runDemoAware } from "~/lib/demo/runtime";
 import { connectWorkspaceIntegrationDemo } from "~/lib/demo/store";
 import { useEntryPoints } from "~/lib/entry-points/entry-points.hooks";
-import { getInstallUrl } from "~/lib/integrations/integrations";
-import { useIntegrations } from "~/lib/integrations/integrations.hooks";
+import { useInstallUrl, useIntegrations } from "~/lib/integrations/integrations.hooks";
 
 export const Route = createFileRoute("/_authed")({
 	beforeLoad: ({ location }) => {
@@ -116,7 +114,7 @@ function DemoModeWelcomeDialog(props: { onDismiss: () => void }) {
 }
 
 function SlackConnectionRequired() {
-	const getInstallUrlFn = useServerFn(getInstallUrl);
+	const getInstallUrlFn = useInstallUrl();
 	const [isConnecting, setIsConnecting] = createSignal(false);
 
 	const handleConnect = async () => {

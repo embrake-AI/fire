@@ -247,6 +247,58 @@ describe("Incident DO core contracts", () => {
 		});
 	});
 
+	it("stores GITHUB_COMMIT as unpublished outbox event and deduplicates by run+sha", async () => {
+		const { stub, id, identifier } = createIncidentHandle();
+		await seedInitializedIncident(stub, id, identifier);
+
+		const first = await stub.recordAgentInsightEvent({
+			eventType: "GITHUB_COMMIT",
+			eventData: {
+				originRunId: "run-gh-1",
+				repo: "firedash/api",
+				sha: "abc123def456",
+				url: "https://github.com/firedash/api/commit/abc123def456",
+				author: "alice",
+				committedAt: "2026-03-01T12:00:00.000Z",
+				title: "Rollback retry guard",
+				summary: "Adds a retry guard to the rollback path.",
+				relevance: "Touched deploy rollback logic right before the incident.",
+			},
+			dedupeKey: "run-gh-1:firedash/api:abc123def456",
+		});
+		expect(first).toBeDefined();
+
+		const second = await stub.recordAgentInsightEvent({
+			eventType: "GITHUB_COMMIT",
+			eventData: {
+				originRunId: "run-gh-1",
+				repo: "firedash/api",
+				sha: "abc123def456",
+				url: "https://github.com/firedash/api/commit/abc123def456",
+				author: "alice",
+				committedAt: "2026-03-01T12:00:00.000Z",
+				title: "Rollback retry guard",
+				summary: "Adds a retry guard to the rollback path.",
+				relevance: "Touched deploy rollback logic right before the incident.",
+			},
+			dedupeKey: "run-gh-1:firedash/api:abc123def456",
+		});
+		if (first && second && "eventId" in first && "eventId" in second) {
+			expect(second.eventId).toBe(first.eventId);
+			expect(second.deduped).toBe(true);
+		}
+
+		const result = assertReady(await stub.get());
+		const githubEvents = result.events.filter((event) => event.event_type === "GITHUB_COMMIT");
+		expect(githubEvents).toHaveLength(1);
+		expect(githubEvents[0]?.adapter).toBe("fire");
+		expect(githubEvents[0]?.published_at).toBeNull();
+		expect(eventData<{ repo: string; sha: string }>(githubEvents[0]!)).toMatchObject({
+			repo: "firedash/api",
+			sha: "abc123def456",
+		});
+	});
+
 	it("stores generic agent context and insight events with dedupe key semantics", async () => {
 		const { stub, id, identifier } = createIncidentHandle();
 		await seedInitializedIncident(stub, id, identifier);

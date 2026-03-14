@@ -27,17 +27,24 @@ const MAX_ATTEMPTS = 3;
 
 type AffectionUpdateData = Extract<IS_Event, { event_type: "AFFECTION_UPDATE" }>["event_data"];
 type SimilarIncidentData = Extract<IS_Event, { event_type: "SIMILAR_INCIDENT" }>["event_data"];
+type GitHubCommitData = Extract<IS_Event, { event_type: "GITHUB_COMMIT" }>["event_data"];
 type ContextAgentTriggeredData = Extract<IS_Event, { event_type: "CONTEXT_AGENT_TRIGGERED" }>["event_data"];
 type AgentContextEventPayload = {
 	eventType: "CONTEXT_AGENT_TRIGGERED";
 	eventData: ContextAgentTriggeredData;
 	dedupeKey: string;
 };
-type AgentInsightEventPayload = {
-	eventType: "SIMILAR_INCIDENT";
-	eventData: SimilarIncidentData;
-	dedupeKey: string;
-};
+type AgentInsightEventPayload =
+	| {
+			eventType: "SIMILAR_INCIDENT";
+			eventData: SimilarIncidentData;
+			dedupeKey: string;
+	  }
+	| {
+			eventType: "GITHUB_COMMIT";
+			eventData: GitHubCommitData;
+			dedupeKey: string;
+	  };
 type IncidentService = { id: string; name: string; prompt: string | null };
 type SuggestionLogInput = { message: string; suggestionId: string; messageId: string; suggestion?: Record<string, unknown> };
 type BootstrapMessage = { message: string; userId: string; messageId: string; createdAt: string };

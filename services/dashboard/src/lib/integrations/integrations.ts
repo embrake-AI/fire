@@ -1,222 +1,84 @@
-import type { SlackIntegrationData } from "@fire/db/schema";
-import { integration, isSlackIntegrationData, userIntegration } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
-import { and, eq } from "drizzle-orm";
 import { authMiddleware } from "~/lib/auth/auth-middleware";
 import { requirePermission, requirePermissionFromData } from "~/lib/auth/authorization";
-import { db } from "~/lib/db";
-import { fetchSlackBotChannels, fetchSlackEmojis } from "~/lib/slack";
-import { mustGetEnv, sign } from "~/lib/utils/server";
+import {
+	disconnectUserIntegrationForUser,
+	disconnectWorkspaceIntegrationForClient,
+	getGitHubWorkspaceConfigForClient,
+	getInstallUrlForContext,
+	getSlackBotChannelsForClient,
+	getSlackEmojisForClient,
+	getUserIntegrationsForUser,
+	getWorkspaceIntegrationsForClient,
+	updateGitHubRepositoryDescriptionsForClient,
+} from "./integrations.server";
 
-/**
- * Get the Slack integration status for the current user's client.
- */
-/**
- * Get the Slack integration status for the current user's client.
- */
+type WorkspacePlatform = "slack" | "notion" | "intercom" | "github";
+
 export const getWorkspaceIntegrations = createServerFn({ method: "GET" })
 	.middleware([authMiddleware, requirePermission("incident.read")])
 	.handler(async ({ context }) => {
-		const { clientId } = context;
-
-		const results = await db.select({ platform: integration.platform, installedAt: integration.installedAt }).from(integration).where(eq(integration.clientId, clientId));
-
-		return results.map((result) => ({
-			platform: result.platform,
-			installedAt: result.installedAt,
-		}));
+		return getWorkspaceIntegrationsForClient(context.clientId);
 	});
 
-/**
- * Get the Slack integration status for the current user.
- */
 export const getUserIntegrations = createServerFn({ method: "GET" })
 	.middleware([authMiddleware, requirePermission("incident.read")])
 	.handler(async ({ context }) => {
-		const { userId } = context;
-
-		const results = await db
-			.select({ platform: userIntegration.platform, installedAt: userIntegration.installedAt })
-			.from(userIntegration)
-			.where(eq(userIntegration.userId, userId));
-
-		return results.map((result) => ({
-			platform: result.platform,
-			installedAt: result.installedAt,
-		}));
+		return getUserIntegrationsForUser(context.userId);
 	});
 
-/**
- * Generate the Slack OAuth authorization URL for the current user.
- * Returns the URL to redirect the user to for Slack installation.
- */
 export const getInstallUrl = createServerFn({ method: "POST" })
 	.middleware([
 		authMiddleware,
-		requirePermissionFromData<{ platform: "slack" | "notion" | "intercom"; type: "workspace" | "user" }>((input) =>
+		requirePermissionFromData<{ platform: WorkspacePlatform; type: "workspace" | "user" }>((input) =>
 			input.type === "workspace" ? "settings.workspace.write" : "settings.account.write",
 		),
 	])
-	.inputValidator((data: { platform: "slack" | "notion" | "intercom"; type: "workspace" | "user" }) => data)
+	.inputValidator((data: { platform: WorkspacePlatform; type: "workspace" | "user" }) => data)
 	.handler(async ({ context, data }) => {
-		const { userId, clientId } = context;
-
-		const state = sign({ clientId, userId, platform: data.platform, type: data.type });
-
-		if (data.platform === "slack") {
-			const authorize = new URL("https://slack.com/oauth/v2/authorize");
-			authorize.searchParams.set("client_id", mustGetEnv("SLACK_CLIENT_ID"));
-			if (data.type === "workspace") {
-				authorize.searchParams.set("scope", mustGetEnv("SLACK_BOT_SCOPES"));
-			} else {
-				authorize.searchParams.set("user_scope", "chat:write");
-			}
-			authorize.searchParams.set("redirect_uri", `${mustGetEnv("VITE_APP_URL")}/slack/oauth/callback`);
-			authorize.searchParams.set("state", state);
-
-			return authorize.toString();
-		}
-
-		if (data.platform === "notion") {
-			const authorize = new URL("https://api.notion.com/v1/oauth/authorize");
-			authorize.searchParams.set("client_id", mustGetEnv("NOTION_CLIENT_ID"));
-			authorize.searchParams.set("response_type", "code");
-			authorize.searchParams.set("owner", "user");
-			authorize.searchParams.set("redirect_uri", `${mustGetEnv("VITE_APP_URL")}/notion/oauth/callback`);
-			authorize.searchParams.set("state", state);
-
-			return authorize.toString();
-		}
-
-		if (data.platform === "intercom") {
-			if (data.type !== "workspace") {
-				throw new Error("Intercom supports workspace installation only");
-			}
-
-			const authorize = new URL("https://app.intercom.com/oauth");
-			authorize.searchParams.set("client_id", mustGetEnv("INTERCOM_CLIENT_ID"));
-			authorize.searchParams.set("redirect_uri", `${mustGetEnv("VITE_APP_URL")}/intercom/oauth/callback`);
-			authorize.searchParams.set("state", state);
-
-			return authorize.toString();
-		}
-
-		throw new Error("Unsupported integration platform");
+		return getInstallUrlForContext({
+			clientId: context.clientId,
+			userId: context.userId,
+			platform: data.platform,
+			type: data.type,
+		});
 	});
 
-/**
- * Disconnect the Slack integration for the current user's client.
- * Deletes the integration record from the database.
- */
-/**
- * Disconnect a workspace integration.
- */
 export const disconnectWorkspaceIntegration = createServerFn({ method: "POST" })
 	.middleware([authMiddleware, requirePermission("settings.workspace.write")])
-	.inputValidator((data: "slack" | "notion" | "intercom") => data)
+	.inputValidator((data: WorkspacePlatform) => data)
 	.handler(async ({ context, data }) => {
-		const { clientId } = context;
-
-		if (!clientId) {
-			throw new Error("No client ID found");
-		}
-
-		const [result] = await db
-			.delete(integration)
-			.where(and(eq(integration.clientId, clientId), eq(integration.platform, data)))
-			.returning({ data: integration.data });
-
-		if (data === "slack" && result?.data) {
-			const slackData = result.data as SlackIntegrationData;
-			if (!isSlackIntegrationData(slackData)) {
-				return { success: true };
-			}
-			if (slackData.botToken) {
-				const revoke = new URL("https://slack.com/api/auth.revoke");
-				revoke.searchParams.set("client_id", mustGetEnv("SLACK_CLIENT_ID"));
-				revoke.searchParams.set("token", slackData.botToken);
-				await fetch(revoke.toString());
-			}
-		}
-		// Note: Notion and Intercom do not currently use a token revocation endpoint here.
-
-		return { success: true };
+		return disconnectWorkspaceIntegrationForClient(context.clientId, data);
 	});
 
-/**
- * Disconnect a user integration.
- */
+export const getGitHubWorkspaceConfig = createServerFn({ method: "GET" })
+	.middleware([authMiddleware, requirePermission("settings.workspace.read")])
+	.handler(async ({ context }) => {
+		return getGitHubWorkspaceConfigForClient(context.clientId);
+	});
+
+export const updateGitHubRepositoryDescriptions = createServerFn({ method: "POST" })
+	.middleware([authMiddleware, requirePermission("settings.workspace.write")])
+	.inputValidator((data: { repositories: Array<{ owner: string; name: string; description: string }> }) => data)
+	.handler(async ({ context, data }) => {
+		return updateGitHubRepositoryDescriptionsForClient(context.clientId, data);
+	});
+
 export const disconnectUserIntegration = createServerFn({ method: "POST" })
 	.middleware([authMiddleware, requirePermission("settings.account.write")])
 	.inputValidator((data: "slack") => data)
 	.handler(async ({ context, data }) => {
-		const { userId } = context;
-
-		const [result] = await db
-			.delete(userIntegration)
-			.where(and(eq(userIntegration.userId, userId), eq(userIntegration.platform, data)))
-			.returning({ data: userIntegration.data });
-
-		if (data === "slack" && result?.data?.userToken) {
-			const revoke = new URL("https://slack.com/api/auth.revoke");
-			revoke.searchParams.set("client_id", mustGetEnv("SLACK_CLIENT_ID"));
-			revoke.searchParams.set("token", result.data.userToken);
-			await fetch(revoke.toString());
-		}
-
-		return { success: true };
+		return disconnectUserIntegrationForUser(context.userId, data);
 	});
 
-/**
- * Get channels where the Slack bot is a member.
- * Returns an empty array if Slack is not connected.
- */
 export const getSlackBotChannels = createServerFn({ method: "GET" })
 	.middleware([authMiddleware, requirePermission("catalog.read")])
 	.handler(async ({ context }) => {
-		const { clientId } = context;
-
-		const [slackIntegration] = await db
-			.select()
-			.from(integration)
-			.where(and(eq(integration.clientId, clientId), eq(integration.platform, "slack")))
-			.limit(1);
-
-		if (!slackIntegration?.data) {
-			return [];
-		}
-
-		const slackData = slackIntegration.data as SlackIntegrationData;
-		if (!isSlackIntegrationData(slackData) || !slackData.botToken) {
-			return [];
-		}
-
-		return fetchSlackBotChannels(slackData.botToken);
+		return getSlackBotChannelsForClient(context.clientId);
 	});
 
-/**
- * Get custom emojis from the Slack workspace.
- * Returns an empty object if Slack is not connected.
- */
 export const getSlackEmojis = createServerFn({ method: "GET" })
 	.middleware([authMiddleware, requirePermission("incident.read")])
 	.handler(async ({ context }) => {
-		const { clientId } = context;
-
-		const [slackIntegration] = await db
-			.select()
-			.from(integration)
-			.where(and(eq(integration.clientId, clientId), eq(integration.platform, "slack")))
-			.limit(1);
-
-		if (!slackIntegration?.data) {
-			return {};
-		}
-
-		const slackData = slackIntegration.data as SlackIntegrationData;
-		if (!isSlackIntegrationData(slackData) || !slackData.botToken) {
-			return {};
-		}
-
-		return fetchSlackEmojis(slackData.botToken);
+		return getSlackEmojisForClient(context.clientId);
 	});

@@ -1,6 +1,5 @@
-import { useMutation, useQueryClient } from "@tanstack/solid-query";
+import { useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute } from "@tanstack/solid-router";
-import { useServerFn } from "@tanstack/solid-start";
 import { LoaderCircle } from "lucide-solid";
 import { createSignal, Show, Suspense } from "solid-js";
 import { SlackIcon } from "~/components/icons/SlackIcon";
@@ -10,9 +9,8 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { showToast } from "~/components/ui/toast";
 import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
-import { connectUserIntegrationDemo, disconnectUserIntegrationDemo } from "~/lib/demo/store";
-import { disconnectUserIntegration, getInstallUrl } from "~/lib/integrations/integrations";
-import { useIntegrations } from "~/lib/integrations/integrations.hooks";
+import { connectUserIntegrationDemo } from "~/lib/demo/store";
+import { useDisconnectUserIntegration, useInstallUrl, useIntegrations } from "~/lib/integrations/integrations.hooks";
 
 export const Route = createFileRoute("/_authed/settings/account/integrations")({
 	beforeLoad: requireRoutePermission("settings.account.read"),
@@ -53,7 +51,7 @@ function IntegrationsSkeleton() {
 function IntegrationsContent() {
 	const queryClient = useQueryClient();
 	const integrationsQuery = useIntegrations({ type: "user" });
-	const getInstallUrlFn = useServerFn(getInstallUrl);
+	const getInstallUrlFn = useInstallUrl();
 	const [isConnecting, setIsConnecting] = createSignal(false);
 
 	const handleConnect = async (platform: "slack") => {
@@ -75,23 +73,15 @@ function IntegrationsContent() {
 		}
 	};
 
-	const disconnectFn = useServerFn(disconnectUserIntegration);
-	const disconnectMutation = useMutation(() => ({
-		mutationFn: (platform: "slack") =>
-			runDemoAware({
-				demo: () => disconnectUserIntegrationDemo(platform),
-				remote: () => disconnectFn({ data: platform }),
-			}),
-		onSuccess: async (_, platform) => {
-			await queryClient.invalidateQueries({ queryKey: ["user_integrations"] });
-			await queryClient.invalidateQueries({ queryKey: ["users"] });
+	const disconnectMutation = useDisconnectUserIntegration({
+		onSuccess: async (platform) => {
 			showToast({
 				title: "Integration disconnected",
 				description: `${platform} has been successfully disconnected from your account.`,
 				variant: "success",
 			});
 		},
-	}));
+	});
 
 	const isConnected = (platform: "slack") => {
 		return integrationsQuery.data?.some((i) => i.platform === platform) ?? false;

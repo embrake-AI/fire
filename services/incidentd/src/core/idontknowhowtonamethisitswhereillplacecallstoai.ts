@@ -185,7 +185,7 @@ export async function generateIncidentPostmortem(
 	incident: { title: string; description: string; severity: IS["severity"]; prompt: string; createdAt: Date },
 	events: Array<{ event_type: IS_Event["event_type"]; event_data: IS_Event["event_data"]; created_at: string }>,
 	openaiApiKey: string,
-	agentData?: AgentExport | null,
+	agentData?: AgentExport | AgentExport[] | null,
 ): Promise<IncidentPostmortem> {
 	const startedAt = events.find((event) => event.event_type === "INCIDENT_CREATED")?.created_at ?? events[0]?.created_at ?? null;
 	const startedAtMs = startedAt ? new Date(startedAt).getTime() : NaN;
@@ -203,8 +203,9 @@ export async function generateIncidentPostmortem(
 
 	const eventDescriptions = events.map((e) => `[${e.created_at}] ${e.event_type}: ${JSON.stringify(e.event_data)}`).join("\n");
 
-	const agentInsights = agentData ? extractAgentInsights(agentData) : null;
-	const agentSection = agentInsights ? `\n\nAgent Investigation Context:\n${agentInsights}` : "";
+	const agentRecords = !agentData ? [] : Array.isArray(agentData) ? agentData : [agentData];
+	const agentInsights = agentRecords.map((record) => extractAgentInsights(record)).filter((value): value is string => !!value);
+	const agentSection = agentInsights.length ? `\n\nAgent Investigation Context:\n${agentInsights.join("\n\n")}` : "";
 
 	const userMessage = `Incident: ${incident.title}
 Description: ${incident.description}

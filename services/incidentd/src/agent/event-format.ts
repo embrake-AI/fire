@@ -34,12 +34,28 @@ function formatSimilarIncidentEvent(event: AgentEvent) {
 	return `AGENT_SIMILAR_INCIDENT id=${id} title="${title}" similarities="${similarities}" learnings="${learnings}"`;
 }
 
+function formatGitHubCommitEvent(event: AgentEvent) {
+	const data = event.event_data as {
+		repo?: string;
+		sha?: string;
+		title?: string;
+		summary?: string;
+		relevance?: string;
+	};
+	const repo = data.repo ?? "unknown";
+	const sha = data.sha ? truncate(data.sha, 12) : "unknown";
+	const title = data.title ? truncate(data.title, 200) : "";
+	const summary = data.summary ? truncate(data.summary, 320) : "";
+	const relevance = data.relevance ? truncate(data.relevance, 240) : "";
+	return `AGENT_GITHUB_COMMIT repo=${repo} sha=${sha} title="${title}" summary="${summary}" relevance="${relevance}"`;
+}
+
 export function isSuggestionEvent(event: AgentEvent) {
 	return event.event_type === "MESSAGE_ADDED" && event.event_metadata?.kind === "suggestion" && !!event.event_metadata?.agentSuggestionId;
 }
 
 export function isInternalAgentEvent(event: AgentEvent) {
-	return isSuggestionEvent(event) || event.event_type === "SIMILAR_INCIDENT" || event.event_type === "CONTEXT_AGENT_TRIGGERED";
+	return isSuggestionEvent(event) || event.event_type === "SIMILAR_INCIDENT" || event.event_type === "GITHUB_COMMIT" || event.event_type === "CONTEXT_AGENT_TRIGGERED";
 }
 
 function formatContextAgentTriggeredEvent(event: AgentEvent) {
@@ -61,6 +77,9 @@ export function formatAgentEventForPrompt(event: AgentEvent): string {
 	if (event.event_type === "SIMILAR_INCIDENT") {
 		return formatSimilarIncidentEvent(event);
 	}
+	if (event.event_type === "GITHUB_COMMIT") {
+		return formatGitHubCommitEvent(event);
+	}
 	if (isSuggestionEvent(event)) {
 		const data = event.event_data as Record<string, unknown>;
 		if (data.suggestion && typeof data.suggestion === "object") {
@@ -80,16 +99,19 @@ export type ToolCallItems = {
 export function buildToolCallItemsFromEvent(event: AgentEvent): ToolCallItems | null {
 	if (event.event_type === "CONTEXT_AGENT_TRIGGERED") {
 		const data = event.event_data as { agent?: string; evidence?: string; reason?: string };
-		if (data.agent !== "similar-incidents") return null;
+		if (data.agent !== "similar-incidents" && data.agent !== "github-commits") return null;
 		const callId = `call_evt_${event.id}`;
+		const toolName = data.agent === "github-commits" ? "github_recent_commits" : "similar_incidents";
+		const output =
+			data.agent === "github-commits" ? "Triggered. Results will appear as AGENT_GITHUB_COMMIT events." : "Triggered. Results will appear as AGENT_SIMILAR_INCIDENT events.";
 		return {
 			functionCall: {
 				type: "function_call",
 				call_id: callId,
-				name: "similar_incidents",
+				name: toolName,
 				arguments: JSON.stringify({ evidence: data.evidence ?? "", reason: data.reason ?? "" }),
 			},
-			functionCallOutput: { type: "function_call_output", call_id: callId, output: "Triggered. Results will appear as AGENT_SIMILAR_INCIDENT events." },
+			functionCallOutput: { type: "function_call_output", call_id: callId, output },
 		};
 	}
 

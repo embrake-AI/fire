@@ -81,6 +81,20 @@ export type IS_Event =
 			};
 	  }
 	| {
+			event_type: "GITHUB_COMMIT";
+			event_data: {
+				originRunId: string;
+				repo: string;
+				sha: string;
+				url: string;
+				author: string;
+				committedAt: string;
+				title: string;
+				summary: string;
+				relevance: string;
+			};
+	  }
+	| {
 			event_type: "CONTEXT_AGENT_TRIGGERED";
 			event_data: {
 				agent: string;

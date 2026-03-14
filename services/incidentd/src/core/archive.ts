@@ -6,7 +6,7 @@ export type IncidentArchive = {
 	incidentId: string;
 	archivedAt: string;
 	events: IncidentEventData[];
-	agents: { similarIncidents: AgentExport | null };
+	agents: { similarIncidents: AgentExport | null; githubCommits: AgentExport | null };
 };
 
 export function archiveKey(clientId: string, incidentId: string) {

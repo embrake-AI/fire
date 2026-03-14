@@ -3,7 +3,7 @@ import type { IS } from "@fire/common";
 import type OpenAI from "openai";
 import { formatAgentEventForPrompt } from "../agent/event-format";
 import { isResponsesFunctionToolCall, parseJsonObject } from "../agent/openai";
-import { getSimilarIncidentsProvider } from "../agent/providers/registry";
+import { getGitHubCommitsProvider, getSimilarIncidentsProvider } from "../agent/providers/registry";
 import type { AgentContextResponse, AgentPromptPayload, AgentSuggestionContext } from "../agent/types";
 import { callOpenAIWithLogging } from "../lib/openai-logging";
 import { addReaction, removeReaction } from "../lib/slack";
@@ -20,6 +20,8 @@ Rules:
 - Do not suggest actions or offer to do things. Do not present investigation checklists.
 - Use Slack formatting (*bold*, _italic_), never markdown (**bold**, ## headers).
 - Keep text replies short (2-4 sentences).`;
+
+const PROMPT_SYNTHESIS_INSTRUCTION = "Respond to the user now using only the conversation and tool outputs above. Keep the reply short and factual.";
 
 function getPromptWorkflowValidStatusTransitions(currentStatus: IS["status"]): Array<Exclude<IS["status"], "open">> {
 	switch (currentStatus) {
@@ -81,6 +83,20 @@ function buildPromptTools(context: AgentSuggestionContext): OpenAI.Responses.Fun
 		},
 		{
 			type: "function",
+			name: "prompt_github_commits",
+			description: "Forward a question to the github-commits agent. Use when the user asks about recent commits, deploy changes, or likely code changes behind the incident.",
+			strict: true,
+			parameters: {
+				type: "object",
+				properties: {
+					prompt: { type: "string", description: "The question to forward to the github-commits agent." },
+				},
+				required: ["prompt"],
+				additionalProperties: false,
+			},
+		},
+		{
+			type: "function",
 			name: "add_status_page_update",
 			description: "Post a status page update.",
 			strict: true,
@@ -108,6 +124,17 @@ function buildPromptTools(context: AgentSuggestionContext): OpenAI.Responses.Fun
 			},
 		},
 	];
+}
+
+function isPromptAgentToolCall(toolCall: OpenAI.Responses.ResponseFunctionToolCall): boolean {
+	return toolCall.name === "prompt_similar_incidents" || toolCall.name === "prompt_github_commits";
+}
+
+function buildPromptAgentFallbackOutput(toolCallName: OpenAI.Responses.ResponseFunctionToolCall["name"]): string {
+	if (toolCallName === "prompt_similar_incidents") {
+		return "No similar-incident information available yet.";
+	}
+	return "No GitHub commit information is available yet.";
 }
 
 function parsePromptStatus(value: unknown): "mitigating" | "resolved" | "declined" | undefined {
@@ -255,7 +282,7 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 				);
 			}
 
-			const data = await step.do<{ outputText: string; toolCall: OpenAI.Responses.ResponseFunctionToolCall | null }>(
+			const data = await step.do<{ outputText: string; toolCalls: OpenAI.Responses.ResponseFunctionToolCall[] }>(
 				`agent-prompt.fetch:${payload.incidentId}:${payload.ts}`,
 				{ retries: { limit: 3, delay: "3 seconds" } },
 				async () => {
@@ -275,14 +302,94 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 							incidentId: payload.incidentId,
 						},
 					});
-					const toolCall = (response.output ?? []).find(isResponsesFunctionToolCall) ?? null;
+					const toolCalls = (response.output ?? []).filter(isResponsesFunctionToolCall);
 					return {
 						outputText: response.output_text,
-						toolCall,
+						toolCalls,
 					};
 				},
 			);
-			const toolCall = data.toolCall;
+			const promptAgentToolCalls = data.toolCalls.filter(isPromptAgentToolCall);
+			if (promptAgentToolCalls.length) {
+				const promptAgentOutputs = await Promise.all(
+					promptAgentToolCalls.map((toolCall, index) =>
+						step.do<{ toolCall: OpenAI.Responses.ResponseFunctionToolCall; output: string }>(
+							`agent-prompt.agent:${toolCall.name}:${payload.incidentId}:${payload.ts}:${index + 1}`,
+							{ retries: { limit: 3, delay: "2 seconds" } },
+							async () => {
+								const args = parseJsonObject(toolCall.arguments);
+								const promptText = typeof args.prompt === "string" ? args.prompt.trim() : "";
+								if (!promptText) {
+									return {
+										toolCall,
+										output: buildPromptAgentFallbackOutput(toolCall.name),
+									};
+								}
+
+								if (toolCall.name === "prompt_similar_incidents") {
+									const provider = getSimilarIncidentsProvider(this.env, payload.incidentId);
+									const response = await provider.addPrompt({ question: promptText, requestedAt: new Date().toISOString() });
+									return {
+										toolCall,
+										output: response?.answer?.trim() || buildPromptAgentFallbackOutput(toolCall.name),
+									};
+								}
+
+								const provider = getGitHubCommitsProvider(this.env, payload.incidentId);
+								const response = await provider.addPrompt({ question: promptText, requestedAt: new Date().toISOString() });
+								return {
+									toolCall,
+									output: response?.answer?.trim() || buildPromptAgentFallbackOutput(toolCall.name),
+								};
+							},
+						),
+					),
+				);
+
+				const synthesisInput: OpenAI.Responses.ResponseInputItem[] = [...input];
+				for (const item of promptAgentOutputs) {
+					synthesisInput.push(item.toolCall);
+					synthesisInput.push({
+						type: "function_call_output",
+						call_id: item.toolCall.call_id,
+						output: item.output,
+					});
+				}
+				synthesisInput.push({ role: "user", content: PROMPT_SYNTHESIS_INSTRUCTION });
+
+				const synthesized = await step.do<{ text: string }>(
+					`agent-prompt.synthesize:${payload.incidentId}:${payload.ts}`,
+					{ retries: { limit: 3, delay: "2 seconds" } },
+					async () => {
+						const response = await callOpenAIWithLogging({
+							openaiApiKey: this.env.OPENAI_API_KEY,
+							request: {
+								model: "gpt-5.2",
+								input: synthesisInput,
+								prompt_cache_retention: "24h",
+								text: { verbosity: "low" },
+							},
+							context: {
+								operation: "promptWorkflow.synthesize",
+								agentName: "prompt-assistant",
+								incidentId: payload.incidentId,
+							},
+						});
+						return { text: response.output_text.trim() };
+					},
+				);
+				const answer = synthesized.text;
+				if (answer) {
+					await step.do(`agent-prompt.respond:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
+						const incidentStub = this.env.INCIDENT.get(incidentId);
+						await incidentStub.addMessage(answer, "", `fire-prompt:${payload.ts}`, "fire", undefined, eventMetadata);
+						return null;
+					});
+					return;
+				}
+			}
+
+			const toolCall = data.toolCalls[0];
 			if (toolCall) {
 				const functionName = toolCall.name;
 				const args = parseJsonObject(toolCall.arguments);
@@ -334,57 +441,11 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 						break;
 					}
 					case "prompt_similar_incidents": {
-						const promptText = typeof args.prompt === "string" ? args.prompt.trim() : "";
-						if (promptText) {
-							const agentResult = await step.do<{ answer: string }>(
-								`agent-prompt.similar:${payload.incidentId}:${payload.ts}`,
-								{ retries: { limit: 3, delay: "2 seconds" } },
-								async () => {
-									const provider = getSimilarIncidentsProvider(this.env, payload.incidentId);
-									const response = await provider.addPrompt({ question: promptText, requestedAt: new Date().toISOString() });
-									return { answer: response?.answer ?? "" };
-								},
-							);
-							const agentAnswer = agentResult.answer.trim();
-							const synthesized = await step.do<{ text: string }>(
-								`agent-prompt.synthesize:${payload.incidentId}:${payload.ts}`,
-								{ retries: { limit: 3, delay: "2 seconds" } },
-								async () => {
-									const response = await callOpenAIWithLogging({
-										openaiApiKey: this.env.OPENAI_API_KEY,
-										request: {
-											model: "gpt-5.2",
-											input: [
-												...input,
-												toolCall,
-												{
-													type: "function_call_output",
-													call_id: toolCall.call_id,
-													output: agentAnswer || "No similar-incident information available yet.",
-												},
-											],
-											prompt_cache_retention: "24h",
-											text: { verbosity: "low" },
-										},
-										context: {
-											operation: "promptWorkflow.synthesize",
-											agentName: "prompt-assistant",
-											incidentId: payload.incidentId,
-										},
-									});
-									return { text: response.output_text.trim() };
-								},
-							);
-							const answer = synthesized.text;
-							if (answer) {
-								await step.do(`agent-prompt.similar-respond:${payload.incidentId}:${payload.ts}`, { retries: { limit: 3, delay: "2 seconds" } }, async () => {
-									const incidentStub = this.env.INCIDENT.get(incidentId);
-									await incidentStub.addMessage(answer, "", `fire-prompt:${payload.ts}`, "fire", undefined, eventMetadata);
-									return null;
-								});
-								handledToolCall = true;
-							}
-						}
+						handledToolCall = true;
+						break;
+					}
+					case "prompt_github_commits": {
+						handledToolCall = true;
 						break;
 					}
 				}

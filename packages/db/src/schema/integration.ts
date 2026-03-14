@@ -1,7 +1,7 @@
 import { jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { client, user } from "./auth";
 
-export const platformType = pgEnum("platform_type", ["slack", "notion", "intercom"]);
+export const platformType = pgEnum("platform_type", ["slack", "notion", "intercom", "github"]);
 
 /**
  * Slack-specific integration data stored in the JSONB `data` column.
@@ -41,10 +41,25 @@ export type IntercomIntegrationData = {
 	statusPageId: string | null;
 };
 
+export type GitHubRepositoryConfig = {
+	owner: string;
+	name: string;
+	defaultBranch: string;
+	description: string;
+};
+
+export type GitHubIntegrationData = {
+	type: "github";
+	installationId: string;
+	accountLogin: string;
+	accountType: "User" | "Organization";
+	repositories: GitHubRepositoryConfig[];
+};
+
 /**
  * Union type for all supported platform integration data.
  */
-export type IntegrationData = SlackIntegrationData | NotionIntegrationData | IntercomIntegrationData;
+export type IntegrationData = SlackIntegrationData | NotionIntegrationData | IntercomIntegrationData | GitHubIntegrationData;
 
 export function isSlackIntegrationData(data: IntegrationData): data is SlackIntegrationData {
 	return data.type === "slack";
@@ -56,6 +71,10 @@ export function isNotionIntegrationData(data: IntegrationData): data is NotionIn
 
 export function isIntercomIntegrationData(data: IntegrationData): data is IntercomIntegrationData {
 	return data.type === "intercom";
+}
+
+export function isGitHubIntegrationData(data: IntegrationData): data is GitHubIntegrationData {
+	return data.type === "github";
 }
 
 /**

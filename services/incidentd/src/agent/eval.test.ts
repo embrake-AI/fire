@@ -59,6 +59,7 @@ type ModelCallResult = {
 	toolCalls: ModelToolCall[];
 	suggestions: AgentSuggestion[];
 	similarIncidentsRequested: boolean;
+	githubRecentCommitsRequested: boolean;
 };
 
 type ReasoningEffort = "none" | "low" | "medium" | "high";
@@ -112,6 +113,7 @@ async function callModel(
 		toolCalls: rawToolCalls,
 		suggestions: result.suggestions,
 		similarIncidentsRequested: !!result.similarIncidentsRequest,
+		githubRecentCommitsRequested: !!result.githubRecentCommitsRequest,
 	};
 }
 
@@ -219,6 +221,14 @@ function shouldRequestSimilarIncidents(): ExpectationCheck {
 
 function shouldNotRequestSimilarIncidents(): ExpectationCheck {
 	return "Should NOT request similar_incidents.";
+}
+
+function shouldRequestGitHubRecentCommits(): ExpectationCheck {
+	return "Should request github_recent_commits.";
+}
+
+function shouldNotRequestGitHubRecentCommits(): ExpectationCheck {
+	return "Should NOT request github_recent_commits.";
 }
 
 function extractExpectationDetail(extraMatch?: (s: AgentSuggestion) => boolean): string | null {
@@ -3475,6 +3485,305 @@ function buildSimilarIncidentEarlyTriggerScenario(): LifecycleScenario {
 	};
 }
 
+function buildGitHubRecentCommitsClarityGateScenario(): LifecycleScenario {
+	const SERVICES: AgentSuggestionContext["services"] = [
+		{ id: "svc_api", name: "API", prompt: "Public API availability and latency" },
+		{ id: "svc_workers", name: "Background Workers", prompt: "Queue consumers and scheduled jobs" },
+	];
+
+	const incidentBase = {
+		title: "API latency spike after alerts",
+		description: "Requests are timing out, but the cause is initially unclear",
+		prompt: "Investigate API latency spike and recommend next safe action",
+		status: "open" as const,
+		severity: "medium" as const,
+	};
+
+	resetIds();
+	const t1Events: AgentEvent[] = [
+		mkEvent(
+			{
+				event_type: "INCIDENT_CREATED",
+				event_data: {
+					status: "open",
+					severity: "medium",
+					createdBy: "U_ONCALL",
+					title: incidentBase.title,
+					description: incidentBase.description,
+					prompt: incidentBase.prompt,
+					source: "slack",
+					assignee: "U_ONCALL",
+					entryPointId: "ep_api",
+					rotationId: "rot_api",
+				},
+			},
+			0,
+		),
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "API p95 is elevated and a few endpoints are timing out. Still checking whether this is load, database, or network related.",
+					userId: "U_ONCALL",
+				},
+			},
+			1,
+		),
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "No deploy correlation yet. Could also be traffic noise from a customer batch job.",
+					userId: "U_SRE",
+				},
+			},
+			2,
+		),
+	];
+
+	const t2Events: AgentEvent[] = [
+		...t1Events,
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message:
+						"Clear change signal now: API latency jumped within minutes of the payments-api deploy. Timeouts are isolated to the checkout/payment path, so inspect recent github commits before we choose rollback vs targeted mitigation.",
+					userId: "U_BACKEND",
+				},
+			},
+			6,
+		),
+	];
+	const t2ProcessedThrough = t1Events[t1Events.length - 1]!.id;
+
+	return {
+		id: "github-clarity-gate",
+		name: "GitHub Recent Commits Clarity Gate",
+		description: "Ensures github_recent_commits is only requested once there is a concrete deploy/change hypothesis and affected subsystem.",
+		turns: [
+			{
+				name: "Turn 1: Vague latency symptoms should NOT request github_recent_commits",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: true, lastStatus: "investigating", lastUpdateAt: ts(0) },
+					events: t1Events,
+					processedThroughId: 0,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotRequestGitHubRecentCommits(), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+			},
+			{
+				name: "Turn 2: Concrete deploy suspicion and subsystem should request github_recent_commits",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: true, lastStatus: "investigating", lastUpdateAt: ts(0) },
+					events: t2Events,
+					processedThroughId: t2ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldRequestGitHubRecentCommits(), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+			},
+		],
+	};
+}
+
+function buildGitHubRecentCommitsEarlyTriggerScenario(): LifecycleScenario {
+	const SERVICES: AgentSuggestionContext["services"] = [
+		{ id: "svc_dashboard", name: "Dashboard", prompt: "Customer-facing dashboard frontend and server rendering" },
+		{ id: "svc_auth", name: "Auth", prompt: "Session handling and login flows" },
+	];
+
+	const incidentBase = {
+		title: "Login failures after dashboard rollout",
+		description: "Users cannot sign in after the latest dashboard deploy",
+		prompt: "Investigate login failures after dashboard rollout",
+		status: "open" as const,
+		severity: "high" as const,
+	};
+
+	resetIds();
+	const t1Events: AgentEvent[] = [
+		mkEvent(
+			{
+				event_type: "INCIDENT_CREATED",
+				event_data: {
+					status: "open",
+					severity: "high",
+					createdBy: "U_ONCALL",
+					title: incidentBase.title,
+					description: incidentBase.description,
+					prompt: incidentBase.prompt,
+					source: "slack",
+					assignee: "U_ONCALL",
+					entryPointId: "ep_auth",
+					rotationId: "rot_auth",
+				},
+			},
+			0,
+		),
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message:
+						"Immediately after dashboard deploy 4821, login attempts started failing with 500s in the auth callback path. Impact is isolated to the dashboard/login flow. We should inspect recent github commits before deciding rollback.",
+					userId: "U_ONCALL",
+				},
+			},
+			1,
+		),
+	];
+
+	return {
+		id: "github-early-trigger",
+		name: "GitHub Recent Commits Early Trigger",
+		description: "Ensures github_recent_commits can be requested on the first turn when a deploy correlation and affected subsystem are already clear.",
+		turns: [
+			{
+				name: "Turn 1: Obvious post-deploy login regression should request github_recent_commits",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: false },
+					events: t1Events,
+					processedThroughId: 0,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [
+					shouldRequestGitHubRecentCommits(),
+					shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved"),
+					"Should suggest add_status_page_update (affectionStatus=investigating).",
+				],
+			},
+		],
+	};
+}
+
+function buildGitHubRecentCommitsRetriggerScenario(): LifecycleScenario {
+	const SERVICES: AgentSuggestionContext["services"] = [
+		{ id: "svc_api", name: "API", prompt: "Public API and deploy path" },
+		{ id: "svc_workers", name: "Workers", prompt: "Background consumers and queue handlers" },
+	];
+
+	const incidentBase = {
+		title: "Request failures after deploy train",
+		description: "Initial suspicion points to API deploys, then shifts to worker-side queue processing",
+		prompt: "Investigate recent changes behind request failures",
+		status: "open" as const,
+		severity: "high" as const,
+	};
+
+	resetIds();
+	const t1Events: AgentEvent[] = [
+		mkEvent(
+			{
+				event_type: "INCIDENT_CREATED",
+				event_data: {
+					status: "open",
+					severity: "high",
+					createdBy: "U_ONCALL",
+					title: incidentBase.title,
+					description: incidentBase.description,
+					prompt: incidentBase.prompt,
+					source: "slack",
+					assignee: "U_ONCALL",
+					entryPointId: "ep_api",
+					rotationId: "rot_api",
+				},
+			},
+			0,
+		),
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "API 500s began after the latest payments deploy. We already inspected recent commits in the api repo.",
+					userId: "U_ONCALL",
+				},
+			},
+			1,
+		),
+		mkEvent(
+			{
+				event_type: "GITHUB_COMMIT",
+				event_data: {
+					originRunId: "run_api_1",
+					repo: "firedash/api",
+					sha: "9f3b4d2c1a7b",
+					url: "https://github.com/firedash/api/commit/9f3b4d2c1a7b",
+					author: "Alice",
+					committedAt: ts(-15),
+					title: "Tighten payment retry timeout",
+					summary: "Adjusted retry timeout in the payments request path.",
+					relevance: "Looked related to post-deploy payment failures.",
+				},
+			},
+			2,
+		),
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message: "No new change-related evidence yet. Still validating whether that API commit is truly causal.",
+					userId: "U_SRE",
+				},
+			},
+			3,
+		),
+	];
+
+	const t2Events: AgentEvent[] = [
+		...t1Events,
+		mkEvent(
+			{
+				event_type: "MESSAGE_ADDED",
+				event_data: {
+					message:
+						"Understanding changed: API errors are downstream of worker queue starvation after the worker deploy. Failures are now isolated to async invoice jobs and webhook processors, so re-check recent github commits for the workers repo.",
+					userId: "U_BACKEND",
+				},
+			},
+			7,
+		),
+	];
+	const t2ProcessedThrough = t1Events[t1Events.length - 1]!.id;
+
+	return {
+		id: "github-retrigger",
+		name: "GitHub Recent Commits Retrigger on Material Change",
+		description: "Ensures github_recent_commits is not repeated after existing findings unless the affected subsystem/failure mechanism materially changes.",
+		turns: [
+			{
+				name: "Turn 1: Existing github finding with no material change should NOT retrigger",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: true, lastStatus: "investigating", lastUpdateAt: ts(2) },
+					events: t1Events,
+					processedThroughId: 0,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldNotRequestGitHubRecentCommits(), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+			},
+			{
+				name: "Turn 2: Different subsystem and deploy path should retrigger github_recent_commits",
+				context: {
+					incident: baseIncident(incidentBase),
+					services: SERVICES,
+					affection: { hasAffection: true, lastStatus: "investigating", lastUpdateAt: ts(2) },
+					events: t2Events,
+					processedThroughId: t2ProcessedThrough,
+					validStatusTransitions: ["mitigating", "resolved"],
+				},
+				checks: [shouldRequestGitHubRecentCommits(), shouldNotSuggest("update_status", (s) => s.action === "update_status" && s.status === "resolved")],
+			},
+		],
+	};
+}
+
 // ---------------------------------------------------------------------------
 // All scenarios
 // ---------------------------------------------------------------------------
@@ -3498,6 +3807,9 @@ export const SCENARIOS: LifecycleScenario[] = [
 	buildSimilarIncidentClarityGateScenario(),
 	buildSimilarIncidentRetriggerScenario(),
 	buildSimilarIncidentEarlyTriggerScenario(),
+	buildGitHubRecentCommitsClarityGateScenario(),
+	buildGitHubRecentCommitsEarlyTriggerScenario(),
+	buildGitHubRecentCommitsRetriggerScenario(),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3542,6 +3854,7 @@ type TurnRunCapture = {
 	suggestions: AgentSuggestion[];
 	durationMs: number;
 	similarIncidentsRequested: boolean;
+	githubRecentCommitsRequested: boolean;
 };
 
 type TurnCapture = {
@@ -3562,7 +3875,7 @@ type ScenarioCapture = {
 };
 
 type EvaluationArtifact = {
-	version: 4;
+	version: 5;
 	createdAt: string;
 	model: string;
 	systemPrompt: string;
@@ -3663,7 +3976,12 @@ type SimilarIncidentsExpectationRule = {
 	kind: "similar_incidents_request";
 	isNegative: boolean;
 };
-type ExpectationRule = SuggestionExpectationRule | SimilarIncidentsExpectationRule;
+type GitHubRecentCommitsExpectationRule = {
+	raw: string;
+	kind: "github_recent_commits_request";
+	isNegative: boolean;
+};
+type ExpectationRule = SuggestionExpectationRule | SimilarIncidentsExpectationRule | GitHubRecentCommitsExpectationRule;
 
 function parseExpectationRule(expectation: string): ExpectationRule | null {
 	const similarRequestMatch = expectation.trim().match(/^Should( NOT)? request similar_incidents\.$/);
@@ -3672,6 +3990,15 @@ function parseExpectationRule(expectation: string): ExpectationRule | null {
 			raw: expectation,
 			kind: "similar_incidents_request",
 			isNegative: Boolean(similarRequestMatch[1]),
+		};
+	}
+
+	const githubRequestMatch = expectation.trim().match(/^Should( NOT)? request github_recent_commits\.$/);
+	if (githubRequestMatch) {
+		return {
+			raw: expectation,
+			kind: "github_recent_commits_request",
+			isNegative: Boolean(githubRequestMatch[1]),
 		};
 	}
 
@@ -3779,14 +4106,24 @@ function computeDeterministicMetrics(artifact: EvaluationArtifact): EvaluationMe
 				negativeExpectations += negativeRules.length;
 
 				for (const rule of positiveRules) {
-					const met = rule.kind === "similar_incidents_request" ? run.similarIncidentsRequested : suggestions.some((suggestion) => matchesExpectationRule(suggestion, rule));
+					const met =
+						rule.kind === "similar_incidents_request"
+							? run.similarIncidentsRequested
+							: rule.kind === "github_recent_commits_request"
+								? run.githubRecentCommitsRequested
+								: suggestions.some((suggestion) => matchesExpectationRule(suggestion, rule));
 					if (met) {
 						metExpectations += 1;
 						metPositive += 1;
 					}
 				}
 				for (const rule of negativeRules) {
-					const violated = rule.kind === "similar_incidents_request" ? run.similarIncidentsRequested : suggestions.some((suggestion) => matchesExpectationRule(suggestion, rule));
+					const violated =
+						rule.kind === "similar_incidents_request"
+							? run.similarIncidentsRequested
+							: rule.kind === "github_recent_commits_request"
+								? run.githubRecentCommitsRequested
+								: suggestions.some((suggestion) => matchesExpectationRule(suggestion, rule));
 					if (!violated) {
 						metExpectations += 1;
 					} else {
@@ -3881,6 +4218,7 @@ function toJudgePayload(turn: TurnCapture, run: TurnRunCapture) {
 		modelRawSuggestions: run.rawSuggestions,
 		modelToolCalls: run.toolCalls,
 		similarIncidentsRequested: run.similarIncidentsRequested,
+		githubRecentCommitsRequested: run.githubRecentCommitsRequested,
 		modelUsage: run.usage ?? null,
 	};
 }
@@ -3922,7 +4260,7 @@ async function judgeTurnWithLLM(payload: ReturnType<typeof toJudgePayload>, apiK
 		{
 			role: "system",
 			content:
-				"You are grading an incident-agent turn. Use written expectations as the rubric. Treat modelSuggestions as the final accepted suggestions to score. For expectations about similar_incidents, use the similarIncidentsRequested boolean (true = the model called the similar_incidents tool). modelRawSuggestions/modelToolCalls are diagnostic only. Do not invent facts. Call grade_turn exactly once.",
+				"You are grading an incident-agent turn. Use written expectations as the rubric. Treat modelSuggestions as the final accepted suggestions to score. For expectations about similar_incidents, use the similarIncidentsRequested boolean (true = the model called the similar_incidents tool). For expectations about github_recent_commits, use the githubRecentCommitsRequested boolean (true = the model called the github_recent_commits tool). modelRawSuggestions/modelToolCalls are diagnostic only. Do not invent facts. Call grade_turn exactly once.",
 		},
 		{
 			role: "user",
@@ -3957,7 +4295,12 @@ async function judgeTurnWithLLM(payload: ReturnType<typeof toJudgePayload>, apiK
 				reason: item.reason ?? "",
 			}))
 		: [];
-	const normalizeExpectations = (expected: string[], actual: JudgedExpectation[], similarIncidentsRequested: boolean): JudgedExpectation[] => {
+	const normalizeExpectations = (
+		expected: string[],
+		actual: JudgedExpectation[],
+		similarIncidentsRequested: boolean,
+		githubRecentCommitsRequested: boolean,
+	): JudgedExpectation[] => {
 		const grouped = new Map<string, JudgedExpectation[]>();
 		for (const item of actual) {
 			const key = item.expectation.trim();
@@ -3990,6 +4333,15 @@ async function judgeTurnWithLLM(payload: ReturnType<typeof toJudgePayload>, apiK
 					result = correctedResult;
 				}
 			}
+			if (rule?.kind === "github_recent_commits_request") {
+				const corrected = rule.isNegative ? !githubRecentCommitsRequested : githubRecentCommitsRequested;
+				const correctedResult: JudgedExpectation["result"] = corrected ? "met" : "not_met";
+				if (result !== correctedResult) {
+					const details = `Corrected using githubRecentCommitsRequested=${githubRecentCommitsRequested}.`;
+					reason = reason ? `${reason} ${details}` : details;
+					result = correctedResult;
+				}
+			}
 
 			if (!reason) {
 				reason = "No reason provided.";
@@ -3999,7 +4351,7 @@ async function judgeTurnWithLLM(payload: ReturnType<typeof toJudgePayload>, apiK
 
 		return normalized;
 	};
-	const expectations = normalizeExpectations(payload.expectations, rawExpectations, payload.similarIncidentsRequested);
+	const expectations = normalizeExpectations(payload.expectations, rawExpectations, payload.similarIncidentsRequested, payload.githubRecentCommitsRequested);
 
 	return {
 		overall: parsed.overall ?? "poor",
@@ -4050,6 +4402,7 @@ async function runTurn(turn: Turn, opts: EvalOptions): Promise<TurnCapture> {
 			suggestions: normalizedSuggestions,
 			durationMs,
 			similarIncidentsRequested: result.similarIncidentsRequested,
+			githubRecentCommitsRequested: result.githubRecentCommitsRequested,
 		});
 	}
 
@@ -4135,7 +4488,9 @@ function printResults(artifact: EvaluationArtifact, outputPath: string): void {
 	console.log(`Model runs captured: ${totalRuns}`);
 	const allRuns = artifact.scenarios.flatMap((scenario) => scenario.turns.flatMap((turn) => turn.runs));
 	const similarRequestedRuns = allRuns.filter((run) => run.similarIncidentsRequested).length;
+	const githubRequestedRuns = allRuns.filter((run) => run.githubRecentCommitsRequested).length;
 	console.log(`Runs requesting similar_incidents: ${similarRequestedRuns}`);
+	console.log(`Runs requesting github_recent_commits: ${githubRequestedRuns}`);
 
 	for (const scenario of artifact.scenarios) {
 		console.log(`\n>> ${scenario.name} (${scenario.totalDurationMs}ms)`);
@@ -4250,7 +4605,7 @@ async function main() {
 	});
 
 	const artifact: EvaluationArtifact = {
-		version: 4,
+		version: 5,
 		createdAt: new Date().toISOString(),
 		model: modelName,
 		systemPrompt,

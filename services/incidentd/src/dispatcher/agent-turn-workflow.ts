@@ -1,5 +1,5 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
-import { getSimilarIncidentsProvider } from "../agent/providers/registry";
+import { getGitHubCommitsProvider, getSimilarIncidentsProvider } from "../agent/providers/registry";
 import { buildAgentSuggestionMessages, postAgentSuggestionMessage } from "../agent/slack";
 import { generateIncidentSuggestions, getValidStatusTransitions, normalizeSuggestions } from "../agent/suggestions";
 import type { AgentSuggestionContext, AgentTurnPayload } from "../agent/types";
@@ -35,6 +35,31 @@ export class IncidentAgentTurnWorkflow extends WorkflowEntrypoint<Env, AgentTurn
 						});
 
 						const provider = getSimilarIncidentsProvider(this.env, payload.incidentId);
+						await provider.addContext({
+							incidentId: payload.incidentId,
+							toEventId: payload.toEventId,
+							events,
+							trigger: "agent-turn",
+							requestedAt: triggeredAt,
+						});
+						return null;
+					});
+				}
+			})(),
+			(async () => {
+				if (result.githubRecentCommitsRequest) {
+					const { evidence, reason } = result.githubRecentCommitsRequest;
+					const triggeredAt = new Date().toISOString();
+
+					await stepDo(`agent-github.trigger:${turnId}:${payload.toEventId}`, async () => {
+						const incidentStub = this.env.INCIDENT.get(this.env.INCIDENT.idFromString(payload.incidentId));
+						await incidentStub.recordAgentContextEvent({
+							eventType: "CONTEXT_AGENT_TRIGGERED",
+							eventData: { agent: "github-commits", turnId, evidence, reason, triggeredAt },
+							dedupeKey: `context-trigger:github:${turnId}`,
+						});
+
+						const provider = getGitHubCommitsProvider(this.env, payload.incidentId);
 						await provider.addContext({
 							incidentId: payload.incidentId,
 							toEventId: payload.toEventId,
