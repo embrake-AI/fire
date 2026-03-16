@@ -613,6 +613,11 @@ export async function incidentStatusUpdated(params: SenderParams["incidentStatus
 	}
 	await maybeUpdateSuggestionMessage(stepDo, botToken, eventMetadata);
 
+	if (channel && metadata.thread && (status === "resolved" || status === "declined")) {
+		const terminalReaction = status === "resolved" ? "white_check_mark" : "no_entry";
+		await stepDo("slack.add-terminal-reaction", () => addReaction(botToken, channel, metadata.thread, terminalReaction));
+	}
+
 	if (incidentChannelId && (status === "resolved" || status === "declined")) {
 		await archiveChannel(stepDo, botToken, incidentChannelId).catch((err) => {
 			console.warn("Failed to archive incident channel", err);
