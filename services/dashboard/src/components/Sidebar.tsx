@@ -14,6 +14,7 @@ import {
 	Plug,
 	RefreshCw,
 	Settings,
+	Shield,
 	ShieldAlert,
 	User,
 	Users,
@@ -48,6 +49,7 @@ const navItems: NavItem[] = [
 	{ label: "Catalog", to: "/catalog/teams", icon: BookOpen, match: "/catalog" },
 	{ label: "Metrics", to: "/metrics", icon: BarChart3 },
 ];
+const superAdminNavItem: NavItem = { label: "Super Admin", to: "/super-admin", icon: Shield };
 
 type SettingsNavItemType = {
 	label: string;
@@ -90,6 +92,7 @@ function createStoredBoolean(key: string, defaultValue: boolean) {
 }
 
 export default function Sidebar() {
+	const auth = useAuth();
 	const location = useLocation();
 	const [storedCollapsed, setStoredCollapsed] = createStoredBoolean("sidebar-collapsed", false);
 
@@ -100,6 +103,8 @@ export default function Sidebar() {
 	const toggleCollapsed = () => {
 		setStoredCollapsed((value) => !value);
 	};
+
+	const resolvedNavItems = createMemo(() => (auth.role === "SUPER_ADMIN" ? [...navItems, superAdminNavItem] : navItems));
 
 	return (
 		<aside
@@ -129,7 +134,7 @@ export default function Sidebar() {
 							</Show>
 
 							<Suspense fallback={<NavItemsSkeleton collapsed={collapsed} />}>
-								<SidebarNav collapsed={collapsed} />
+								<SidebarNav collapsed={collapsed} items={resolvedNavItems} />
 							</Suspense>
 
 							<Suspense fallback={<MyTeamsSectionSkeleton collapsed={collapsed} />}>
@@ -151,7 +156,7 @@ export default function Sidebar() {
 	);
 }
 
-function SidebarNav(props: { collapsed: Accessor<boolean> }) {
+function SidebarNav(props: { collapsed: Accessor<boolean>; items: Accessor<NavItem[]> }) {
 	const incidentsQuery = useIncidents({ placeholderData: [] });
 	const hasActiveIncidents = createMemo(() => {
 		const incidents = incidentsQuery.data ?? [];
@@ -160,7 +165,7 @@ function SidebarNav(props: { collapsed: Accessor<boolean> }) {
 
 	return (
 		<nav class="mt-6 px-2 space-y-1">
-			<For each={navItems}>{(item) => <NavItem item={item} collapsed={props.collapsed} hasActiveIncidents={hasActiveIncidents} />}</For>
+			<For each={props.items()}>{(item) => <NavItem item={item} collapsed={props.collapsed} hasActiveIncidents={hasActiveIncidents} />}</For>
 		</nav>
 	);
 }

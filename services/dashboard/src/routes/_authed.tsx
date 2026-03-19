@@ -5,7 +5,9 @@ import { SlackIcon } from "~/components/icons/SlackIcon";
 import Sidebar from "~/components/Sidebar";
 import { Button } from "~/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogOverlay, DialogPortal, DialogTitle } from "~/components/ui/dialog";
+import { showToast } from "~/components/ui/toast";
 import { getAuth, isAuthReady } from "~/lib/auth/auth-store";
+import { useStopImpersonating } from "~/lib/auth/super-admin.hooks";
 import { isDemoMode } from "~/lib/demo/mode";
 import { runDemoAware } from "~/lib/demo/runtime";
 import { connectWorkspaceIntegrationDemo } from "~/lib/demo/store";
@@ -41,6 +43,7 @@ function AuthedLayout() {
 		return getAuth()?.role;
 	});
 	const shouldLoadShellData = createMemo(() => authed() && role() !== "VIEWER");
+	const isImpersonating = createMemo(() => !!getAuth()?.impersonatedBy);
 	const [showDemoWelcome, setShowDemoWelcome] = createSignal(false);
 
 	const dismissDemoWelcome = () => {
@@ -68,6 +71,9 @@ function AuthedLayout() {
 				when={role() !== "VIEWER"}
 				fallback={
 					<main class="flex-1 flex flex-col overflow-y-auto">
+						<Show when={isImpersonating()}>
+							<ImpersonationBanner />
+						</Show>
 						<Outlet />
 					</main>
 				}
@@ -75,6 +81,9 @@ function AuthedLayout() {
 				<div class="flex flex-1 min-h-0">
 					<Sidebar />
 					<main class="flex-1 flex flex-col overflow-y-auto">
+						<Show when={isImpersonating()}>
+							<ImpersonationBanner />
+						</Show>
 						<Outlet />
 					</main>
 				</div>
@@ -86,6 +95,51 @@ function AuthedLayout() {
 				<DemoModeWelcomeDialog onDismiss={dismissDemoWelcome} />
 			</Show>
 		</Show>
+	);
+}
+
+function ImpersonationBanner() {
+	const stopImpersonatingMutation = useStopImpersonating();
+	const auth = createMemo(() => getAuth());
+
+	const userLabel = createMemo(() => {
+		return auth()?.userId ?? "unknown-user";
+	});
+
+	const clientLabel = createMemo(() => {
+		return auth()?.clientId ?? "unknown-client";
+	});
+
+	const handleStopImpersonation = async () => {
+		try {
+			await stopImpersonatingMutation.mutateAsync();
+			window.location.assign("/");
+		} catch {
+			showToast({
+				title: "Unable to stop impersonation",
+				description: "Please try again.",
+				variant: "error",
+			});
+		}
+	};
+
+	return (
+		<div class="border-b border-amber-300 bg-amber-50 px-4 py-2">
+			<div class="mx-auto flex max-w-6xl items-center justify-between gap-3">
+				<div class="min-w-0">
+					<p class="text-sm font-medium text-amber-900">Impersonation active</p>
+					<p class="text-xs text-amber-800 truncate">
+						User: {userLabel()} | Client: {clientLabel()}
+					</p>
+				</div>
+				<Button size="sm" variant="outline" onClick={() => void handleStopImpersonation()} disabled={stopImpersonatingMutation.isPending}>
+					<Show when={stopImpersonatingMutation.isPending}>
+						<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+					</Show>
+					Stop impersonation
+				</Button>
+			</div>
+		</div>
 	);
 }
 

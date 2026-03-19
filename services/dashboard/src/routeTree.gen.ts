@@ -15,6 +15,7 @@ import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
 import { Route as AuthErrorRouteImport } from './routes/auth.error'
 import { Route as ApiUploadRouteImport } from './routes/api/upload'
+import { Route as AuthedSuperAdminRouteImport } from './routes/_authed.super-admin'
 import { Route as AuthedSettingsRouteImport } from './routes/_authed.settings'
 import { Route as AuthedPostIncidentsRouteImport } from './routes/_authed.post-incidents'
 import { Route as AuthedCatalogRouteImport } from './routes/_authed.catalog'
@@ -78,6 +79,11 @@ const ApiUploadRoute = ApiUploadRouteImport.update({
   id: '/api/upload',
   path: '/api/upload',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthedSuperAdminRoute = AuthedSuperAdminRouteImport.update({
+  id: '/super-admin',
+  path: '/super-admin',
+  getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedSettingsRoute = AuthedSettingsRouteImport.update({
   id: '/settings',
@@ -272,6 +278,7 @@ export interface FileRoutesByFullPath {
   '/catalog': typeof AuthedCatalogRouteWithChildren
   '/post-incidents': typeof AuthedPostIncidentsRoute
   '/settings': typeof AuthedSettingsRouteWithChildren
+  '/super-admin': typeof AuthedSuperAdminRoute
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
   '/': typeof AuthedIndexRoute
@@ -313,6 +320,7 @@ export interface FileRoutesByTo {
   '/catalog': typeof AuthedCatalogRouteWithChildren
   '/post-incidents': typeof AuthedPostIncidentsRoute
   '/settings': typeof AuthedSettingsRouteWithChildren
+  '/super-admin': typeof AuthedSuperAdminRoute
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
   '/': typeof AuthedIndexRoute
@@ -356,6 +364,7 @@ export interface FileRoutesById {
   '/_authed/catalog': typeof AuthedCatalogRouteWithChildren
   '/_authed/post-incidents': typeof AuthedPostIncidentsRoute
   '/_authed/settings': typeof AuthedSettingsRouteWithChildren
+  '/_authed/super-admin': typeof AuthedSuperAdminRoute
   '/api/upload': typeof ApiUploadRoute
   '/auth/error': typeof AuthErrorRoute
   '/_authed/': typeof AuthedIndexRoute
@@ -399,6 +408,7 @@ export interface FileRouteTypes {
     | '/catalog'
     | '/post-incidents'
     | '/settings'
+    | '/super-admin'
     | '/api/upload'
     | '/auth/error'
     | '/'
@@ -440,6 +450,7 @@ export interface FileRouteTypes {
     | '/catalog'
     | '/post-incidents'
     | '/settings'
+    | '/super-admin'
     | '/api/upload'
     | '/auth/error'
     | '/'
@@ -482,6 +493,7 @@ export interface FileRouteTypes {
     | '/_authed/catalog'
     | '/_authed/post-incidents'
     | '/_authed/settings'
+    | '/_authed/super-admin'
     | '/api/upload'
     | '/auth/error'
     | '/_authed/'
@@ -577,6 +589,13 @@ declare module '@tanstack/solid-router' {
       fullPath: '/api/upload'
       preLoaderRoute: typeof ApiUploadRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authed/super-admin': {
+      id: '/_authed/super-admin'
+      path: '/super-admin'
+      fullPath: '/super-admin'
+      preLoaderRoute: typeof AuthedSuperAdminRouteImport
+      parentRoute: typeof AuthedRoute
     }
     '/_authed/settings': {
       id: '/_authed/settings'
@@ -886,6 +905,7 @@ interface AuthedRouteChildren {
   AuthedCatalogRoute: typeof AuthedCatalogRouteWithChildren
   AuthedPostIncidentsRoute: typeof AuthedPostIncidentsRoute
   AuthedSettingsRoute: typeof AuthedSettingsRouteWithChildren
+  AuthedSuperAdminRoute: typeof AuthedSuperAdminRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedIncidentsIncidentIdRoute: typeof AuthedIncidentsIncidentIdRoute
   AuthedMetricsIncidentIdRoute: typeof AuthedMetricsIncidentIdRoute
@@ -900,6 +920,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedCatalogRoute: AuthedCatalogRouteWithChildren,
   AuthedPostIncidentsRoute: AuthedPostIncidentsRoute,
   AuthedSettingsRoute: AuthedSettingsRouteWithChildren,
+  AuthedSuperAdminRoute: AuthedSuperAdminRoute,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedIncidentsIncidentIdRoute: AuthedIncidentsIncidentIdRoute,
   AuthedMetricsIncidentIdRoute: AuthedMetricsIncidentIdRoute,
