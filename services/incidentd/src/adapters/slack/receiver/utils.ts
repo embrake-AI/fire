@@ -6,6 +6,7 @@ import type { Context } from "hono";
 import type { AgentSuggestionPayload } from "../../../agent/slack";
 import type { BasicContext } from "../../../handler/index";
 import { getDB } from "../../../lib/db";
+import { postSlackMessage } from "../../../lib/slack";
 
 // ============================================================================
 // Types
@@ -446,6 +447,62 @@ export async function fetchSlackThreadMessages({ botToken, channel, threadTs }: 
 	}
 
 	return deduped;
+}
+
+export async function postNoEntryPointsConfiguredMessage({
+	botToken,
+	channel,
+	threadTs,
+	frontendUrl,
+}: {
+	botToken: string;
+	channel: string;
+	threadTs: string;
+	frontendUrl: string;
+}): Promise<void> {
+	const setupUrl = `${frontendUrl.replace(/\/+$/, "")}/catalog/entry-points`;
+	const text = `No entry points set up yet. Create one here: ${setupUrl}`;
+
+	try {
+		await postSlackMessage({
+			botToken,
+			channel,
+			threadTs,
+			text,
+			blocks: [
+				{
+					type: "section",
+					text: {
+						type: "mrkdwn",
+						text: ":warning: *No entry points configured yet*",
+					},
+				},
+				{
+					type: "section",
+					text: {
+						type: "mrkdwn",
+						text: "I can't start incidents from Slack until at least one entry point exists.",
+					},
+				},
+				{
+					type: "actions",
+					elements: [
+						{
+							type: "button",
+							style: "primary",
+							text: {
+								type: "plain_text",
+								text: "Create Entry Point",
+							},
+							url: setupUrl,
+						},
+					],
+				},
+			],
+		});
+	} catch (error) {
+		console.error("Failed to post no-entry-points setup prompt", error);
+	}
 }
 
 export function buildThreadIncidentPrompt({

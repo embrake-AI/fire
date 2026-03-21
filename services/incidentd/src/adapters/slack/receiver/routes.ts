@@ -13,6 +13,7 @@ import {
 	getSlackIntegration,
 	handleStatusUpdate,
 	openAgentSuggestionModal,
+	postNoEntryPointsConfiguredMessage,
 	type SlackEventPayload,
 	type SlackInteractionPayload,
 } from "./utils";
@@ -109,6 +110,14 @@ slackRoutes.post("/events", async (c) => {
 
 					if (!slackIntegration.entryPoints.length) {
 						console.error(`No entry points found for client ${slackIntegration.clientId}`);
+						c.executionCtx.waitUntil(
+							postNoEntryPointsConfiguredMessage({
+								botToken,
+								channel,
+								threadTs: promptThread,
+								frontendUrl: c.env.FRONTEND_URL,
+							}),
+						);
 						return c.text("OK");
 					}
 
@@ -164,6 +173,14 @@ slackRoutes.post("/events", async (c) => {
 
 				if (!slackIntegration.entryPoints.length) {
 					console.error(`No entry points found for client ${slackIntegration.clientId}`);
+					c.executionCtx.waitUntil(
+						postNoEntryPointsConfiguredMessage({
+							botToken,
+							channel,
+							threadTs: event.ts,
+							frontendUrl: c.env.FRONTEND_URL,
+						}),
+					);
 					return c.text("OK");
 				}
 
