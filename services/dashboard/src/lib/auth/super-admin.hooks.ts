@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
 import { runDemoAware } from "../demo/runtime";
 import { startImpersonatingAction, stopImpersonatingAction } from "./impersonation";
-import { getSuperAdminClients, getSuperAdminClientUsers } from "./super-admin";
+import { getSuperAdminClients, getSuperAdminClientUsers, getSuperAdminClientWeeklyUsage } from "./super-admin";
 
 function unsupportedInDemo(): never {
 	throw new Error("Super admin tools are not available in demo mode.");
@@ -18,6 +18,26 @@ export function useSuperAdminClients() {
 				demo: async () => unsupportedInDemo(),
 				remote: () => getSuperAdminClientsFn(),
 			}),
+		staleTime: 60_000,
+	}));
+}
+
+export function useSuperAdminClientWeeklyUsage(clientId: Accessor<string | null>, options?: { weeks?: number }) {
+	const getSuperAdminClientWeeklyUsageFn = useServerFn(getSuperAdminClientWeeklyUsage);
+	return useQuery(() => ({
+		queryKey: ["super-admin-client-weekly-usage", clientId(), options?.weeks ?? 12],
+		queryFn: () =>
+			runDemoAware({
+				demo: async () => unsupportedInDemo(),
+				remote: () =>
+					getSuperAdminClientWeeklyUsageFn({
+						data: {
+							clientId: clientId() ?? "",
+							weeks: options?.weeks ?? 12,
+						},
+					}),
+			}),
+		enabled: !!clientId(),
 		staleTime: 60_000,
 	}));
 }
