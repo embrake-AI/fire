@@ -3,9 +3,11 @@ import { LoaderCircle } from "lucide-solid";
 import { createMemo, createSignal, onMount, Show } from "solid-js";
 import { SlackIcon } from "~/components/icons/SlackIcon";
 import Sidebar from "~/components/Sidebar";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogOverlay, DialogPortal, DialogTitle } from "~/components/ui/dialog";
 import { showToast } from "~/components/ui/toast";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { getAuth, isAuthReady } from "~/lib/auth/auth-store";
 import { useStopImpersonating } from "~/lib/auth/super-admin.hooks";
 import { isDemoMode } from "~/lib/demo/mode";
@@ -74,6 +76,7 @@ function AuthedLayout() {
 						<Show when={isImpersonating()}>
 							<ImpersonationBanner />
 						</Show>
+						<ViewerRoleBadge />
 						<Outlet />
 					</main>
 				}
@@ -95,6 +98,23 @@ function AuthedLayout() {
 				<DemoModeWelcomeDialog onDismiss={dismissDemoWelcome} />
 			</Show>
 		</Show>
+	);
+}
+
+function ViewerRoleBadge() {
+	return (
+		<div class="px-6 pt-4 flex justify-end">
+			<Tooltip>
+				<TooltipTrigger as="span" class="inline-flex">
+					<Badge variant="secondary" class="cursor-help">
+						Viewer
+					</Badge>
+				</TooltipTrigger>
+				<TooltipContent class="max-w-xs text-xs leading-relaxed">
+					You currently have Viewer access, which is read-only. Ask a workspace admin for a Member role to unlock more of the platform.
+				</TooltipContent>
+			</Tooltip>
+		</div>
 	);
 }
 
