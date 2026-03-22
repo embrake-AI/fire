@@ -39,18 +39,18 @@ D1 stores a derived incident index used for list/query views. It is eventually c
 
 ### Context Agent Providers
 
-Context agents (e.g. `SimilarIncidentsAgent`) are separate Durable Objects that enrich agent turns with background research. Each provider DO is keyed by incident id, creating a 1:1 pairing with the Incident DO.
+Context agents (`SimilarIncidentsAgent`, `GitHubCommitsAgent`) are separate Durable Objects that enrich agent turns with background research. Each provider DO is keyed by incident id, creating a 1:1 pairing with the Incident DO.
 
 The two DOs communicate bidirectionally via RPC:
 
 - **Incident → Provider** (via `IncidentAgentTurnWorkflow`):
   - `addContext`: pushes new timeline events for the provider to process in the background.
-  - `askQuestion`: pulls the provider's latest findings for inclusion in the agent turn.
+  - `addPrompt`: pulls the provider's latest findings for inclusion in the agent turn.
 - **Provider → Incident** (from provider background runs):
   - `getAgentContext`: pulls the full incident snapshot (metadata, state, events) to inform investigation.
   - `recordAgentContextEvent` / `recordAgentInsightEvent`: pushes discovered findings back into the incident timeline.
 
-Events written back by providers (e.g. `SIMILAR_INCIDENT`) are unpublished and will trigger subsequent agent turns through the normal alarm/debounce cycle. Context-only events (`CONTEXT_AGENT_TRIGGERED`, `SIMILAR_INCIDENTS_DISCOVERED`) are written with `published_at` set, so they appear in the timeline but do not trigger dispatch or new agent turns.
+Insight events written back by providers (`SIMILAR_INCIDENT`, `GITHUB_COMMIT`) are unpublished and will trigger subsequent agent turns through the normal alarm/debounce cycle. Context-only events (`CONTEXT_AGENT_TRIGGERED`) are written with `published_at` set, so they appear in the timeline but do not trigger dispatch or new agent turns.
 
 ### Agent Suggestions Lifecycle
 
@@ -64,7 +64,7 @@ These internal suggestion events are inserted with `published_at` already set, s
 ## Event Pipeline
 
 1. Receiver validates/authenticates and normalizes external input.
-2. Handler resolves the target Incident DO (`idFromName` or `idFromString`) and calls core methods.
+2. Handler resolves the target Incident DO (IDs are created via `newUniqueId()` and stored in D1) and calls core methods.
 3. DO transaction commits state + appends `event_log` row + schedules alarm.
 4. DO alarm drains unpublished events and forwards to `IncidentWorkflow`.
 5. `IncidentWorkflow` dispatches to senders/dispatchers (dashboard, Slack, status-page).

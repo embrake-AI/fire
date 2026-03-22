@@ -4,13 +4,13 @@ This document describes when to use **incident ids** and **identifiers**, and th
 
 ## Definitions
 
-- **Incident id**: the Durable Object id string (`idFromString` / `idFromName` result). This is the canonical, stable reference to an incident inside the system.
+- **Incident id**: the Durable Object id string, created via `newUniqueId()` at incident start and stored in D1. On subsequent access the id is resolved with `idFromString`. This is the canonical, stable reference to an incident inside the system.
 - **Identifier**: a lookup key stored in D1 in the `incident.identifier` JSON array. Identifiers exist to map external context (Slack, dashboard, etc.) back to the incident id.
 
 ## Rules of use
 
 1) **Always use the incident id when you have it.**  
-   - If you already have an id (e.g. dashboard routes, Slack metadata, D1 lookup), pass it through and use `idFromString`.
+   - If you already have an id (e.g. dashboard routes, Slack metadata, D1 lookup), pass it through and resolve with `idFromString`.
 
 2) **Use an identifier only when you do not have the id.**  
    - Identifiers are only a lookup mechanism. They should not replace ids inside the system.
