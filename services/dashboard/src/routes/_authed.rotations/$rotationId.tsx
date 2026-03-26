@@ -2,16 +2,18 @@ import { SHIFT_LENGTH_OPTIONS } from "@fire/common";
 import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { Check, ChevronLeft, ChevronRight, ExternalLink, GripVertical, LoaderCircle, Pencil, Plus, Trash2, Users as UsersIcon, X } from "lucide-solid";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, GripVertical, Hash, LoaderCircle, Lock, Pencil, Plus, Trash2, Users as UsersIcon, X } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, Suspense } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { EntityPicker } from "~/components/EntityPicker";
 import { UserAvatar } from "~/components/UserAvatar";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "~/components/ui/command";
 import { ConfigCard, ConfigCardActions, ConfigCardContent, ConfigCardDeleteButton, ConfigCardRow, ConfigCardTitle } from "~/components/ui/config-card";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { requireRoutePermission } from "~/lib/auth/route-guards";
@@ -36,6 +38,7 @@ import {
 	useUpdateRotationSlackChannel,
 	useUpdateRotationTeam,
 } from "~/lib/rotations/rotations.hooks";
+import type { SlackSelectableChannel } from "~/lib/slack";
 import { useTeams } from "~/lib/teams/teams.hooks";
 import { usePossibleSlackUsers, useUsers } from "~/lib/users/users.hooks";
 import { cn } from "~/lib/utils/client";
@@ -46,6 +49,7 @@ export const Route = createFileRoute("/_authed/rotations/$rotationId")({
 });
 
 type Rotation = Awaited<ReturnType<typeof getRotations>>[number];
+type SlackChannelOption = SlackSelectableChannel & { isUnknown?: boolean };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -109,16 +113,23 @@ function RotationHeader(props: { rotation: Rotation }) {
 	const [anchorInput, setAnchorInput] = createSignal("");
 
 	const NO_TEAM_VALUE = "none";
-	const NO_CHANNEL_VALUE = "none";
 	const teamOptions = createMemo(() => [NO_TEAM_VALUE, ...(teamsQuery.data?.map((t) => t.id) ?? [])]);
 	const teamsById = createMemo(() => new Map(teamsQuery.data?.map((t) => [t.id, t]) ?? []));
-	const slackChannelsById = createMemo(() => new Map((slackChannelsQuery.data ?? []).map((channel) => [channel.id, channel])));
-	const channelOptions = createMemo(() => {
-		const channelIds = slackChannelsQuery.data?.map((channel) => channel.id) ?? [];
-		if (props.rotation.slackChannelId && !channelIds.includes(props.rotation.slackChannelId)) {
-			return [NO_CHANNEL_VALUE, props.rotation.slackChannelId, ...channelIds];
+	const slackChannelOptions = createMemo<SlackChannelOption[]>(() => {
+		const channels = slackChannelsQuery.data ?? [];
+		if (props.rotation.slackChannelId && !channels.some((channel) => channel.id === props.rotation.slackChannelId)) {
+			return [
+				{
+					id: props.rotation.slackChannelId,
+					name: `Unknown channel (${props.rotation.slackChannelId})`,
+					isPrivate: false,
+					isMember: false,
+					isUnknown: true,
+				},
+				...channels,
+			];
 		}
-		return [NO_CHANNEL_VALUE, ...channelIds];
+		return channels;
 	});
 	const team = createMemo(() => (props.rotation.teamId ? teamsById().get(props.rotation.teamId) : undefined));
 	const eligibleTeamIds = createMemo(() => {
@@ -139,7 +150,6 @@ function RotationHeader(props: { rotation: Rotation }) {
 		return eligible;
 	});
 	const currentTeamValue = createMemo(() => props.rotation.teamId ?? NO_TEAM_VALUE);
-	const currentSlackChannelValue = createMemo(() => props.rotation.slackChannelId ?? NO_CHANNEL_VALUE);
 	const currentShiftLength = createMemo(() => normalizeShiftLength(props.rotation.shiftLength));
 
 	createEffect(() => {
@@ -186,8 +196,7 @@ function RotationHeader(props: { rotation: Rotation }) {
 	};
 
 	const handleSlackChannelChange = (value: string | null) => {
-		if (!value) return;
-		const nextChannelId = value === NO_CHANNEL_VALUE ? null : value;
+		const nextChannelId = value ?? null;
 		const currentChannelId = props.rotation.slackChannelId ?? null;
 		if (nextChannelId === currentChannelId) return;
 		updateSlackChannelMutation.mutate({ id: props.rotation.id, slackChannelId: nextChannelId });
@@ -338,38 +347,113 @@ function RotationHeader(props: { rotation: Rotation }) {
 							</Link>
 						)}
 					</Show>
-					<Select
-						value={currentSlackChannelValue()}
+					<RotationSlackChannelPicker
+						value={props.rotation.slackChannelId}
+						channels={slackChannelOptions()}
+						disabled={updateSlackChannelMutation.isPending}
+						isLoading={slackChannelsQuery.isPending}
+						isSaving={updateSlackChannelMutation.isPending}
 						onChange={handleSlackChannelChange}
-						options={channelOptions()}
-						itemComponent={(itemProps) => {
-							const channelId = itemProps.item.rawValue;
-							if (channelId === NO_CHANNEL_VALUE) {
-								return <SelectItem item={itemProps.item}>No Slack channel</SelectItem>;
-							}
-							const channel = slackChannelsById().get(channelId);
-							return (
-								<SelectItem item={itemProps.item}>{channel ? `#${channel.name}${channel.isMember ? "" : " (bot will auto-join)"}` : `Unknown channel (${channelId})`}</SelectItem>
-							);
-						}}
-						disabled={updateSlackChannelMutation.isPending || slackChannelsQuery.isPending}
-					>
-						<SelectTrigger class="h-auto py-0.5 px-2.5 text-xs font-normal border-border bg-transparent hover:bg-muted/50 w-auto gap-1 [&>svg]:w-3 [&>svg]:h-3">
-							<SelectValue<string>>
-								{(state) => {
-									const selected = state.selectedOption();
-									if (!selected || selected === NO_CHANNEL_VALUE) return "No Slack channel";
-									const channel = slackChannelsById().get(selected);
-									if (!channel) return `Unknown channel (${selected})`;
-									return `#${channel.name}`;
-								}}
-							</SelectValue>
-						</SelectTrigger>
-						<SelectContent />
-					</Select>
+					/>
 				</div>
 			</div>
 		</div>
+	);
+}
+
+function RotationSlackChannelPicker(props: {
+	value?: string | null;
+	channels: SlackChannelOption[];
+	disabled?: boolean;
+	isLoading?: boolean;
+	isSaving?: boolean;
+	onChange: (value: string | null) => void;
+}) {
+	const [open, setOpen] = createSignal(false);
+	const selectedChannel = createMemo(() => props.channels.find((channel) => channel.id === props.value));
+
+	const triggerLabel = createMemo(() => {
+		if (!props.value) {
+			return "No Slack channel";
+		}
+
+		const channel = selectedChannel();
+		if (!channel) {
+			return `Unknown channel (${props.value})`;
+		}
+
+		return channel.isUnknown ? channel.name : `#${channel.name}`;
+	});
+
+	const handleSelect = (value: string | null) => {
+		props.onChange(value);
+		setOpen(false);
+	};
+
+	return (
+		<Popover open={open()} onOpenChange={setOpen}>
+			<PopoverTrigger
+				as={Button}
+				variant="outline"
+				size="sm"
+				type="button"
+				disabled={props.disabled}
+				class="h-auto max-w-[280px] justify-between gap-1 border-border bg-transparent px-2.5 py-0.5 text-xs font-normal hover:bg-muted/50"
+			>
+				<span class="flex min-w-0 items-center gap-1.5">
+					<Show when={props.value && selectedChannel() && !selectedChannel()?.isUnknown}>
+						<Show when={selectedChannel()?.isPrivate} fallback={<Hash class="h-3 w-3 shrink-0 text-muted-foreground" />}>
+							<Lock class="h-3 w-3 shrink-0 text-muted-foreground" />
+						</Show>
+					</Show>
+					<span class={cn("truncate", !props.value && "text-muted-foreground")}>{triggerLabel()}</span>
+				</span>
+				<Show when={props.isSaving} fallback={<ChevronDown class="h-3 w-3 shrink-0 opacity-50" />}>
+					<LoaderCircle class="h-3 w-3 shrink-0 animate-spin" />
+				</Show>
+			</PopoverTrigger>
+			<PopoverContent class="w-80 p-0">
+				<Command>
+					<CommandInput placeholder="Search channels..." />
+					<CommandList class="max-h-[260px]">
+						<Show when={!props.isLoading} fallback={<div class="py-6 text-center text-sm text-muted-foreground">Loading channels...</div>}>
+							<CommandEmpty>No channels found.</CommandEmpty>
+							<CommandItem value="No Slack channel" onSelect={() => handleSelect(null)}>
+								<div class="flex w-full items-center gap-2">
+									<span class="flex-1 text-sm text-muted-foreground">Clear Slack channel</span>
+									<Show when={!props.value}>
+										<Check class="h-4 w-4 text-primary" />
+									</Show>
+								</div>
+							</CommandItem>
+							<For each={props.channels}>
+								{(channel) => (
+									<CommandItem
+										value={`${channel.name} ${channel.isPrivate ? "private" : "public"} ${channel.isMember ? "joined" : "auto join"}`}
+										onSelect={() => handleSelect(channel.id)}
+									>
+										<div class="flex w-full items-center gap-2">
+											<Show when={channel.isPrivate && !channel.isUnknown} fallback={<Hash class="h-4 w-4 shrink-0 text-muted-foreground" />}>
+												<Lock class="h-4 w-4 shrink-0 text-muted-foreground" />
+											</Show>
+											<div class="min-w-0 flex-1">
+												<div class="truncate text-sm">{channel.isUnknown ? channel.name : `#${channel.name}`}</div>
+												<Show when={!channel.isUnknown && !channel.isMember}>
+													<div class="text-xs text-muted-foreground">Bot will auto-join after saving</div>
+												</Show>
+											</div>
+											<Show when={props.value === channel.id}>
+												<Check class="h-4 w-4 text-primary" />
+											</Show>
+										</div>
+									</CommandItem>
+								)}
+							</For>
+						</Show>
+					</CommandList>
+				</Command>
+			</PopoverContent>
+		</Popover>
 	);
 }
 
