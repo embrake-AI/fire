@@ -17,7 +17,7 @@ export type StatusPageService = Pick<ServiceRow, "id" | "name" | "imageUrl"> & {
 
 export type StatusPageSummary = Pick<
 	StatusPageRow,
-	"id" | "name" | "slug" | "logoUrl" | "faviconUrl" | "serviceDisplayMode" | "supportUrl" | "privacyPolicyUrl" | "termsOfServiceUrl" | "createdAt" | "updatedAt"
+	"id" | "name" | "slug" | "logoUrl" | "faviconUrl" | "serviceDisplayMode" | "siteUrl" | "supportUrl" | "privacyPolicyUrl" | "termsOfServiceUrl" | "createdAt" | "updatedAt"
 > & {
 	clientImage: string | null;
 };
@@ -64,6 +64,7 @@ async function buildStatusPagePublicData(pageRow: StatusPageRow): Promise<Status
 		logoUrl: pageRow.logoUrl,
 		faviconUrl: pageRow.faviconUrl,
 		serviceDisplayMode: pageRow.serviceDisplayMode,
+		siteUrl: pageRow.siteUrl,
 		supportUrl: pageRow.supportUrl,
 		privacyPolicyUrl: pageRow.privacyPolicyUrl,
 		termsOfServiceUrl: pageRow.termsOfServiceUrl,
@@ -199,6 +200,7 @@ export async function fetchPublicStatusPageBySlug(slug: string): Promise<StatusP
 			faviconUrl: true,
 			serviceDisplayMode: true,
 			customDomain: true,
+			siteUrl: true,
 			privacyPolicyUrl: true,
 			supportUrl: true,
 			termsOfServiceUrl: true,
@@ -233,6 +235,7 @@ export async function fetchPublicStatusPageByDomain(domain: string): Promise<Sta
 			faviconUrl: true,
 			serviceDisplayMode: true,
 			customDomain: true,
+			siteUrl: true,
 			privacyPolicyUrl: true,
 			supportUrl: true,
 			termsOfServiceUrl: true,

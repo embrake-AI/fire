@@ -108,6 +108,7 @@ type DemoStatusPage = {
 	faviconUrl: string | null;
 	serviceDisplayMode: string | null;
 	customDomain: string | null;
+	siteUrl: string | null;
 	supportUrl: string | null;
 	privacyPolicyUrl: string | null;
 	termsOfServiceUrl: string | null;
@@ -726,6 +727,7 @@ function makeInitialState(): DemoState {
 				faviconUrl: null,
 				serviceDisplayMode: "bars_percentage",
 				customDomain: null,
+				siteUrl: "https://firedash.ai",
 				supportUrl: null,
 				privacyPolicyUrl: null,
 				termsOfServiceUrl: null,
@@ -2487,6 +2489,7 @@ function toStatusPageItem(state: DemoState, page: DemoStatusPage) {
 		faviconUrl: page.faviconUrl,
 		serviceDisplayMode: page.serviceDisplayMode,
 		customDomain: page.customDomain,
+		siteUrl: page.siteUrl,
 		supportUrl: page.supportUrl,
 		privacyPolicyUrl: page.privacyPolicyUrl,
 		termsOfServiceUrl: page.termsOfServiceUrl,
@@ -2520,6 +2523,7 @@ export async function createStatusPageDemo(data: { name: string; slug: string })
 			faviconUrl: null,
 			serviceDisplayMode: "bars_percentage",
 			customDomain: null,
+			siteUrl: null,
 			supportUrl: null,
 			privacyPolicyUrl: null,
 			termsOfServiceUrl: null,
@@ -2540,6 +2544,7 @@ export async function updateStatusPageDemo(data: {
 	faviconUrl?: string | null;
 	serviceDisplayMode?: string | null;
 	customDomain?: string | null;
+	siteUrl?: string | null;
 	supportUrl?: string | null;
 	privacyPolicyUrl?: string | null;
 	termsOfServiceUrl?: string | null;
@@ -2555,6 +2560,7 @@ export async function updateStatusPageDemo(data: {
 		if (data.faviconUrl !== undefined) page.faviconUrl = data.faviconUrl;
 		if (data.serviceDisplayMode !== undefined) page.serviceDisplayMode = data.serviceDisplayMode;
 		if (data.customDomain !== undefined) page.customDomain = normalizeString(data.customDomain);
+		if (data.siteUrl !== undefined) page.siteUrl = normalizeString(data.siteUrl);
 		if (data.supportUrl !== undefined) page.supportUrl = normalizeString(data.supportUrl);
 		if (data.privacyPolicyUrl !== undefined) page.privacyPolicyUrl = normalizeString(data.privacyPolicyUrl);
 		if (data.termsOfServiceUrl !== undefined) page.termsOfServiceUrl = normalizeString(data.termsOfServiceUrl);
@@ -2567,6 +2573,7 @@ export async function updateStatusPageDemo(data: {
 			faviconUrl: page.faviconUrl,
 			serviceDisplayMode: page.serviceDisplayMode,
 			customDomain: page.customDomain,
+			siteUrl: page.siteUrl,
 			supportUrl: page.supportUrl,
 			privacyPolicyUrl: page.privacyPolicyUrl,
 			termsOfServiceUrl: page.termsOfServiceUrl,

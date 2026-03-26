@@ -1,4 +1,4 @@
-export const POWERED_BY_URL = process.env.VITE_APP_URL ?? "";
+export const POWERED_BY_URL = "https://firedash.ai";
 
 export function escapeHtml(text: string | null | undefined): string {
 	if (!text) return "";

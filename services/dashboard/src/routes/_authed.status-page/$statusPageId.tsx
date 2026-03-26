@@ -708,14 +708,21 @@ function EditableCompanyName(props: { page: StatusPageData }) {
 	const [isEditingName, setIsEditingName] = createSignal(false);
 	const [name, setName] = createSignal(props.page.name);
 	const [nameError, setNameError] = createSignal<string | null>(null);
+	const [siteUrl, setSiteUrl] = createSignal(props.page.siteUrl ?? "");
+	const [siteUrlError, setSiteUrlError] = createSignal<string | null>(null);
 
 	createEffect(() => {
 		setName(props.page.name);
 		setNameError(null);
+		setSiteUrl(props.page.siteUrl ?? "");
+		setSiteUrlError(null);
 	});
 
 	const trimmedName = createMemo(() => name().trim());
 	const hasNameChanges = createMemo(() => trimmedName() !== props.page.name.trim());
+	const trimmedSiteUrl = createMemo(() => siteUrl().trim());
+	const hasSiteUrlChanges = createMemo(() => trimmedSiteUrl() !== (props.page.siteUrl ?? ""));
+	const hasSiteUrl = createMemo(() => !!props.page.siteUrl?.trim());
 
 	const handleSaveName = async () => {
 		const nextName = trimmedName();
@@ -729,6 +736,15 @@ function EditableCompanyName(props: { page: StatusPageData }) {
 			setIsEditingName(false);
 		} catch (err) {
 			setNameError(err instanceof Error ? err.message : "Unable to update name");
+		}
+	};
+
+	const handleSaveSiteUrl = async () => {
+		setSiteUrlError(null);
+		try {
+			await updateStatusPageMutation.mutateAsync({ id: props.page.id, siteUrl: trimmedSiteUrl() || null });
+		} catch (err) {
+			setSiteUrlError(err instanceof Error ? err.message : "Unable to update website URL");
 		}
 	};
 
@@ -776,6 +792,65 @@ function EditableCompanyName(props: { page: StatusPageData }) {
 					</button>
 				</form>
 			</Show>
+			<Popover>
+				<PopoverTrigger
+					as="button"
+					type="button"
+					class={cn(
+						"ml-2 flex cursor-pointer items-center justify-center rounded-md border p-1 transition-colors",
+						hasSiteUrl()
+							? "border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+							: "border-dashed border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-600",
+					)}
+					title={hasSiteUrl() ? "Customer website URL" : "Add customer website URL"}
+				>
+					<ExternalLink class="w-3.5 h-3.5" />
+				</PopoverTrigger>
+				<PopoverContent class="w-80">
+					<div class="space-y-3">
+						<div>
+							<p class="text-sm font-medium text-foreground">Customer website</p>
+							<p class="text-xs text-muted-foreground mt-1">Clicking the logo or company name on the public status page will open this URL.</p>
+						</div>
+						<div class="space-y-1.5">
+							<Label for="status-page-site-url" class="text-xs font-medium">
+								Website URL
+							</Label>
+							<Input
+								id="status-page-site-url"
+								type="url"
+								placeholder="https://example.com"
+								value={siteUrl()}
+								onInput={(e) => {
+									setSiteUrl(e.currentTarget.value);
+									setSiteUrlError(null);
+								}}
+							/>
+							<Show when={!hasSiteUrl() && !trimmedSiteUrl()}>
+								<p class="text-xs text-amber-600">Without a URL, the brand header stays non-clickable on the public page.</p>
+							</Show>
+							<Show when={siteUrlError()}>
+								<p class="text-xs text-red-600">{siteUrlError()}</p>
+							</Show>
+						</div>
+						<div class="flex items-center justify-between gap-2">
+							<Show when={hasSiteUrl()}>
+								<a href={props.page.siteUrl!} target="_blank" rel="noreferrer" class="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-4">
+									Open current URL
+								</a>
+							</Show>
+							<div class="ml-auto">
+								<Button size="sm" onClick={handleSaveSiteUrl} disabled={updateStatusPageMutation.isPending || !hasSiteUrlChanges()}>
+									<Show when={updateStatusPageMutation.isPending} fallback="Save">
+										<LoaderCircle class="w-3 h-3 animate-spin mr-1" />
+										Saving
+									</Show>
+								</Button>
+							</div>
+						</div>
+					</div>
+				</PopoverContent>
+			</Popover>
 			<Show when={nameError()}>
 				<span class="ml-2 text-xs text-red-600">{nameError()}</span>
 			</Show>
@@ -1124,8 +1199,7 @@ function ServicesEmptyState() {
 
 function Footer(props: { page: StatusPageData }) {
 	const updateStatusPageMutation = useUpdateStatusPage();
-
-	const appOrigin = new URL(import.meta.env.VITE_APP_URL as string).origin;
+	const marketingOrigin = "https://firedash.ai";
 
 	const [isEditingPrivacy, setIsEditingPrivacy] = createSignal(false);
 	const [isEditingTerms, setIsEditingTerms] = createSignal(false);
@@ -1151,7 +1225,7 @@ function Footer(props: { page: StatusPageData }) {
 		<div class="pt-8 space-y-3">
 			<div class="flex items-center justify-between text-xs text-muted-foreground">
 				<span class="flex items-center gap-1.5">&larr; Incident History</span>
-				<a href={appOrigin} class="flex items-center gap-1.5 hover:text-muted-foreground transition-colors" target="_blank" rel="noreferrer">
+				<a href={marketingOrigin} class="flex items-center gap-1.5 hover:text-muted-foreground transition-colors" target="_blank" rel="noreferrer">
 					Powered by <Flame class="w-3.5 h-3.5 text-orange-500" />
 				</a>
 			</div>

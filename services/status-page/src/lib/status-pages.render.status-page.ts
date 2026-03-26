@@ -272,6 +272,7 @@ function getBarColorClass(uptimePercent: number): string {
 export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: number, basePath = ""): string {
 	const { page, services, affections, updates } = data;
 	const logoUrl = page.logoUrl || page.clientImage;
+	const brandUrl = page.siteUrl?.trim() || null;
 	const faviconUrl = page.faviconUrl;
 	const displayMode = page.serviceDisplayMode || "bars_percentage";
 	const historyFeedPaths = {
@@ -716,7 +717,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 <body class="bg-linear-to-b from-slate-50 to-white min-h-screen flex flex-col">
 	<div class="flex-1 max-w-2xl mx-auto px-4 py-12 md:py-16 w-full">
 		<header class="flex items-center justify-between mb-8">
-			<div class="flex items-center gap-3">
+			${brandUrl ? `<a href="${escapeHtml(brandUrl)}" class="flex items-center gap-3 hover:opacity-80 transition-opacity">` : '<div class="flex items-center gap-3">'}
 				${
 					logoUrl
 						? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(page.name)}" class="w-12 h-12 object-contain rounded-xl">`
@@ -727,7 +728,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 					</div>`
 				}
 				<div class="text-lg font-semibold text-slate-900">${escapeHtml(page.name)}</div>
-			</div>
+			${brandUrl ? "</a>" : "</div>"}
 			<div class="relative">
 				<button type="button" data-subscribe-toggle class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
 					Subscribe to updates

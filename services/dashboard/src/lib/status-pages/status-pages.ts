@@ -19,7 +19,19 @@ export type StatusPageService = Pick<ServiceRow, "id" | "name" | "imageUrl"> & {
 
 export type StatusPageSummary = Pick<
 	StatusPageRow,
-	"id" | "name" | "slug" | "logoUrl" | "faviconUrl" | "serviceDisplayMode" | "customDomain" | "supportUrl" | "privacyPolicyUrl" | "termsOfServiceUrl" | "createdAt" | "updatedAt"
+	| "id"
+	| "name"
+	| "slug"
+	| "logoUrl"
+	| "faviconUrl"
+	| "serviceDisplayMode"
+	| "customDomain"
+	| "siteUrl"
+	| "supportUrl"
+	| "privacyPolicyUrl"
+	| "termsOfServiceUrl"
+	| "createdAt"
+	| "updatedAt"
 >;
 
 export type StatusPageListItem = StatusPageSummary & {
@@ -56,6 +68,26 @@ function validateSlug(slug: string): string | null {
 	return null;
 }
 
+function normalizeHttpUrl(value: string | null | undefined): string | null {
+	const trimmed = value?.trim();
+	if (!trimmed) {
+		return null;
+	}
+
+	let parsed: URL;
+	try {
+		parsed = new URL(trimmed);
+	} catch {
+		throw new Error("Enter a valid URL including http:// or https://");
+	}
+
+	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+		throw new Error("Only http:// and https:// URLs are supported");
+	}
+
+	return parsed.toString();
+}
+
 export const getStatusPages = createServerFn({ method: "GET" })
 	.middleware([authMiddleware, requirePermission("catalog.read")])
 	.handler(async ({ context }) => {
@@ -71,6 +103,7 @@ export const getStatusPages = createServerFn({ method: "GET" })
 				faviconUrl: true,
 				serviceDisplayMode: true,
 				customDomain: true,
+				siteUrl: true,
 				supportUrl: true,
 				privacyPolicyUrl: true,
 				termsOfServiceUrl: true,
@@ -118,6 +151,7 @@ export const getStatusPages = createServerFn({ method: "GET" })
 				faviconUrl: page.faviconUrl,
 				serviceDisplayMode: page.serviceDisplayMode,
 				customDomain: page.customDomain,
+				siteUrl: page.siteUrl,
 				supportUrl: page.supportUrl,
 				privacyPolicyUrl: page.privacyPolicyUrl,
 				termsOfServiceUrl: page.termsOfServiceUrl,
@@ -174,6 +208,7 @@ export const createStatusPage = createServerFn({ method: "POST" })
 			faviconUrl: created.faviconUrl,
 			serviceDisplayMode: created.serviceDisplayMode,
 			customDomain: created.customDomain,
+			siteUrl: created.siteUrl,
 			supportUrl: created.supportUrl,
 			privacyPolicyUrl: created.privacyPolicyUrl,
 			termsOfServiceUrl: created.termsOfServiceUrl,
@@ -195,6 +230,7 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 			faviconUrl?: string | null;
 			serviceDisplayMode?: string | null;
 			customDomain?: string | null;
+			siteUrl?: string | null;
 			supportUrl?: string | null;
 			privacyPolicyUrl?: string | null;
 			termsOfServiceUrl?: string | null;
@@ -208,6 +244,7 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 			faviconUrl?: string | null;
 			serviceDisplayMode?: string | null;
 			customDomain?: string | null;
+			siteUrl?: string | null;
 			supportUrl?: string | null;
 			privacyPolicyUrl?: string | null;
 			termsOfServiceUrl?: string | null;
@@ -293,6 +330,9 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 
 			updateFields.customDomain = normalizedDomain;
 		}
+		if (data.siteUrl !== undefined) {
+			updateFields.siteUrl = normalizeHttpUrl(data.siteUrl);
+		}
 		if (data.supportUrl !== undefined) {
 			updateFields.supportUrl = data.supportUrl?.trim() || null;
 		}
@@ -321,6 +361,7 @@ export const updateStatusPage = createServerFn({ method: "POST" })
 			faviconUrl: updated.faviconUrl,
 			serviceDisplayMode: updated.serviceDisplayMode,
 			customDomain: updated.customDomain,
+			siteUrl: updated.siteUrl,
 			supportUrl: updated.supportUrl,
 			privacyPolicyUrl: updated.privacyPolicyUrl,
 			termsOfServiceUrl: updated.termsOfServiceUrl,

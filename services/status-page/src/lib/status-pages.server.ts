@@ -33,7 +33,19 @@ type StatusPageLookup = { slug: string } | { domain: string };
 
 type StatusPageContentRow = Pick<
 	StatusPageRow,
-	"id" | "clientId" | "name" | "slug" | "logoUrl" | "faviconUrl" | "serviceDisplayMode" | "privacyPolicyUrl" | "supportUrl" | "termsOfServiceUrl" | "createdAt" | "updatedAt"
+	| "id"
+	| "clientId"
+	| "name"
+	| "slug"
+	| "logoUrl"
+	| "faviconUrl"
+	| "serviceDisplayMode"
+	| "siteUrl"
+	| "privacyPolicyUrl"
+	| "supportUrl"
+	| "termsOfServiceUrl"
+	| "createdAt"
+	| "updatedAt"
 >;
 
 type SnapshotStatusPageRow = Pick<StatusPageRow, "id" | "name" | "slug" | "createdAt" | "updatedAt">;
@@ -47,7 +59,7 @@ export type StatusPageService = Pick<ServiceRow, "id" | "name" | "imageUrl"> & {
 
 export type StatusPageSummary = Pick<
 	StatusPageRow,
-	"id" | "name" | "slug" | "logoUrl" | "faviconUrl" | "serviceDisplayMode" | "supportUrl" | "privacyPolicyUrl" | "termsOfServiceUrl" | "createdAt" | "updatedAt"
+	"id" | "name" | "slug" | "logoUrl" | "faviconUrl" | "serviceDisplayMode" | "siteUrl" | "supportUrl" | "privacyPolicyUrl" | "termsOfServiceUrl" | "createdAt" | "updatedAt"
 > & {
 	clientImage: string | null;
 };
@@ -85,6 +97,7 @@ function buildStatusPageSummary(pageRow: StatusPageContentRow, clientImage: stri
 		logoUrl: pageRow.logoUrl,
 		faviconUrl: pageRow.faviconUrl,
 		serviceDisplayMode: pageRow.serviceDisplayMode,
+		siteUrl: pageRow.siteUrl,
 		supportUrl: pageRow.supportUrl,
 		privacyPolicyUrl: pageRow.privacyPolicyUrl,
 		termsOfServiceUrl: pageRow.termsOfServiceUrl,
@@ -122,6 +135,7 @@ async function findStatusPageContentWithClientRow(lookup: StatusPageLookup): Pro
 			logoUrl: statusPageTable.logoUrl,
 			faviconUrl: statusPageTable.faviconUrl,
 			serviceDisplayMode: statusPageTable.serviceDisplayMode,
+			siteUrl: statusPageTable.siteUrl,
 			privacyPolicyUrl: statusPageTable.privacyPolicyUrl,
 			supportUrl: statusPageTable.supportUrl,
 			termsOfServiceUrl: statusPageTable.termsOfServiceUrl,

@@ -26,6 +26,7 @@ const UPDATE_STATUS_LABELS: Record<string, string> = {
 function renderIncidentHistoryHtml(data: IncidentHistoryData, basePath = ""): string {
 	const { page, incidents } = data;
 	const logoUrl = page.logoUrl || page.clientImage;
+	const brandUrl = page.siteUrl?.trim() || null;
 
 	const incidentsHtml =
 		incidents.length > 0
@@ -71,7 +72,7 @@ function renderIncidentHistoryHtml(data: IncidentHistoryData, basePath = ""): st
 	const content = `
 	<div class="flex-1 max-w-2xl mx-auto px-4 py-12 md:py-16 w-full">
 		<header class="flex items-center justify-between mb-8">
-			<a href="${rootPath}" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+			<a href="${escapeHtml(brandUrl || rootPath)}" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
 				${
 					logoUrl
 						? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(page.name)}" class="w-10 h-10 object-contain rounded-xl">`
@@ -130,6 +131,7 @@ export function buildIncidentHistoryResponse(data: IncidentHistoryData, basePath
 function renderIncidentDetailHtml(data: IncidentDetailData, basePath = ""): string {
 	const { page, incident } = data;
 	const logoUrl = page.logoUrl || page.clientImage;
+	const brandUrl = page.siteUrl?.trim() || null;
 	const isResolved = !!incident.resolvedAt;
 	const feedPaths = {
 		rss: `${basePath}/feed.rss`,
@@ -173,7 +175,7 @@ function renderIncidentDetailHtml(data: IncidentDetailData, basePath = ""): stri
 	const content = `
 	<div class="flex-1 max-w-2xl mx-auto px-4 py-12 md:py-16 w-full">
 		<header class="flex items-center justify-between mb-8">
-			<a href="${rootPath}" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+			<a href="${escapeHtml(brandUrl || rootPath)}" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
 				${
 					logoUrl
 						? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(page.name)}" class="w-10 h-10 object-contain rounded-xl">`
