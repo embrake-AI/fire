@@ -641,7 +641,7 @@ function buildApiIncidentScenario(): LifecycleScenario {
 		mkEvent({ event_type: "STATUS_UPDATE", event_data: { status: "mitigating", message: "Hotfix deployed reverting N+1 query pattern" } }, 17),
 		// Agent also suggested status page update — dispatcher did NOT apply it
 		mkSuggestionEvent(
-			{ action: "add_status_page_update", message: "We are investigating payment processing issues", affectionStatus: "investigating", title: "Payment failures" },
+			{ action: "add_status_page_update", publicMessage: "We are investigating payment processing issues", affectionStatus: "investigating", title: "Payment failures" },
 			16,
 			"sug_a_3",
 		),
@@ -1767,7 +1767,7 @@ function buildStatusPageUpdatesScenario(): LifecycleScenario {
 		mkSuggestionEvent(
 			{
 				action: "add_status_page_update",
-				message: "We are investigating a complete API outage",
+				publicMessage: "We are investigating a complete API outage",
 				affectionStatus: "investigating",
 				title: "API outage",
 				services: [
@@ -1805,7 +1805,7 @@ function buildStatusPageUpdatesScenario(): LifecycleScenario {
 		mkSuggestionEvent(
 			{
 				action: "add_status_page_update",
-				message: "We are investigating a complete API outage",
+				publicMessage: "We are investigating a complete API outage",
 				affectionStatus: "investigating",
 				title: "API outage",
 				services: [
@@ -1827,7 +1827,11 @@ function buildStatusPageUpdatesScenario(): LifecycleScenario {
 		),
 		mkSuggestionEvent({ action: "update_status", status: "mitigating", message: "DB failover to read replica initiated; reads recovering" }, 15, "sug_sp_2"),
 		mkEvent({ event_type: "STATUS_UPDATE", event_data: { status: "mitigating", message: "DB failover to read replica initiated; reads recovering" } }, 16),
-		mkSuggestionEvent({ action: "add_status_page_update", message: "Read operations recovering. Write operations still degraded.", affectionStatus: "mitigating" }, 17, "sug_sp_3"),
+		mkSuggestionEvent(
+			{ action: "add_status_page_update", publicMessage: "Read operations recovering. Write operations still degraded.", affectionStatus: "mitigating" },
+			17,
+			"sug_sp_3",
+		),
 		mkEvent({ event_type: "AFFECTION_UPDATE", event_data: { status: "mitigating" } }, 18),
 		mkEvent(
 			{
@@ -1845,7 +1849,7 @@ function buildStatusPageUpdatesScenario(): LifecycleScenario {
 	const t4Events: AgentEvent[] = [
 		...t3Events,
 		mkSuggestionEvent(
-			{ action: "add_status_page_update", message: "Replica promoted. Write operations recovering (85% success rate).", affectionStatus: "mitigating" },
+			{ action: "add_status_page_update", publicMessage: "Replica promoted. Write operations recovering (85% success rate).", affectionStatus: "mitigating" },
 			29,
 			"sug_sp_4",
 		),
@@ -2096,7 +2100,7 @@ function buildFirstStatusPageInvestigatingScenario(): LifecycleScenario {
 		mkSuggestionEvent(
 			{
 				action: "add_status_page_update",
-				message: "Investigating DB outage affecting API and web.",
+				publicMessage: "Investigating DB outage affecting API and web.",
 				affectionStatus: "investigating",
 				title: "DB outage affecting API and web",
 				services: [
@@ -2132,7 +2136,7 @@ function buildFirstStatusPageInvestigatingScenario(): LifecycleScenario {
 		mkSuggestionEvent(
 			{
 				action: "add_status_page_update",
-				message: "Mitigation in progress; partial recovery observed.",
+				publicMessage: "Mitigation in progress; partial recovery observed.",
 				affectionStatus: "mitigating",
 				evidence: [{ eventId: t2Events[t2Events.length - 1]!.id }],
 			},
@@ -2291,7 +2295,7 @@ function buildRealPerformanceIncidentScenario(): LifecycleScenario {
 				action: "add_status_page_update",
 				affectionStatus: "investigating",
 				title: "API degradation causing slow responses",
-				message: "Investigating degraded performance and elevated error rates; some API instances are down causing slow responses.",
+				publicMessage: "Investigating degraded performance and elevated error rates; some API instances are down causing slow responses.",
 				services: [{ id: "00000000-0000-4000-8000-000000000101", impact: "major" }],
 			},
 			14,
@@ -2315,7 +2319,7 @@ function buildRealPerformanceIncidentScenario(): LifecycleScenario {
 				action: "add_status_page_update",
 				affectionStatus: "investigating",
 				title: "Ongoing API performance degradation",
-				message: "Performance is still degraded. Sustained high CPU on API instances; mitigation continues.",
+				publicMessage: "Performance is still degraded. Sustained high CPU on API instances; mitigation continues.",
 				services: [{ id: "00000000-0000-4000-8000-000000000101", impact: "major" }],
 			},
 			16,
@@ -2364,7 +2368,7 @@ function buildRealPerformanceIncidentScenario(): LifecycleScenario {
 			{
 				action: "add_status_page_update",
 				title: "Update: autoscaling delay due to health check failures",
-				message:
+				publicMessage:
 					"We believe degradation was triggered during autoscaling: two API instances failed health checks, delaying scale-out until recovered. Capacity has been added and we continue monitoring.",
 				services: [{ id: "00000000-0000-4000-8000-000000000101", impact: "major" }],
 			},
@@ -2518,7 +2522,7 @@ function buildPendingInvestigatingSpamScenario(): LifecycleScenario {
 		mkSuggestionEvent(
 			{
 				action: "add_status_page_update",
-				message: "We’re investigating reports of enrichments failing to start.",
+				publicMessage: "We’re investigating reports of enrichments failing to start.",
 				affectionStatus: "investigating",
 				title: "Enrichments failing to start",
 				services: [{ id: "svc_enrich", impact: "partial" }],
@@ -2537,7 +2541,7 @@ function buildPendingInvestigatingSpamScenario(): LifecycleScenario {
 		mkSuggestionEvent(
 			{
 				action: "add_status_page_update",
-				message: "We’re investigating reports of enrichments failing to start.",
+				publicMessage: "We’re investigating reports of enrichments failing to start.",
 				affectionStatus: "investigating",
 				title: "Enrichments failing to start",
 				services: [{ id: "svc_enrich", impact: "partial" }],
@@ -2555,7 +2559,7 @@ function buildPendingInvestigatingSpamScenario(): LifecycleScenario {
 		mkSuggestionEvent(
 			{
 				action: "add_status_page_update",
-				message: "Investigating ongoing enrichment start failures.",
+				publicMessage: "Investigating ongoing enrichment start failures.",
 				affectionStatus: "investigating",
 				title: "Enrichments failing to start",
 				services: [{ id: "svc_enrich", impact: "partial" }],
@@ -2664,7 +2668,7 @@ function buildMicroTurnNoiseScenario(): LifecycleScenario {
 		mkSuggestionEvent(
 			{
 				action: "add_status_page_update",
-				message: "We are investigating reports of enrichments failing to start.",
+				publicMessage: "We are investigating reports of enrichments failing to start.",
 				affectionStatus: "investigating",
 				title: "Enrichments failing to start",
 				services: [{ id: "svc_enrich", impact: "partial" }],
@@ -2728,7 +2732,7 @@ function buildMicroTurnNoiseScenario(): LifecycleScenario {
 		mkSuggestionEvent(
 			{
 				action: "add_status_page_update",
-				message: "We identified a trigger and shared a workaround while we prepare a fix.",
+				publicMessage: "We identified a trigger and shared a workaround while we prepare a fix.",
 			},
 			13,
 			"sug_micro_2",

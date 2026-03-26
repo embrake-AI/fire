@@ -98,12 +98,13 @@ function buildPromptTools(context: AgentSuggestionContext): OpenAI.Responses.Fun
 		{
 			type: "function",
 			name: "add_status_page_update",
-			description: "Post a status page update.",
+			description:
+				"Post a public, customer-facing status page update. Write plain-language publicMessage and avoid internal tooling, vendor names, code details, or remediation mechanics.",
 			strict: true,
 			parameters: {
 				type: "object",
 				properties: {
-					message: { type: "string" },
+					publicMessage: { type: "string" },
 					affectionStatus: { type: ["string", "null"], enum: ["investigating", "mitigating", "resolved", null] },
 					title: { type: ["string", "null"] },
 					services: {
@@ -119,7 +120,7 @@ function buildPromptTools(context: AgentSuggestionContext): OpenAI.Responses.Fun
 						},
 					},
 				},
-				required: ["message", "affectionStatus", "title", "services"],
+				required: ["publicMessage", "affectionStatus", "title", "services"],
 				additionalProperties: false,
 			},
 		},
@@ -419,7 +420,7 @@ export class IncidentPromptWorkflow extends WorkflowEntrypoint<Env, AgentPromptP
 						break;
 					}
 					case "add_status_page_update": {
-						const messageText = typeof args.message === "string" ? args.message.trim() : "";
+						const messageText = typeof args.publicMessage === "string" ? args.publicMessage.trim() : "";
 						if (messageText) {
 							const affectionStatus = parsePromptAffectionStatus(args.affectionStatus);
 							const title = typeof args.title === "string" ? args.title.trim() : "";

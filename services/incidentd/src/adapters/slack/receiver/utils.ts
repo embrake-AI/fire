@@ -186,7 +186,7 @@ export async function openAgentSuggestionModal({ botToken, triggerId, suggestion
 				type: "plain_text_input",
 				action_id: "agent_message_input",
 				multiline: true,
-				initial_value: "message" in suggestion ? suggestion.message : "",
+				initial_value: suggestion.action === "update_status" ? suggestion.message : suggestion.action === "add_status_page_update" ? suggestion.publicMessage : "",
 			},
 		},
 	];

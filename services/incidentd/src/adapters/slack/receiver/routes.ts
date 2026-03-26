@@ -444,7 +444,7 @@ slackRoutes.post("/interaction", async (c) => {
 								id: suggestion.incidentId,
 								adapter: "slack",
 								update: {
-									message: suggestion.message,
+									message: suggestion.publicMessage,
 									createdBy: payload.user.id,
 									...(suggestion.affectionStatus ? { status: suggestion.affectionStatus } : {}),
 									...(suggestion.title ? { title: suggestion.title } : {}),

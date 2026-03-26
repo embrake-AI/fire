@@ -14,8 +14,8 @@ function formatSuggestionPayload(value: Record<string, unknown>) {
 	}
 	if (action === "add_status_page_update") {
 		const status = typeof value.affectionStatus === "string" ? value.affectionStatus : "update";
-		const message = typeof value.message === "string" ? truncate(value.message, 120) : "";
-		return `action=add_status_page_update status=${status}${message ? ` message="${message}"` : ""}`;
+		const publicMessage = typeof value.publicMessage === "string" ? truncate(value.publicMessage, 120) : "";
+		return `action=add_status_page_update status=${status}${publicMessage ? ` publicMessage="${publicMessage}"` : ""}`;
 	}
 	return `action=${action}`;
 }
@@ -140,7 +140,7 @@ export function buildToolCallItemsFromEvent(event: AgentEvent): ToolCallItems | 
 			case "add_status_page_update":
 				name = "add_status_page_update";
 				args = {
-					message: suggestion.message,
+					publicMessage: suggestion.publicMessage,
 					affectionStatus: suggestion.affectionStatus ?? null,
 					title: suggestion.title ?? null,
 					services: suggestion.services ?? null,

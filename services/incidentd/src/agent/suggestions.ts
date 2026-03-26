@@ -48,6 +48,11 @@ Severity guidance:
 
 Status-page guidance:
 - Suggest status-page updates only for confirmed external-user impact.
+- Status-page update text is public, customer-facing copy.
+- For add_status_page_update, write publicMessage in plain language a customer or support rep can understand.
+- Do NOT mention internal-only tooling, vendors, workflows, queue names, deploy IDs, database internals, code paths, incident mechanics, or low-level remediation steps unless users must take action because of them.
+- Prefer describing user-visible impact, current recovery state, and what users can expect next.
+- If the new fact is technical, translate it into externally understandable impact or recovery language instead of repeating the internal detail verbatim.
 - Compute effectiveHasAffection:
   - true if hasAffection=true, OR
   - true if you have already called add_status_page_update (pending intent).
@@ -60,15 +65,17 @@ Status-page guidance:
 - Stakeholder cadence: if hasAffection=true and lastUpdatedAt is >10 minutes ago, suggest a status-page update even if no new external facts have appeared (this overrides the new-information gate). Stakeholders expect regular communication during active incidents. Use affectionStatus=update with a brief reassurance or status recap.
 - Anti-spam: do not post near-duplicate public updates that add no new external value (except when the stakeholder cadence rule applies).
 
-Output constraints:
-- Keep suggestion messages concise (~200 chars max).
-- No hard cap on actions, but prefer fewer, high-confidence suggestions over many speculative ones.
-- If uncertain, suggest nothing.
+	Output constraints:
+	- Keep suggestion messages concise.
+	- For add_status_page_update, write natural customer-facing status-page copy, usually 1-3 short sentences.
+	- For update_status, keep the message brief and operational.
+	- No hard cap on actions, but prefer fewer, high-confidence suggestions over many speculative ones.
+	- If uncertain, suggest nothing.
 
-Allowed actions (use tools):
-1) update_status: move to mitigating or resolved. Must include a concise message. Updating to resolved terminates (closes) the incident.
-2) update_severity: change severity to low/medium/high.
-3) add_status_page_update: post a public update. Must include a message. If no status page incident exists yet, you MUST include status=investigating and include a title and services (choose from allowed services).`;
+	Allowed actions (use tools):
+	1) update_status: move to mitigating or resolved. Must include a concise message. Updating to resolved terminates (closes) the incident.
+	2) update_severity: change severity to low/medium/high.
+	3) add_status_page_update: post a public update. Must include publicMessage. If no status page incident exists yet, you MUST include status=investigating and include a title and services (choose from allowed services).`;
 
 export const VOLATILE_EVENT_KEYS = new Set(["created_at", "createdAt", "ts", "timestamp", "messageId", "promptTs", "promptThreadTs"]);
 const AFFECTION_STATUSES: AgentAffectionStatus[] = ["investigating", "mitigating", "resolved"];
@@ -226,7 +233,7 @@ export function buildSuggestionTools(context: AgentSuggestionContext): OpenAI.Re
 				type: "object",
 				properties: {
 					evidence: { type: "string", description: "The specific event(s) from the log that justify this suggestion." },
-					message: { type: "string" },
+					publicMessage: { type: "string", description: "Customer-facing status page copy in plain language." },
 					affectionStatus: { type: ["string", "null"], enum: ["investigating", "mitigating", "resolved", "update", null] },
 					title: { type: ["string", "null"] },
 					services: {
@@ -242,7 +249,7 @@ export function buildSuggestionTools(context: AgentSuggestionContext): OpenAI.Re
 						},
 					},
 				},
-				required: ["evidence", "message", "affectionStatus", "title", "services"],
+				required: ["evidence", "publicMessage", "affectionStatus", "title", "services"],
 				additionalProperties: false,
 			},
 		},
@@ -505,8 +512,8 @@ export function normalizeSuggestions(suggestions: AgentSuggestion[], context: Ag
 				break;
 			}
 			case "add_status_page_update": {
-				const message = suggestion.message?.trim();
-				if (!message) {
+				const publicMessage = suggestion.publicMessage?.trim();
+				if (!publicMessage) {
 					continue;
 				}
 				const services = Array.isArray(suggestion.services) ? suggestion.services : undefined;
@@ -521,7 +528,7 @@ export function normalizeSuggestions(suggestions: AgentSuggestion[], context: Ag
 
 				normalized.push({
 					action: "add_status_page_update",
-					message: truncate(message, 240),
+					publicMessage: truncate(publicMessage, 240),
 					...(affectionStatus ? { affectionStatus } : {}),
 					...(title ? { title } : {}),
 					...(services?.length ? { services } : {}),
@@ -665,11 +672,11 @@ export function parseResponseToolCalls(toolCalls: OpenAI.Responses.ResponseFunct
 				break;
 			}
 			case "add_status_page_update": {
-				if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.message === "string") {
+				if (typeof args.evidence === "string" && args.evidence.trim() && typeof args.publicMessage === "string") {
 					const affectionStatus = parseAffectionStatus(args.affectionStatus);
 					suggestions.push({
 						action: "add_status_page_update",
-						message: args.message,
+						publicMessage: args.publicMessage,
 						...(affectionStatus ? { affectionStatus } : {}),
 						...(typeof args.title === "string" ? { title: args.title } : {}),
 						...(Array.isArray(args.services) ? { services: args.services as { id: string; impact: "partial" | "major" }[] } : {}),

@@ -70,7 +70,7 @@ export type AgentSuggestion =
 	  }
 	| {
 			action: "add_status_page_update";
-			message: string;
+			publicMessage: string;
 			affectionStatus?: AgentAffectionStatus;
 			title?: string;
 			services?: { id: string; impact: "partial" | "major" }[];

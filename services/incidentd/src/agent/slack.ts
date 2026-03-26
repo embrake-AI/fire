@@ -11,7 +11,13 @@ export type AgentSuggestionPayload = AgentSuggestion & {
 	messageBlocks?: KnownBlock[];
 };
 
+// Slack button element `value` is capped at 2000 characters.
 const SLACK_BUTTON_VALUE_MAX = 2000;
+// Soft limits for text we place inside Slack suggestion payloads.
+const SLACK_SUGGESTION_MESSAGE_SOFT_MAX = 800;
+const SLACK_SUGGESTION_FALLBACK_MESSAGE_MAX = 600;
+const SLACK_SUGGESTION_TITLE_SOFT_MAX = 120;
+const SLACK_SUGGESTION_MAX_SERVICES = 10;
 
 function formatSuggestionText(suggestion: AgentSuggestion, serviceMap: Record<string, string>): string {
 	switch (suggestion.action) {
@@ -29,7 +35,7 @@ function formatSuggestionText(suggestion: AgentSuggestion, serviceMap: Record<st
 						})
 						.join(", ")}.`
 				: "";
-			return `Post status page update${statusText}: ${suggestion.message}.${servicesText}`;
+			return `Post status page update${statusText}: ${suggestion.publicMessage}.${servicesText}`;
 		}
 	}
 }
@@ -44,15 +50,15 @@ function normalizePayloadForSlack(payload: AgentSuggestionPayload): AgentSuggest
 	if (payload.action === "update_status") {
 		return {
 			...payload,
-			message: trimText(payload.message, 200),
+			message: trimText(payload.message, SLACK_SUGGESTION_MESSAGE_SOFT_MAX),
 		};
 	}
 	if (payload.action === "add_status_page_update") {
 		return {
 			...payload,
-			message: trimText(payload.message, 200),
-			...(payload.title ? { title: trimText(payload.title, 120) } : {}),
-			...(payload.services?.length ? { services: payload.services.slice(0, 10) } : {}),
+			publicMessage: trimText(payload.publicMessage, SLACK_SUGGESTION_MESSAGE_SOFT_MAX),
+			...(payload.title ? { title: trimText(payload.title, SLACK_SUGGESTION_TITLE_SOFT_MAX) } : {}),
+			...(payload.services?.length ? { services: payload.services.slice(0, SLACK_SUGGESTION_MAX_SERVICES) } : {}),
 		};
 	}
 	return payload;
@@ -65,9 +71,18 @@ function encodePayload(payload: AgentSuggestionPayload): string | null {
 		return encoded;
 	}
 
-	if ("message" in normalized) {
-		const message = trimText(normalized.message, 120);
+	if (normalized.action === "update_status") {
+		const message = trimText(normalized.message, SLACK_SUGGESTION_FALLBACK_MESSAGE_MAX);
 		normalized = { ...normalized, message };
+		encoded = JSON.stringify(normalized);
+		if (encoded.length <= SLACK_BUTTON_VALUE_MAX) {
+			return encoded;
+		}
+	}
+
+	if (normalized.action === "add_status_page_update") {
+		const publicMessage = trimText(normalized.publicMessage, SLACK_SUGGESTION_FALLBACK_MESSAGE_MAX);
+		normalized = { ...normalized, publicMessage };
 		encoded = JSON.stringify(normalized);
 		if (encoded.length <= SLACK_BUTTON_VALUE_MAX) {
 			return encoded;
@@ -125,7 +140,7 @@ export function buildAgentSuggestionMessages({
 				],
 			};
 
-			if ("message" in suggestion) {
+			if (suggestion.action === "update_status" || suggestion.action === "add_status_page_update") {
 				actions.elements.push({
 					type: "button",
 					action_id: "agent_edit",
