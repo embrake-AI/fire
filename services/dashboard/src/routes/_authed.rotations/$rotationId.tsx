@@ -6,6 +6,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, GripVertic
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, Suspense } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { EntityPicker } from "~/components/EntityPicker";
+import { TimeZonePicker } from "~/components/TimeZonePicker";
 import { UserAvatar } from "~/components/UserAvatar";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -19,6 +20,14 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
 import { getSlackSelectableChannelsDemo } from "~/lib/demo/store";
+import {
+	formatRotationDateTimeInput,
+	getNextRotationShiftStart,
+	getRotationShiftIndexAt,
+	getRotationShiftStartAtIndex,
+	parseRotationDateTimeInput,
+	parseRotationIntervalToMs,
+} from "~/lib/rotations/rotation-timezone";
 import { getRotationSelectableSlackChannels, type getRotations } from "~/lib/rotations/rotations";
 import {
 	toAddAssigneeInput,
@@ -37,6 +46,7 @@ import {
 	useUpdateRotationShiftLength,
 	useUpdateRotationSlackChannel,
 	useUpdateRotationTeam,
+	useUpdateRotationTimeZone,
 } from "~/lib/rotations/rotations.hooks";
 import type { SlackSelectableChannel } from "~/lib/slack";
 import { useTeams } from "~/lib/teams/teams.hooks";
@@ -96,6 +106,7 @@ function RotationHeader(props: { rotation: Rotation }) {
 	const updateAnchorMutation = useUpdateRotationAnchor();
 	const updateTeamMutation = useUpdateRotationTeam();
 	const updateSlackChannelMutation = useUpdateRotationSlackChannel();
+	const updateTimeZoneMutation = useUpdateRotationTimeZone();
 	const getSlackBotChannelsFn = useServerFn(getRotationSelectableSlackChannels);
 	const slackChannelsQuery = useQuery(() => ({
 		queryKey: ["rotation-slack-selectable-channels"],
@@ -154,15 +165,15 @@ function RotationHeader(props: { rotation: Rotation }) {
 
 	createEffect(() => {
 		if (props.rotation.shiftStart) {
-			setAnchorInput(formatDateTimeLocal(props.rotation.shiftStart));
+			setAnchorInput(formatRotationDateTimeInput(new Date(props.rotation.shiftStart), props.rotation.timezone));
 		}
 	});
 
 	const formattedNextShiftStart = createMemo(() => {
 		if (!props.rotation.shiftStart) return "Not set";
-		const shiftMs = parseShiftLengthMs(props.rotation.shiftLength);
+		const shiftMs = parseRotationIntervalToMs(props.rotation.shiftLength);
 		if (!shiftMs) return "Not set";
-		const nextShiftStart = getNextShiftStartAt(new Date(props.rotation.shiftStart), shiftMs);
+		const nextShiftStart = getNextRotationShiftStart(new Date(props.rotation.shiftStart), shiftMs, props.rotation.timezone);
 		if (!nextShiftStart) return "Not set";
 		return nextShiftStart.toLocaleDateString(undefined, {
 			weekday: "short",
@@ -170,6 +181,7 @@ function RotationHeader(props: { rotation: Rotation }) {
 			day: "numeric",
 			hour: "numeric",
 			minute: "2-digit",
+			timeZone: props.rotation.timezone,
 		});
 	});
 
@@ -203,7 +215,7 @@ function RotationHeader(props: { rotation: Rotation }) {
 	};
 
 	const handleAnchorSave = () => {
-		const parsed = parseDateTimeLocal(anchorInput());
+		const parsed = parseRotationDateTimeInput(anchorInput(), props.rotation.timezone);
 		if (!parsed) return;
 		updateAnchorMutation.mutate({ id: props.rotation.id, anchorAt: parsed });
 		setIsEditingAnchor(false);
@@ -211,9 +223,14 @@ function RotationHeader(props: { rotation: Rotation }) {
 
 	const handleAnchorCancel = () => {
 		if (props.rotation.shiftStart) {
-			setAnchorInput(formatDateTimeLocal(props.rotation.shiftStart));
+			setAnchorInput(formatRotationDateTimeInput(new Date(props.rotation.shiftStart), props.rotation.timezone));
 		}
 		setIsEditingAnchor(false);
+	};
+
+	const handleTimeZoneChange = (value: string) => {
+		if (!value || value === props.rotation.timezone) return;
+		updateTimeZoneMutation.mutate({ id: props.rotation.id, timeZone: value });
 	};
 
 	return (
@@ -355,6 +372,7 @@ function RotationHeader(props: { rotation: Rotation }) {
 						isSaving={updateSlackChannelMutation.isPending}
 						onChange={handleSlackChannelChange}
 					/>
+					<TimeZonePicker value={props.rotation.timezone} disabled={updateTimeZoneMutation.isPending} isSaving={updateTimeZoneMutation.isPending} onChange={handleTimeZoneChange} />
 				</div>
 			</div>
 		</div>
@@ -717,7 +735,7 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 
 	const baseSegments = createMemo(() => {
 		if (!props.rotation.assignees.length) return [];
-		const shiftMs = parseShiftLengthMs(props.rotation.shiftLength);
+		const shiftMs = parseRotationIntervalToMs(props.rotation.shiftLength);
 		if (!shiftMs) return [];
 
 		const shiftStart = props.rotation.shiftStart ? new Date(props.rotation.shiftStart) : new Date();
@@ -725,6 +743,7 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 			assignees: props.rotation.assignees,
 			shiftStart,
 			shiftMs,
+			timeZone: props.rotation.timezone,
 			viewStart: scheduleStart(),
 			viewEnd: scheduleEnd(),
 		});
@@ -1492,36 +1511,18 @@ type TimeRange = { start: Date; end: Date };
 type BaseSegment = TimeRange & { assigneeId?: string };
 type RotationOverrideSegment = TimeRange & { id: string; assigneeId: string; createdAt: Date };
 
-function parseShiftLengthMs(interval: string) {
-	const match = interval.match(/(\d+)\s*(day|week)s?/);
-	if (!match) return null;
-	const value = Number.parseInt(match[1], 10);
-	const unit = match[2];
-	if (unit === "day") return value * DAY_MS;
-	if (unit === "week") return value * 7 * DAY_MS;
-	return null;
-}
-
-function getNextShiftStartAt(anchor: Date, shiftMs: number, now = new Date()) {
-	if (!Number.isFinite(shiftMs) || shiftMs <= 0) return null;
-	const anchorTime = anchor.getTime();
-	const nowTime = now.getTime();
-	if (!Number.isFinite(anchorTime) || !Number.isFinite(nowTime)) return null;
-	const intervalsUntilNextBoundary = Math.floor((nowTime - anchorTime) / shiftMs) + 1;
-	return new Date(anchorTime + intervalsUntilNextBoundary * shiftMs);
-}
-
-function buildBaseSegments(input: { assignees: Rotation["assignees"]; shiftStart: Date; shiftMs: number; viewStart: Date; viewEnd: Date }): BaseSegment[] {
-	const { assignees, shiftStart, shiftMs, viewStart, viewEnd } = input;
+function buildBaseSegments(input: { assignees: Rotation["assignees"]; shiftStart: Date; shiftMs: number; timeZone: string; viewStart: Date; viewEnd: Date }): BaseSegment[] {
+	const { assignees, shiftStart, shiftMs, timeZone, viewStart, viewEnd } = input;
 	if (assignees.length === 0) return [];
 
 	const segments: BaseSegment[] = [];
-	const startOffset = Math.floor((viewStart.getTime() - shiftStart.getTime()) / shiftMs);
+	const startOffset = getRotationShiftIndexAt(shiftStart, shiftMs, timeZone, viewStart) ?? 0;
 	let index = startOffset;
 
 	while (true) {
-		const segmentStart = new Date(shiftStart.getTime() + index * shiftMs);
-		const segmentEnd = new Date(segmentStart.getTime() + shiftMs);
+		const segmentStart = getRotationShiftStartAtIndex(shiftStart, shiftMs, timeZone, index);
+		const segmentEnd = getRotationShiftStartAtIndex(shiftStart, shiftMs, timeZone, index + 1);
+		if (!segmentStart || !segmentEnd) break;
 
 		if (segmentEnd <= viewStart) {
 			index += 1;

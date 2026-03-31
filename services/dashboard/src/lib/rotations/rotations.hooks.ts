@@ -21,6 +21,7 @@ import {
 	updateRotationShiftLengthDemo,
 	updateRotationSlackChannelDemo,
 	updateRotationTeamDemo,
+	updateRotationTimeZoneDemo,
 } from "../demo/store";
 import type { getUsers } from "../users/users";
 import {
@@ -41,6 +42,7 @@ import {
 	updateRotationShiftLength,
 	updateRotationSlackChannel,
 	updateRotationTeam,
+	updateRotationTimeZone,
 } from "./rotations";
 
 type GetRotationsResponse = Awaited<ReturnType<typeof getRotations>>;
@@ -91,7 +93,7 @@ export function useCreateRotation(options?: { onMutate?: (tempId: string) => voi
 	const createRotationFn = useServerFn(createRotation);
 
 	return useMutation(() => ({
-		mutationFn: (data: { name: string; shiftLength: ShiftLength; anchorAt?: Date; teamId?: string }) =>
+		mutationFn: (data: { name: string; shiftLength: ShiftLength; anchorAt?: Date; teamId?: string; timeZone?: string }) =>
 			runDemoAware({
 				demo: () => createRotationDemo(data),
 				remote: () => createRotationFn({ data }),
@@ -110,6 +112,7 @@ export function useCreateRotation(options?: { onMutate?: (tempId: string) => voi
 				slackChannelId: null,
 				shiftStart: new Date(),
 				shiftLength: newData.shiftLength,
+				timezone: newData.timeZone ?? "UTC",
 				assignees: [],
 				createdAt: new Date(),
 				isInUse: false,
@@ -307,6 +310,41 @@ export function useUpdateRotationShiftLength(options?: { onSuccess?: () => void;
 			const previousRotations = queryClient.getQueryData<GetRotationsResponse>(["rotations"]);
 
 			queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) => old?.map((r) => (r.id === id ? { ...r, shiftLength } : r)));
+
+			return { previousRotations };
+		},
+
+		onSuccess: () => {
+			options?.onSuccess?.();
+			queryClient.invalidateQueries({ queryKey: ["rotations"] });
+		},
+
+		onError: (_err, _variables, context) => {
+			if (context?.previousRotations) {
+				queryClient.setQueryData(["rotations"], context.previousRotations);
+			}
+			options?.onError?.();
+		},
+	}));
+}
+
+export function useUpdateRotationTimeZone(options?: { onSuccess?: () => void; onError?: () => void }) {
+	const queryClient = useQueryClient();
+	const updateRotationTimeZoneFn = useServerFn(updateRotationTimeZone);
+
+	return useMutation(() => ({
+		mutationFn: (data: { id: string; timeZone: string }) =>
+			runDemoAware({
+				demo: () => updateRotationTimeZoneDemo(data),
+				remote: () => updateRotationTimeZoneFn({ data }),
+			}),
+
+		onMutate: async ({ id, timeZone }) => {
+			await queryClient.cancelQueries({ queryKey: ["rotations"] });
+
+			const previousRotations = queryClient.getQueryData<GetRotationsResponse>(["rotations"]);
+
+			queryClient.setQueryData<GetRotationsResponse>(["rotations"], (old) => old?.map((r) => (r.id === id ? { ...r, timezone: timeZone } : r)));
 
 			return { previousRotations };
 		},

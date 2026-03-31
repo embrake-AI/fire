@@ -35,7 +35,7 @@ export function getCurrentAssigneeSQL(rotationId: string): SQL<{
 
 	ctes.push(sql`
 r AS (
-  SELECT id, anchor_at, shift_length
+  SELECT id, anchor_at, shift_length, timezone
   FROM ${rotation}
   WHERE id = ${rotationId}
 )
@@ -54,7 +54,8 @@ calc AS (
   SELECT
     r.*,
     member_count.n,
-    date_bin(r.shift_length, ${atTs}::timestamptz, r.anchor_at) AS shift_start
+    r.anchor_at AT TIME ZONE r.timezone AS anchor_local,
+    date_bin(r.shift_length, ${atTs}::timestamptz AT TIME ZONE r.timezone, r.anchor_at AT TIME ZONE r.timezone) AS shift_start_local
   FROM r, member_count
 )
 `);
@@ -66,7 +67,7 @@ idx AS (
     CASE
       WHEN n = 0 THEN NULL
       ELSE floor(
-        extract(epoch from (shift_start - anchor_at)) /
+        extract(epoch from (shift_start_local - anchor_local)) /
         extract(epoch from shift_length)
       )::bigint
     END AS shift_index
@@ -107,8 +108,8 @@ override AS (
 )
 SELECT
   ${rotationId}::uuid AS rotation_id,
-  pos.shift_start AS shift_start,
-  pos.shift_start + pos.shift_length AS shift_end,
+  pos.shift_start_local AT TIME ZONE pos.timezone AS shift_start,
+  (pos.shift_start_local + pos.shift_length) AT TIME ZONE pos.timezone AS shift_end,
   base.base_assignee AS base_assignee,
   COALESCE(override.override_assignee, base.base_assignee) AS effective_assignee,
   (override.override_assignee IS NOT NULL) AS is_overridden,
@@ -145,19 +146,21 @@ calc AS (
   SELECT
     locked.*,
     member_count.n,
-    date_bin(locked.shift_length, ${atTs}::timestamptz, locked.anchor_at) AS old_shift_start,
-    date_bin(locked.shift_length, ${atTs}::timestamptz, ${newAnchorAt}::timestamptz) AS new_shift_start
+    locked.anchor_at AT TIME ZONE locked.timezone AS old_anchor_local,
+    ${newAnchorAt}::timestamptz AT TIME ZONE locked.timezone AS new_anchor_local,
+    date_bin(locked.shift_length, ${atTs}::timestamptz AT TIME ZONE locked.timezone, locked.anchor_at AT TIME ZONE locked.timezone) AS old_shift_start_local,
+    date_bin(locked.shift_length, ${atTs}::timestamptz AT TIME ZONE locked.timezone, ${newAnchorAt}::timestamptz AT TIME ZONE locked.timezone) AS new_shift_start_local
   FROM locked, member_count
 ),
 idx AS (
   SELECT
     calc.*,
     CASE WHEN n = 0 THEN NULL ELSE floor(
-      extract(epoch from (old_shift_start - anchor_at)) /
+      extract(epoch from (old_shift_start_local - old_anchor_local)) /
       extract(epoch from shift_length)
     )::bigint END AS k_old,
     CASE WHEN n = 0 THEN NULL ELSE floor(
-      extract(epoch from (new_shift_start - ${newAnchorAt}::timestamptz)) /
+      extract(epoch from (new_shift_start_local - new_anchor_local)) /
       extract(epoch from shift_length)
     )::bigint END AS k_new
   FROM calc
@@ -220,19 +223,20 @@ calc AS (
   SELECT
     locked.*,
     member_count.n,
-    date_bin(locked.shift_length, ${atTs}::timestamptz, locked.anchor_at) AS old_shift_start,
-    date_bin(${newShiftLength}::interval, ${atTs}::timestamptz, locked.anchor_at) AS new_shift_start
+    locked.anchor_at AT TIME ZONE locked.timezone AS anchor_local,
+    date_bin(locked.shift_length, ${atTs}::timestamptz AT TIME ZONE locked.timezone, locked.anchor_at AT TIME ZONE locked.timezone) AS old_shift_start_local,
+    date_bin(${newShiftLength}::interval, ${atTs}::timestamptz AT TIME ZONE locked.timezone, locked.anchor_at AT TIME ZONE locked.timezone) AS new_shift_start_local
   FROM locked, member_count
 ),
 idx AS (
   SELECT
     calc.*,
     CASE WHEN n = 0 THEN NULL ELSE floor(
-      extract(epoch from (old_shift_start - anchor_at)) /
+      extract(epoch from (old_shift_start_local - anchor_local)) /
       extract(epoch from shift_length)
     )::bigint END AS k_old,
     CASE WHEN n = 0 THEN NULL ELSE floor(
-      extract(epoch from (new_shift_start - anchor_at)) /
+      extract(epoch from (new_shift_start_local - anchor_local)) /
       extract(epoch from ${newShiftLength}::interval)
     )::bigint END AS k_new
   FROM calc
@@ -275,7 +279,7 @@ SELECT * FROM updated;
 export function getAddAssigneeSQL(rotationId: string, assigneeId: string): SQL<void> {
 	return sql`
 WITH locked AS (
-  SELECT id, anchor_at, shift_length
+  SELECT id, anchor_at, shift_length, timezone
   FROM ${rotation}
   WHERE id = ${rotationId}
   FOR UPDATE
@@ -302,7 +306,8 @@ calc AS (
     member_count.n_old,
     CASE WHEN existing_check.already_exists IS NULL THEN 1 ELSE 0 END AS will_insert,
     member_count.n_old + CASE WHEN existing_check.already_exists IS NULL THEN 1 ELSE 0 END AS n_new,
-    date_bin(locked.shift_length, now(), locked.anchor_at) AS shift_start
+    locked.anchor_at AT TIME ZONE locked.timezone AS anchor_local,
+    date_bin(locked.shift_length, now() AT TIME ZONE locked.timezone, locked.anchor_at AT TIME ZONE locked.timezone) AS shift_start_local
   FROM locked, member_count
   LEFT JOIN existing_check ON true
 ),
@@ -310,7 +315,7 @@ idx AS (
   SELECT
     calc.*,
     floor(
-      extract(epoch from (shift_start - anchor_at)) /
+      extract(epoch from (shift_start_local - anchor_local)) /
       extract(epoch from shift_length)
     )::bigint AS shift_index
   FROM calc
@@ -389,6 +394,7 @@ stats AS (
   SELECT
     r.anchor_at,
     r.shift_length,
+    r.timezone,
     (SELECT count(*)::int FROM target) AS n
   FROM ${rotation} r
   WHERE r.id = ${rotationId}
@@ -396,7 +402,8 @@ stats AS (
 calc AS (
   SELECT
     stats.*,
-    date_bin(stats.shift_length, now(), stats.anchor_at) AS shift_start
+    stats.anchor_at AT TIME ZONE stats.timezone AS anchor_local,
+    date_bin(stats.shift_length, now() AT TIME ZONE stats.timezone, stats.anchor_at AT TIME ZONE stats.timezone) AS shift_start_local
   FROM stats
 ),
 idx AS (
@@ -405,7 +412,7 @@ idx AS (
     CASE
       WHEN n = 0 THEN NULL
       ELSE floor(
-        extract(epoch from (shift_start - anchor_at)) /
+        extract(epoch from (shift_start_local - anchor_local)) /
         extract(epoch from shift_length)
       )::bigint
     END AS shift_index
@@ -498,7 +505,7 @@ export function getRemoveAssigneeSQL(rotationId: string, assigneeId: string, sho
 	const atTs = new Date();
 	return sql`
 WITH locked AS (
-  SELECT id, anchor_at, shift_length
+  SELECT id, anchor_at, shift_length, timezone
   FROM ${rotation}
   WHERE id = ${rotationId}
   FOR UPDATE
@@ -525,7 +532,8 @@ calc AS (
     member_count.n_old,
     member_count.n_old - CASE WHEN target.id IS NOT NULL THEN 1 ELSE 0 END AS n_new,
     target.position AS deleted_pos,
-    date_bin(locked.shift_length, ${atTs}::timestamptz, locked.anchor_at) AS shift_start
+    locked.anchor_at AT TIME ZONE locked.timezone AS anchor_local,
+    date_bin(locked.shift_length, ${atTs}::timestamptz AT TIME ZONE locked.timezone, locked.anchor_at AT TIME ZONE locked.timezone) AS shift_start_local
   FROM locked, member_count
   LEFT JOIN target ON true
 ),
@@ -533,7 +541,7 @@ idx AS (
   SELECT
     calc.*,
     floor(
-      extract(epoch from (shift_start - anchor_at)) /
+      extract(epoch from (shift_start_local - anchor_local)) /
       extract(epoch from shift_length)
     )::bigint AS shift_index
   FROM calc
@@ -613,7 +621,8 @@ WITH locked AS (
     id,
     anchor_at,
     shift_length,
-    date_bin(shift_length, now(), anchor_at) AS shift_start
+    timezone,
+    date_bin(shift_length, now() AT TIME ZONE timezone, anchor_at AT TIME ZONE timezone) AS shift_start_local
   FROM ${rotation}
   WHERE id = ${rotationId}
   FOR UPDATE
@@ -622,8 +631,8 @@ INSERT INTO ${rotationOverride} (rotation_id, assignee_id, start_at, end_at)
 SELECT
   locked.id,
   ${assigneeId}::text,
-  locked.shift_start,
-  locked.shift_start + locked.shift_length
+  locked.shift_start_local AT TIME ZONE locked.timezone,
+  (locked.shift_start_local + locked.shift_length) AT TIME ZONE locked.timezone
 FROM locked;
 `;
 }

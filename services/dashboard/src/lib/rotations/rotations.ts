@@ -5,6 +5,7 @@ import { client, entryPoint, integration, rotation, rotationOverride, rotationWi
 import { createServerFn } from "@tanstack/solid-start";
 import { and, desc, eq, exists, gt, inArray, lt, lte, type SQL, sql } from "drizzle-orm";
 import { resumeHook, start } from "workflow/api";
+import { getDefaultRotationAnchor } from "~/lib/rotations/rotation-timezone";
 import { getRotationScheduleWakeToken, type RotationScheduleWakeAction, rotationScheduleWorkflow } from "~/workflows/rotation/schedule";
 import { authMiddleware } from "../auth/auth-middleware";
 import { isWorkspaceCatalogWriter, requirePermission } from "../auth/authorization";
@@ -31,6 +32,19 @@ async function notifyRotationScheduleWorkflow(rotationId: string, signal: { dele
 			signal,
 			error,
 		});
+	}
+}
+
+function normalizeRotationTimeZone(timeZone: string | null | undefined): string {
+	const candidate = timeZone?.trim();
+	if (!candidate) {
+		return "UTC";
+	}
+
+	try {
+		return new Intl.DateTimeFormat("en-US", { timeZone: candidate }).resolvedOptions().timeZone;
+	} catch {
+		throw createUserFacingError("The selected time zone isn't valid.");
 	}
 }
 
@@ -78,6 +92,7 @@ export const getRotations = createServerFn({
 				slackChannelId: rotationWithAssignee.slackChannelId,
 				shiftStart: rotationWithAssignee.shiftStart,
 				shiftLength: rotationWithAssignee.shiftLength,
+				timezone: rotationWithAssignee.timezone,
 				assignees: rotationWithAssignee.assignees,
 				effectiveAssignee: rotationWithAssignee.effectiveAssignee,
 				baseAssignee: rotationWithAssignee.baseAssignee,
@@ -136,6 +151,7 @@ export const getRotations = createServerFn({
 				slackChannelId: r.slackChannelId,
 				shiftStart: r.shiftStart,
 				shiftLength: r.shiftLength,
+				timezone: r.timezone,
 				assignees: reorderedAssignees,
 				createdAt: r.createdAt,
 				isInUse: r.isInUse,
@@ -171,21 +187,17 @@ type ShiftLength = (typeof SHIFT_LENGTH_OPTIONS)[number]["value"];
 
 export const createRotation = createServerFn({ method: "POST" })
 	.middleware([authMiddleware])
-	.inputValidator((data: { name: string; shiftLength: ShiftLength; anchorAt?: Date; teamId?: string }) => data)
+	.inputValidator((data: { name: string; shiftLength: ShiftLength; anchorAt?: Date; teamId?: string; timeZone?: string }) => data)
 	.handler(async ({ data, context }) => {
 		if (!isWorkspaceCatalogWriter(context.role)) {
 			await assertTeamAdminOrWorkspaceCatalogWriter(context, data.teamId);
 		}
 
+		const timeZone = normalizeRotationTimeZone(data.timeZone);
+
 		let anchorAt = data.anchorAt;
 		if (!anchorAt) {
-			if (data.shiftLength === "1 day") {
-				anchorAt = new Date(new Date().setHours(0, 0, 0, 0));
-			} else if (data.shiftLength === "1 week" || data.shiftLength === "2 weeks") {
-				anchorAt = new Date(new Date(new Date().setDate(new Date().getDate() - new Date().getDay())).setHours(0, 0, 0, 0));
-			} else {
-				throw new Error("Invalid shift length");
-			}
+			anchorAt = getDefaultRotationAnchor(data.shiftLength, timeZone);
 		}
 
 		const [newRotation] = await db
@@ -195,6 +207,7 @@ export const createRotation = createServerFn({ method: "POST" })
 				name: data.name,
 				shiftLength: data.shiftLength,
 				anchorAt,
+				timezone: timeZone,
 				teamId: data.teamId,
 			})
 			.returning();
@@ -211,6 +224,7 @@ export const createRotation = createServerFn({ method: "POST" })
 			name: newRotation.name,
 			anchorAt: newRotation.anchorAt,
 			shiftLength: newRotation.shiftLength,
+			timezone: newRotation.timezone,
 		};
 	});
 
@@ -402,6 +416,29 @@ export const updateRotationShiftLength = createServerFn({ method: "POST" })
 		await notifyRotationScheduleWorkflow(data.id, { action: "update_shift_length" });
 
 		return { id: result.id, shiftLength: result.shiftLength };
+	});
+
+export const updateRotationTimeZone = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
+	.inputValidator((data: { id: string; timeZone: string }) => data)
+	.handler(async ({ data, context }) => {
+		await assertRotationWriteAccess(context, data.id);
+
+		const timeZone = normalizeRotationTimeZone(data.timeZone);
+
+		const [updated] = await db
+			.update(rotation)
+			.set({ timezone: timeZone })
+			.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)))
+			.returning({ id: rotation.id, timezone: rotation.timezone });
+
+		if (!updated) {
+			throw new Error("Rotation not found");
+		}
+
+		await notifyRotationScheduleWorkflow(data.id, { action: "update_anchor" });
+
+		return updated;
 	});
 
 export const addRotationAssignee = createServerFn({ method: "POST" })

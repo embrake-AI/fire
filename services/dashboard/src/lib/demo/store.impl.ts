@@ -70,6 +70,7 @@ type DemoRotation = {
 	slackChannelId: string | null;
 	shiftStart: Date | null;
 	shiftLength: string;
+	timezone: string;
 	assigneeIds: string[];
 	createdAt: Date;
 	teamId: string | null;
@@ -666,6 +667,7 @@ function makeInitialState(): DemoState {
 				slackChannelId: "CDEMO001",
 				shiftStart: now,
 				shiftLength: "1 day",
+				timezone: "UTC",
 				assigneeIds: [demoUserId, "user-ana", "user-leo", "user-mia"],
 				createdAt: now,
 				teamId: teamWebId,
@@ -676,6 +678,7 @@ function makeInitialState(): DemoState {
 				slackChannelId: "CDEMO002",
 				shiftStart: now,
 				shiftLength: "1 day",
+				timezone: "UTC",
 				assigneeIds: ["user-noah", "user-priya", "user-jules", "user-emma"],
 				createdAt: now,
 				teamId: teamPlatformId,
@@ -686,6 +689,7 @@ function makeInitialState(): DemoState {
 				slackChannelId: "CDEMO003",
 				shiftStart: now,
 				shiftLength: "1 day",
+				timezone: "UTC",
 				assigneeIds: [demoUserId, "user-noah"],
 				createdAt: now,
 				teamId: null,
@@ -1298,6 +1302,7 @@ function toRotationListItem(state: DemoState, rotation: DemoRotation) {
 		slackChannelId: rotation.slackChannelId,
 		shiftStart: rotation.shiftStart,
 		shiftLength: rotation.shiftLength,
+		timezone: rotation.timezone ?? "UTC",
 		assignees,
 		createdAt: rotation.createdAt,
 		isInUse,
@@ -2257,7 +2262,7 @@ export async function getRotationsDemo() {
 	return sortByCreatedDesc(state.rotations).map((rotation) => toRotationListItem(state, rotation));
 }
 
-export async function createRotationDemo(data: { name: string; shiftLength: string; anchorAt?: Date; teamId?: string }) {
+export async function createRotationDemo(data: { name: string; shiftLength: string; anchorAt?: Date; teamId?: string; timeZone?: string }) {
 	return withState(async (state) => {
 		const created: DemoRotation = {
 			id: makeId("rotation"),
@@ -2265,6 +2270,7 @@ export async function createRotationDemo(data: { name: string; shiftLength: stri
 			slackChannelId: null,
 			shiftStart: data.anchorAt ?? null,
 			shiftLength: data.shiftLength,
+			timezone: data.timeZone ?? "UTC",
 			assigneeIds: [],
 			createdAt: new Date(),
 			teamId: data.teamId ?? null,
@@ -2275,6 +2281,7 @@ export async function createRotationDemo(data: { name: string; shiftLength: stri
 			name: created.name,
 			anchorAt: created.shiftStart,
 			shiftLength: created.shiftLength,
+			timezone: created.timezone,
 		};
 	});
 }
@@ -2331,6 +2338,17 @@ export async function updateRotationShiftLengthDemo(data: { id: string; shiftLen
 		}
 		rotation.shiftLength = data.shiftLength;
 		return { id: rotation.id, shiftLength: rotation.shiftLength };
+	});
+}
+
+export async function updateRotationTimeZoneDemo(data: { id: string; timeZone: string }) {
+	return withState(async (state) => {
+		const rotation = state.rotations.find((candidate) => candidate.id === data.id);
+		if (!rotation) {
+			throw new Error("Rotation not found");
+		}
+		rotation.timezone = data.timeZone;
+		return { id: rotation.id, timezone: rotation.timezone };
 	});
 }
 

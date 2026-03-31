@@ -1,3 +1,4 @@
+import { getCurrentAssigneeSQL } from "@fire/db/rotation-helpers";
 import type { SlackIntegrationData } from "@fire/db/schema";
 import { integration, user } from "@fire/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
@@ -29,9 +30,9 @@ type RotationState = {
 	clientId: string;
 	rotationName: string;
 	slackChannelId: string | null;
-	anchorAt: Date;
-	shiftLengthMs: number;
-	members: Array<{ assigneeId: string; position: number }>;
+	currentAssigneeId: string | null;
+	shiftEnd: Date | null;
+	assigneeCount: number;
 	overrides: Array<{ id: string; assigneeId: string; startAt: Date; endAt: Date; createdAt: Date }>;
 };
 
@@ -80,7 +81,7 @@ export async function rotationScheduleWorkflow(input: { rotationId: string }) {
 			break;
 		}
 
-		const effectiveAssignee = getEffectiveAssignee(state, now);
+		const effectiveAssignee = state.currentAssigneeId;
 		if (lastEffectiveAssignee !== undefined && lastEffectiveAssignee !== effectiveAssignee) {
 			await logRotationChange({
 				workflowRotationId: input.rotationId,
@@ -143,19 +144,8 @@ async function loadRotationState(rotationId: string, now: Date): Promise<Rotatio
 			clientId: true,
 			name: true,
 			slackChannelId: true,
-			anchorAt: true,
-			shiftLength: true,
 		},
 		with: {
-			members: {
-				columns: {
-					assigneeId: true,
-					position: true,
-				},
-				orderBy: {
-					position: "asc",
-				},
-			},
 			overrides: {
 				where: {
 					endAt: {
@@ -181,41 +171,30 @@ async function loadRotationState(rotationId: string, now: Date): Promise<Rotatio
 		return null;
 	}
 
+	const { rows } = await db.execute<{
+		shift_end: Date;
+		effective_assignee: string | null;
+		assignee_count: number;
+	}>(getCurrentAssigneeSQL(rotationId));
+	const assigneeRow = rows[0];
+
 	return {
 		rotationId: rotationRow.id,
 		clientId: rotationRow.clientId,
 		rotationName: rotationRow.name,
 		slackChannelId: rotationRow.slackChannelId,
-		anchorAt: rotationRow.anchorAt,
-		shiftLengthMs: parseIntervalToMs(rotationRow.shiftLength),
-		members: rotationRow.members,
+		currentAssigneeId: assigneeRow?.effective_assignee ?? null,
+		shiftEnd: assigneeRow?.shift_end ?? null,
+		assigneeCount: assigneeRow?.assignee_count ?? 0,
 		overrides: rotationRow.overrides,
 	};
-}
-
-function getEffectiveAssignee(state: RotationState, at: Date): string | null {
-	if (state.members.length === 0) {
-		return null;
-	}
-
-	const shiftIndex = Math.floor((at.getTime() - state.anchorAt.getTime()) / state.shiftLengthMs);
-	const basePosition = mod(shiftIndex, state.members.length);
-	const baseAssignee = state.members.find((member) => member.position === basePosition)?.assigneeId ?? null;
-
-	const activeOverride = state.overrides.find((override) => override.startAt <= at && override.endAt > at);
-	return activeOverride?.assigneeId ?? baseAssignee;
 }
 
 function getNextTransition(state: RotationState, now: Date): NextTransition | null {
 	const transitions: NextTransition[] = [];
 
-	if (state.members.length > 0) {
-		const elapsedShifts = Math.floor((now.getTime() - state.anchorAt.getTime()) / state.shiftLengthMs);
-		let nextShiftStart = state.anchorAt.getTime() + (elapsedShifts + 1) * state.shiftLengthMs;
-		while (nextShiftStart <= now.getTime()) {
-			nextShiftStart += state.shiftLengthMs;
-		}
-		transitions.push({ at: new Date(nextShiftStart), reason: "shift_change" });
+	if (state.assigneeCount > 0 && state.shiftEnd && state.shiftEnd > now) {
+		transitions.push({ at: state.shiftEnd, reason: "shift_change" });
 	}
 
 	for (const override of state.overrides) {
@@ -435,107 +414,4 @@ function getRotationUrl(rotationId: string): string | null {
 	} catch {
 		return null;
 	}
-}
-
-function parseIntervalToMs(interval: unknown): number {
-	if (typeof interval === "string") {
-		return parseIntervalStringToMs(interval);
-	}
-
-	if (interval && typeof interval === "object") {
-		return parseIntervalObjectToMs(interval as Record<string, unknown>);
-	}
-
-	throw new Error(`Unsupported interval format: ${String(interval)}`);
-}
-
-function parseIntervalStringToMs(raw: string): number {
-	const text = raw.trim().toLowerCase();
-	if (!text) {
-		throw new Error("Shift length interval is empty");
-	}
-
-	const parts = text.match(/-?\d+(?:\.\d+)?\s+[a-zA-Z]+/g);
-	if (!parts) {
-		throw new Error(`Invalid shift length interval: ${raw}`);
-	}
-
-	let totalMs = 0;
-	for (const part of parts) {
-		const [valueRaw, unitRaw] = part.trim().split(/\s+/, 2);
-		const value = Number(valueRaw);
-		if (!Number.isFinite(value)) {
-			throw new Error(`Invalid shift length value: ${part}`);
-		}
-		totalMs += value * unitToMs(unitRaw);
-	}
-
-	if (totalMs <= 0) {
-		throw new Error(`Shift length must be positive: ${raw}`);
-	}
-
-	return totalMs;
-}
-
-function parseIntervalObjectToMs(interval: Record<string, unknown>): number {
-	const units: Array<[key: string, unit: string]> = [
-		["weeks", "week"],
-		["days", "day"],
-		["hours", "hour"],
-		["minutes", "minute"],
-		["seconds", "second"],
-		["milliseconds", "millisecond"],
-	];
-
-	let totalMs = 0;
-	for (const [key, unit] of units) {
-		const value = asFiniteNumber(interval[key]);
-		if (value !== null) {
-			totalMs += value * unitToMs(unit);
-		}
-	}
-
-	if (totalMs <= 0) {
-		throw new Error(`Shift length interval object has no positive units: ${JSON.stringify(interval)}`);
-	}
-
-	return totalMs;
-}
-
-function asFiniteNumber(value: unknown): number | null {
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return value;
-	}
-
-	if (typeof value === "string" && value.trim() !== "") {
-		const parsed = Number(value);
-		if (Number.isFinite(parsed)) {
-			return parsed;
-		}
-	}
-
-	return null;
-}
-
-function unitToMs(unit: string): number {
-	switch (unit.replace(/s$/, "")) {
-		case "week":
-			return 7 * 24 * 60 * 60 * 1000;
-		case "day":
-			return 24 * 60 * 60 * 1000;
-		case "hour":
-			return 60 * 60 * 1000;
-		case "minute":
-			return 60 * 1000;
-		case "second":
-			return 1000;
-		case "millisecond":
-			return 1;
-		default:
-			throw new Error(`Unsupported shift length unit: ${unit}`);
-	}
-}
-
-function mod(value: number, base: number): number {
-	return ((value % base) + base) % base;
 }

@@ -4,11 +4,13 @@ import { LoaderCircle, Plus, X } from "lucide-solid";
 import { createSignal, For, Index, Show, Suspense } from "solid-js";
 import { RotationEmptyState } from "~/components/rotations/RotationCard";
 import { RotationListCard } from "~/components/rotations/RotationListCard";
+import { TimeZonePicker } from "~/components/TimeZonePicker";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
+import { resolveBrowserTimeZone } from "~/lib/rotations/rotation-timezone";
 import { useCreateRotation, useDeleteRotation, useRotations } from "~/lib/rotations/rotations.hooks";
 
 export const Route = createFileRoute("/_authed/teams/$teamId/rotations")({
@@ -42,8 +44,8 @@ function TeamRotations(props: { teamId: string }) {
 		deleteMutation.mutate(id);
 	};
 
-	const handleCreate = (name: string, shiftLength: ShiftLength) => {
-		createMutation.mutate({ name, shiftLength, teamId: props.teamId });
+	const handleCreate = (name: string, shiftLength: ShiftLength, timeZone: string) => {
+		createMutation.mutate({ name, shiftLength, teamId: props.teamId, timeZone });
 	};
 
 	return (
@@ -81,14 +83,15 @@ function TeamRotations(props: { teamId: string }) {
 	);
 }
 
-function CreateRotationForm(props: { onSubmit: (name: string, shiftLength: ShiftLength) => void; onCancel: () => void; isSubmitting: () => boolean }) {
+function CreateRotationForm(props: { onSubmit: (name: string, shiftLength: ShiftLength, timeZone: string) => void; onCancel: () => void; isSubmitting: () => boolean }) {
 	const [name, setName] = createSignal("");
 	const [shiftLength, setShiftLength] = createSignal<ShiftLength>("1 week");
+	const [timeZone, setTimeZone] = createSignal(resolveBrowserTimeZone());
 
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
 		if (name().trim()) {
-			props.onSubmit(name().trim(), shiftLength());
+			props.onSubmit(name().trim(), shiftLength(), timeZone());
 		}
 	};
 
@@ -118,6 +121,16 @@ function CreateRotationForm(props: { onSubmit: (name: string, shiftLength: Shift
 						</SelectTrigger>
 						<SelectContent />
 					</Select>
+				</div>
+				<div class="space-y-2">
+					<Label>Time Zone</Label>
+					<TimeZonePicker
+						value={timeZone()}
+						disabled={props.isSubmitting()}
+						isSaving={props.isSubmitting()}
+						onChange={setTimeZone}
+						triggerClass="w-full max-w-none px-3 text-sm font-normal"
+					/>
 				</div>
 				<div class="flex justify-end gap-2">
 					<Button type="button" variant="ghost" onClick={props.onCancel}>

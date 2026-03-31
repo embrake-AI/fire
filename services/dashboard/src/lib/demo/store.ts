@@ -248,6 +248,10 @@ export function updateRotationShiftLengthDemo(...args: Parameters<StoreModule["u
 	return callDemo("updateRotationShiftLengthDemo", ...args) as ReturnType<StoreModule["updateRotationShiftLengthDemo"]>;
 }
 
+export function updateRotationTimeZoneDemo(...args: Parameters<StoreModule["updateRotationTimeZoneDemo"]>): ReturnType<StoreModule["updateRotationTimeZoneDemo"]> {
+	return callDemo("updateRotationTimeZoneDemo", ...args) as ReturnType<StoreModule["updateRotationTimeZoneDemo"]>;
+}
+
 export function addRotationAssigneeDemo(...args: Parameters<StoreModule["addRotationAssigneeDemo"]>): ReturnType<StoreModule["addRotationAssigneeDemo"]> {
 	return callDemo("addRotationAssigneeDemo", ...args) as ReturnType<StoreModule["addRotationAssigneeDemo"]>;
 }

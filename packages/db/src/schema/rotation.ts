@@ -6,6 +6,7 @@ export const rotation = pgTable("rotation", {
 	id: uuid("id").primaryKey().defaultRandom(),
 	name: text("name").notNull(),
 	slackChannelId: text("slack_channel_id"),
+	timezone: text("timezone").notNull().default("UTC"),
 	clientId: text("client_id")
 		.notNull()
 		.references(() => client.id, { onDelete: "cascade" }),
