@@ -14,6 +14,7 @@ import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
 import { getIncidentByIdDemo, getIncidentsDemo } from "~/lib/demo/store";
 import { getIncidentById, getIncidents } from "~/lib/incidents/incidents";
+import { useIncidentSlackPermalink } from "~/lib/incidents/incidents.hooks";
 
 function IncidentSkeleton() {
 	return (
@@ -98,7 +99,14 @@ function IncidentDetail() {
 		refetchInterval: 5_000,
 	}));
 	const incident = () => incidentQuery.data;
-	const hasSlackContext = createMemo(() => !!incident()?.context?.thread && !!incident()?.context?.channel);
+	const slackContext = createMemo(() => {
+		const context = incident()?.context;
+		if (!context?.channel || !context.thread) {
+			return null;
+		}
+		return { channel: context.channel, thread: context.thread };
+	});
+	const slackPermalinkQuery = useIncidentSlackPermalink(() => params().incidentId, slackContext);
 	const [activeTab, setActiveTab] = createSignal<"updates" | "timeline">("timeline");
 
 	createEffect(() => {
@@ -141,7 +149,7 @@ function IncidentDetail() {
 					<Show when={incident()?.state}>
 						{(state) => (
 							<div class="space-y-6">
-								<IncidentHeader incident={state} />
+								<IncidentHeader incident={state} slackUrl={slackPermalinkQuery.data ?? null} />
 								<Tabs value={activeTab()} onChange={(value) => setActiveTab(value as "updates" | "timeline")}>
 									<TabsList class="h-9">
 										<TabsTrigger value="timeline" class="text-xs px-3 py-1 h-8 gap-2">
@@ -160,7 +168,7 @@ function IncidentDetail() {
 									<TabsContent value="timeline">
 										<Suspense fallback={<IncidentSkeleton />}>
 											<Show when={incident()?.events}>{(events) => <Timeline events={events()} />}</Show>
-											<Show when={incident()?.events}>{(_) => <SlackMessageInput incidentId={state().id} hasSlackContext={hasSlackContext()} />}</Show>
+											<Show when={incident()?.events}>{(_) => <SlackMessageInput incidentId={state().id} hasSlackContext={!!slackContext()} />}</Show>
 										</Suspense>
 									</TabsContent>
 								</Tabs>

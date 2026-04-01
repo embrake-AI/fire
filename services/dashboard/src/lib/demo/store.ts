@@ -348,6 +348,10 @@ export function getIncidentByIdDemo(...args: Parameters<StoreModule["getIncident
 	return callDemo("getIncidentByIdDemo", ...args) as ReturnType<StoreModule["getIncidentByIdDemo"]>;
 }
 
+export function getIncidentSlackPermalinkDemo(...args: Parameters<StoreModule["getIncidentSlackPermalinkDemo"]>): ReturnType<StoreModule["getIncidentSlackPermalinkDemo"]> {
+	return callDemo("getIncidentSlackPermalinkDemo", ...args) as ReturnType<StoreModule["getIncidentSlackPermalinkDemo"]>;
+}
+
 export function updateAssigneeDemo(...args: Parameters<StoreModule["updateAssigneeDemo"]>): ReturnType<StoreModule["updateAssigneeDemo"]> {
 	return callDemo("updateAssigneeDemo", ...args) as ReturnType<StoreModule["updateAssigneeDemo"]>;
 }

@@ -1,5 +1,6 @@
 import type { IS } from "@fire/common";
 import { useQueryClient } from "@tanstack/solid-query";
+import { ExternalLink } from "lucide-solid";
 import type { Accessor } from "solid-js";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { EntityPicker } from "~/components/EntityPicker";
@@ -16,7 +17,7 @@ import { usePossibleSlackUsers, useUserBySlackId } from "~/lib/users/users.hooks
 
 type UpdatableIncidentStatus = Exclude<IS["status"], "open">;
 
-export function IncidentHeader(props: { incident: Accessor<IS> }) {
+export function IncidentHeader(props: { incident: Accessor<IS>; slackUrl?: string | null }) {
 	const queryClient = useQueryClient();
 	const incident = () => props.incident();
 	const updateSeverityMutation = useUpdateIncidentSeverity(() => incident().id);
@@ -109,46 +110,54 @@ export function IncidentHeader(props: { incident: Accessor<IS> }) {
 			<div class="space-y-4">
 				<div class="flex items-start justify-between gap-4">
 					<h1 class="text-3xl font-bold tracking-tight">{incident().title}</h1>
-					<Show
-						when={availableTransitions().length > 0}
-						fallback={
-							<Badge round class={`${status().bg} ${status().color} border-transparent h-8 px-3 text-sm shrink-0`}>
-								<span class={`w-2 h-2 rounded-full mr-2 ${status().dot}`} />
-								{status().label}
-							</Badge>
-						}
-					>
-						<Popover>
-							<PopoverTrigger
-								as={Badge}
-								round
-								class={`${status().bg} ${status().color} border-transparent h-8 px-3 text-sm shrink-0 cursor-pointer hover:opacity-80 transition-opacity`}
-							>
-								<span class={`w-2 h-2 rounded-full mr-2 ${status().dot}`} />
-								{status().label}
-							</PopoverTrigger>
-							<PopoverContent class="w-48 p-2">
-								<div class="space-y-1">
-									<p class="text-xs text-muted-foreground px-2 py-1">Change status to:</p>
-									<For each={availableTransitions()}>
-										{(newStatus) => {
-											const config = getStatus(newStatus);
-											return (
-												<button
-													type="button"
-													class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors cursor-pointer text-left"
-													onClick={() => handleStatusClick(newStatus)}
-												>
-													<span class={`w-2 h-2 rounded-full ${config.dot}`} />
-													<span class="capitalize text-sm">{config.label}</span>
-												</button>
-											);
-										}}
-									</For>
-								</div>
-							</PopoverContent>
-						</Popover>
-					</Show>
+					<div class="flex items-center gap-2 shrink-0">
+						<Show when={props.slackUrl}>
+							<Button as="a" href={props.slackUrl!} target="_blank" rel="noopener noreferrer" variant="outline" size="sm" class="gap-2">
+								Open in Slack
+								<ExternalLink class="size-3.5" />
+							</Button>
+						</Show>
+						<Show
+							when={availableTransitions().length > 0}
+							fallback={
+								<Badge round class={`${status().bg} ${status().color} border-transparent h-8 px-3 text-sm shrink-0`}>
+									<span class={`w-2 h-2 rounded-full mr-2 ${status().dot}`} />
+									{status().label}
+								</Badge>
+							}
+						>
+							<Popover>
+								<PopoverTrigger
+									as={Badge}
+									round
+									class={`${status().bg} ${status().color} border-transparent h-8 px-3 text-sm shrink-0 cursor-pointer hover:opacity-80 transition-opacity`}
+								>
+									<span class={`w-2 h-2 rounded-full mr-2 ${status().dot}`} />
+									{status().label}
+								</PopoverTrigger>
+								<PopoverContent class="w-48 p-2">
+									<div class="space-y-1">
+										<p class="text-xs text-muted-foreground px-2 py-1">Change status to:</p>
+										<For each={availableTransitions()}>
+											{(newStatus) => {
+												const config = getStatus(newStatus);
+												return (
+													<button
+														type="button"
+														class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors cursor-pointer text-left"
+														onClick={() => handleStatusClick(newStatus)}
+													>
+														<span class={`w-2 h-2 rounded-full ${config.dot}`} />
+														<span class="capitalize text-sm">{config.label}</span>
+													</button>
+												);
+											}}
+										</For>
+									</div>
+								</PopoverContent>
+							</Popover>
+						</Show>
+					</div>
 				</div>
 				<div class="flex flex-wrap items-center gap-3">
 					<Select

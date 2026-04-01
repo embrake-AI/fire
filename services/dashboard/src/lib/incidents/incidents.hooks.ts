@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { useServerFn } from "@tanstack/solid-start";
 import type { Accessor } from "solid-js";
 import { runDemoAware } from "../demo/runtime";
-import { getIncidentsDemo, updateAssigneeDemo, updateSeverityDemo, updateStatusDemo } from "../demo/store";
-import { getIncidents, updateAssignee, updateSeverity, updateStatus } from "./incidents";
+import { getIncidentSlackPermalinkDemo, getIncidentsDemo, updateAssigneeDemo, updateSeverityDemo, updateStatusDemo } from "../demo/store";
+import { getIncidentSlackPermalink, getIncidents, updateAssignee, updateSeverity, updateStatus } from "./incidents";
 
 type UseIncidentsOptions = {
 	enabled?: Accessor<boolean>;
@@ -25,6 +25,21 @@ export function useIncidents(options?: UseIncidentsOptions) {
 		staleTime: 10_000,
 		enabled: options?.enabled?.() ?? true,
 		placeholderData: options?.placeholderData,
+	}));
+}
+
+export function useIncidentSlackPermalink(incidentId: Accessor<string>, slackContext: Accessor<{ channel: string; thread: string } | null>) {
+	const getIncidentSlackPermalinkFn = useServerFn(getIncidentSlackPermalink);
+
+	return useQuery(() => ({
+		queryKey: ["incident-slack-permalink", incidentId(), slackContext()?.channel, slackContext()?.thread],
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getIncidentSlackPermalinkDemo(),
+				remote: () => getIncidentSlackPermalinkFn({ data: slackContext()! }),
+			}),
+		enabled: !!slackContext(),
+		staleTime: Infinity,
 	}));
 }
 

@@ -2795,6 +2795,10 @@ export async function getIncidentByIdDemo(data: { id: string }) {
 	};
 }
 
+export async function getIncidentSlackPermalinkDemo() {
+	return null;
+}
+
 export async function updateAssigneeDemo(data: { id: string; slackId: string }) {
 	return withState(async (state) => {
 		const incident = state.incidents.find((item) => item.id === data.id);

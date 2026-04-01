@@ -61,6 +61,37 @@ export const getIncidentById = createServerFn({ method: "GET" })
 		};
 	});
 
+export const getIncidentSlackPermalink = createServerFn({ method: "GET" })
+	.inputValidator((data: { channel: string; thread: string }) => data)
+	.middleware([authMiddleware, requirePermission("incident.read")])
+	.handler(async ({ data, context }) => {
+		const [slackIntegration] = await db
+			.select({ data: integration.data })
+			.from(integration)
+			.where(and(eq(integration.clientId, context.clientId), eq(integration.platform, "slack")))
+			.limit(1);
+		const slackData = slackIntegration?.data as SlackIntegrationData | undefined;
+		if (!slackData?.botToken) {
+			return null;
+		}
+
+		const params = new URLSearchParams({
+			channel: data.channel,
+			message_ts: data.thread,
+		});
+		const response = await fetch(`https://slack.com/api/chat.getPermalink?${params.toString()}`, {
+			headers: {
+				Authorization: `Bearer ${slackData.botToken}`,
+			},
+		});
+		const payload = (await response.json().catch(() => ({ ok: false }))) as { ok?: boolean; permalink?: string; error?: string };
+		if (!response.ok || payload.ok === false || !payload.permalink) {
+			console.warn("Failed to fetch incident Slack permalink", { status: response.status, error: payload.error, clientId: context.clientId });
+			return null;
+		}
+		return payload.permalink;
+	});
+
 export const updateAssignee = createServerFn({ method: "POST" })
 	.inputValidator((data: { id: string; slackId: string }) => data)
 	.middleware([authMiddleware, requirePermission("incident.write")])
