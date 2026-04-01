@@ -1,12 +1,14 @@
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { ArrowLeft } from "lucide-solid";
+import { ArrowLeft, ExternalLink } from "lucide-solid";
 import { createEffect, createMemo, createSignal, Show, Suspense } from "solid-js";
+import { SlackIcon } from "~/components/icons/SlackIcon";
 import { IncidentAffectionSection } from "~/components/incidents/IncidentAffectionSection";
 import { IncidentHeader } from "~/components/incidents/IncidentHeader";
 import { SlackMessageInput } from "~/components/SlackMessageInput";
 import { Timeline } from "~/components/Timeline";
+import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "~/components/ui/tabs";
@@ -149,17 +151,35 @@ function IncidentDetail() {
 					<Show when={incident()?.state}>
 						{(state) => (
 							<div class="space-y-6">
-								<IncidentHeader incident={state} slackUrl={slackPermalinkQuery.data ?? null} />
+								<IncidentHeader incident={state} />
 								<Tabs value={activeTab()} onChange={(value) => setActiveTab(value as "updates" | "timeline")}>
-									<TabsList class="h-9">
-										<TabsTrigger value="timeline" class="text-xs px-3 py-1 h-8 gap-2">
-											Timeline
-										</TabsTrigger>
-										<TabsTrigger value="updates" class="text-xs px-3 py-1 h-8 gap-2">
-											Status page updates
-										</TabsTrigger>
-										<TabsIndicator />
-									</TabsList>
+									<div class="flex items-center justify-between gap-3">
+										<TabsList class="h-9">
+											<TabsTrigger value="timeline" class="text-xs px-3 py-1 h-8 gap-2">
+												Timeline
+											</TabsTrigger>
+											<TabsTrigger value="updates" class="text-xs px-3 py-1 h-8 gap-2">
+												Status page updates
+											</TabsTrigger>
+											<TabsIndicator />
+										</TabsList>
+										<Show when={slackPermalinkQuery.data}>
+											<Button
+												as="a"
+												href={slackPermalinkQuery.data!}
+												target="_blank"
+												rel="noopener noreferrer"
+												aria-label="Open in Slack"
+												title="Open in Slack"
+												variant="ghost"
+												size="sm"
+												class="h-8 shrink-0 px-2 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+											>
+												<SlackIcon class="size-4" />
+												<ExternalLink class="size-3.5" />
+											</Button>
+										</Show>
+									</div>
 									<TabsContent value="updates">
 										<Suspense fallback={<IncidentSkeleton />}>
 											<IncidentAffectionSection incidentId={state().id} incidentStatus={state().status} />
