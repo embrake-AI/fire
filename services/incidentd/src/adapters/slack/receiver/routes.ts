@@ -10,8 +10,10 @@ import {
 	buildThreadIncidentPrompt,
 	fetchSlackThreadMessages,
 	getIncidentIdFromMessageMetadata,
+	getSlackActorId,
 	getSlackIntegration,
 	handleStatusUpdate,
+	isSlackEventFromFire,
 	openAgentSuggestionModal,
 	postNoEntryPointsConfiguredMessage,
 	type SlackEventPayload,
@@ -36,17 +38,18 @@ slackRoutes.post("/events", async (c) => {
 			const isEnterpriseInstall = body.is_enterprise_install ?? false;
 
 			if (event.type === "app_mention") {
-				if (event.subtype === "bot_message") {
-					return c.text("OK");
-				}
+				const mentionEvent = event as typeof event & {
+					user?: string;
+					bot_id?: string;
+					app_id?: string;
+					bot_profile?: {
+						app_id?: string;
+					} | null;
+				};
 
 				const text = event.text;
-				const user = event.user!; // It's not a bot message, so user is required
 				const promptThread = event.thread_ts ?? null;
 				const teamId = body.team_id ?? event.team;
-
-				const channel = event.channel;
-				const prompt = text.replace(/<@[^>]+>\s*/g, "").trim();
 
 				if (!teamId) {
 					console.error("No team_id found in event payload");
@@ -65,6 +68,14 @@ slackRoutes.post("/events", async (c) => {
 					return c.text("OK");
 				}
 				const { clientId, data: integrationData, services } = slackIntegration;
+				if (isSlackEventFromFire(mentionEvent, integrationData)) {
+					return c.text("OK");
+				}
+				const user = getSlackActorId(mentionEvent);
+				const channel = event.channel;
+				if (!text || !user || !channel) {
+					return c.text("OK");
+				}
 				c.set("auth", { clientId });
 				const incidentIdForChannel = await getIncidentIdByIdentifiers({
 					incidents: c.env.incidents,
@@ -73,6 +84,7 @@ slackRoutes.post("/events", async (c) => {
 				});
 
 				const botToken = integrationData.botToken;
+				const prompt = text.replace(/<@[^>]+>\s*/g, "").trim();
 
 				const isThread = !!promptThread && promptThread !== event.ts;
 				if (incidentIdForChannel) {
@@ -211,6 +223,10 @@ slackRoutes.post("/events", async (c) => {
 				const message = event as {
 					user: string;
 					bot_id?: string;
+					app_id?: string;
+					bot_profile?: {
+						app_id?: string;
+					} | null;
 					ts: string;
 					text: string;
 					team: string;
@@ -220,7 +236,7 @@ slackRoutes.post("/events", async (c) => {
 				};
 
 				const text = message.text;
-				const user = message.user;
+				const user = getSlackActorId(message);
 				const thread = message.thread_ts;
 				const channel = event.channel;
 				const teamId = body.team_id ?? message.team;
@@ -241,8 +257,7 @@ slackRoutes.post("/events", async (c) => {
 					return c.text("OK");
 				}
 
-				// For now, we ignore all bot messages. We could filter by our specific bot
-				if (message.user === slackIntegration.data.botUserId || message.bot_id) {
+				if (isSlackEventFromFire(message, slackIntegration.data)) {
 					return c.text("OK");
 				}
 

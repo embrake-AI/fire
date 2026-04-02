@@ -12,6 +12,7 @@ export type SlackIntegrationData = {
 	teamName: string;
 	enterpriseId: string | null;
 	appId: string;
+	botId: string;
 	botUserId: string;
 	botToken: string;
 	botScopes: string[];
@@ -97,7 +98,7 @@ export const integration = pgTable(
 	(table) => [uniqueIndex("integration_client_platform_idx").on(table.clientId, table.platform)],
 );
 
-export type UserSlackIntegrationData = Omit<SlackIntegrationData, "botUserId" | "botToken" | "botScopes"> & {
+export type UserSlackIntegrationData = Omit<SlackIntegrationData, "botId" | "botUserId" | "botToken" | "botScopes"> & {
 	userId: string;
 	userToken: string;
 	userScopes: string[];

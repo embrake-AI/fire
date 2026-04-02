@@ -121,6 +121,16 @@ export type SlackThreadMessage = {
 	createdAtIso: string;
 };
 
+export type SlackActorEvent = {
+	user?: string;
+	bot_id?: string;
+	app_id?: string;
+	bot_profile?: {
+		app_id?: string;
+	} | null;
+	subtype?: string;
+};
+
 // ============================================================================
 // Handlers
 // ============================================================================
@@ -337,6 +347,41 @@ async function openStatusUpdateModal({
 // ============================================================================
 // Utilities
 // ============================================================================
+
+export function getSlackActorId(event: SlackActorEvent): string | null {
+	if (typeof event.user === "string" && event.user) {
+		return event.user;
+	}
+	if (typeof event.bot_id === "string" && event.bot_id) {
+		return event.bot_id;
+	}
+	if (typeof event.app_id === "string" && event.app_id) {
+		return `app:${event.app_id}`;
+	}
+	if (typeof event.bot_profile?.app_id === "string" && event.bot_profile.app_id) {
+		return `app:${event.bot_profile.app_id}`;
+	}
+	if (typeof event.subtype === "string" && event.subtype) {
+		return `system:${event.subtype}`;
+	}
+	return null;
+}
+
+export function isSlackEventFromFire(event: SlackActorEvent, integration: Pick<SlackIntegrationData, "appId" | "botUserId" | "botId">): boolean {
+	if (typeof event.user === "string" && event.user === integration.botUserId) {
+		return true;
+	}
+	if (typeof event.app_id === "string" && event.app_id === integration.appId) {
+		return true;
+	}
+	if (typeof event.bot_profile?.app_id === "string" && event.bot_profile.app_id === integration.appId) {
+		return true;
+	}
+	if (typeof event.bot_id === "string" && event.bot_id) {
+		return integration.botId === event.bot_id;
+	}
+	return false;
+}
 
 type SlackRepliesMessage = {
 	ts?: string;

@@ -21,6 +21,12 @@ type SlackOAuthAccessResponse = {
 	};
 };
 
+type SlackAuthTestResponse = {
+	ok: boolean;
+	error?: string;
+	bot_id?: string;
+};
+
 export const Route = createFileRoute("/slack/oauth/callback")({
 	server: {
 		handlers: {
@@ -77,6 +83,16 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 				const botUserId = tokenJson.bot_user_id;
 				const botToken = tokenJson.access_token;
 				const botScopes = tokenJson.scope;
+				const botId = botToken
+					? await fetch("https://slack.com/api/auth.test", {
+							headers: {
+								Authorization: `Bearer ${botToken}`,
+							},
+						})
+							.then((response) => response.json() as Promise<SlackAuthTestResponse>)
+							.then((response) => (response.ok ? response.bot_id : undefined))
+							.catch(() => undefined)
+					: undefined;
 
 				const slackUserId = tokenJson.authed_user?.id;
 				const userToken = tokenJson.authed_user?.access_token;
@@ -86,7 +102,7 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 					return new Response("Slack response missing required fields", { status: 500 });
 				}
 
-				if (botUserId && botToken && botScopes) {
+				if (botId && botUserId && botToken && botScopes) {
 					await db
 						.insert(integration)
 						.values({
@@ -98,6 +114,7 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 								teamName,
 								enterpriseId: tokenJson.enterprise?.id ?? null,
 								appId,
+								botId,
 								botUserId,
 								botToken,
 								botScopes: botScopes.split(","),
@@ -113,6 +130,7 @@ export const Route = createFileRoute("/slack/oauth/callback")({
 									teamName,
 									enterpriseId: tokenJson.enterprise?.id ?? null,
 									appId,
+									botId,
 									botUserId,
 									botToken,
 									botScopes: botScopes.split(","),
