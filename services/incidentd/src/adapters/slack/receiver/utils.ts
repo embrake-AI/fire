@@ -136,6 +136,17 @@ type SlackTextComposition = {
 	elements?: SlackTextComposition[];
 };
 
+type SlackAttachment = {
+	fallback?: string;
+	pretext?: string;
+	text?: string;
+	footer?: string;
+	fields?: Array<{
+		title?: string;
+		value?: string;
+	}> | null;
+};
+
 // ============================================================================
 // Handlers
 // ============================================================================
@@ -389,16 +400,54 @@ function collectSlackText(parts: string[], value: SlackTextComposition | null | 
 	}
 }
 
-export function extractSlackMessageText(text: string | null | undefined, blocks: KnownBlock[] | null | undefined): string {
+function collectSlackAttachmentText(parts: string[], attachments: SlackAttachment[] | null | undefined) {
+	if (!Array.isArray(attachments)) {
+		return;
+	}
+	for (const attachment of attachments) {
+		if (!attachment || typeof attachment !== "object") {
+			continue;
+		}
+		for (const value of [attachment.fallback, attachment.pretext, attachment.text, attachment.footer]) {
+			if (typeof value === "string") {
+				const trimmed = value.trim();
+				if (trimmed) {
+					parts.push(trimmed);
+				}
+			}
+		}
+		if (Array.isArray(attachment.fields)) {
+			for (const field of attachment.fields) {
+				if (!field || typeof field !== "object") {
+					continue;
+				}
+				for (const value of [field.title, field.value]) {
+					if (typeof value === "string") {
+						const trimmed = value.trim();
+						if (trimmed) {
+							parts.push(trimmed);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+export function extractSlackMessageText(text: string | null | undefined, attachments: SlackAttachment[] | null | undefined, blocks: KnownBlock[] | null | undefined): string {
 	const trimmedText = typeof text === "string" ? text.trim() : "";
 	if (trimmedText) {
 		return trimmedText;
 	}
+
+	const parts: string[] = [];
+	collectSlackAttachmentText(parts, attachments);
+	if (parts.length) {
+		return parts.join("\n").trim();
+	}
 	if (!Array.isArray(blocks) || !blocks.length) {
 		return "";
 	}
-
-	const parts: string[] = [];
 	for (const block of blocks) {
 		if (!block || typeof block !== "object") {
 			continue;
@@ -447,6 +496,7 @@ type SlackRepliesMessage = {
 	user?: string;
 	bot_id?: string;
 	text?: string;
+	attachments?: SlackAttachment[];
 	blocks?: KnownBlock[];
 	subtype?: string;
 };
@@ -485,7 +535,8 @@ function normalizeSlackThreadMessage(message: SlackRepliesMessage): SlackThreadM
 		(typeof message.bot_id === "string" && message.bot_id) ||
 		(typeof message.subtype === "string" && message.subtype ? `system:${message.subtype}` : "unknown");
 	const text =
-		extractSlackMessageText(message.text, message.blocks) || (typeof message.subtype === "string" && message.subtype ? `[subtype:${message.subtype}]` : "[no-text-message]");
+		extractSlackMessageText(message.text, message.attachments, message.blocks) ||
+		(typeof message.subtype === "string" && message.subtype ? `[subtype:${message.subtype}]` : "[no-text-message]");
 
 	return {
 		messageId: message.ts,

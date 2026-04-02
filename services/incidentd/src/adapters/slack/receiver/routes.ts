@@ -48,10 +48,17 @@ slackRoutes.post("/events", async (c) => {
 					bot_profile?: {
 						app_id?: string;
 					} | null;
+					attachments?: Array<{
+						fallback?: string;
+						pretext?: string;
+						text?: string;
+						footer?: string;
+						fields?: Array<{ title?: string; value?: string }> | null;
+					}>;
 					blocks?: KnownBlock[];
 				};
 
-				const text = extractSlackMessageText(event.text, mentionEvent.blocks);
+				const text = extractSlackMessageText(event.text, mentionEvent.attachments, mentionEvent.blocks);
 				const promptThread = event.thread_ts ?? null;
 				const teamId = body.team_id ?? event.team;
 
@@ -239,6 +246,13 @@ slackRoutes.post("/events", async (c) => {
 					} | null;
 					ts: string;
 					text: string;
+					attachments?: Array<{
+						fallback?: string;
+						pretext?: string;
+						text?: string;
+						footer?: string;
+						fields?: Array<{ title?: string; value?: string }> | null;
+					}>;
 					blocks?: KnownBlock[];
 					team: string;
 					thread_ts?: string;
@@ -246,7 +260,7 @@ slackRoutes.post("/events", async (c) => {
 					channel: string;
 				};
 
-				const text = extractSlackMessageText(message.text, message.blocks);
+				const text = extractSlackMessageText(message.text, message.attachments, message.blocks);
 				const user = getSlackActorId(message);
 				const thread = message.thread_ts;
 				const channel = event.channel;
