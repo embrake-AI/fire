@@ -29,7 +29,6 @@ const slackRoutes = new Hono<SlackContext>().use(verifySlackRequestMiddleware);
 slackRoutes.post("/events", async (c) => {
 	try {
 		const body = await c.req.json<SlackEventPayload>();
-		console.log(JSON.stringify(body));
 
 		if (body.type === "url_verification") {
 			return c.text(body.challenge);
@@ -80,17 +79,11 @@ slackRoutes.post("/events", async (c) => {
 				}
 				const { clientId, data: integrationData, services } = slackIntegration;
 				if (isSlackEventFromFire(mentionEvent, integrationData)) {
-					console.log("event is from fire");
 					return c.text("OK");
 				}
 				const user = getSlackActorId(mentionEvent);
 				const channel = event.channel;
 				if (!text || !user || !channel) {
-					console.log("missing text, user, channel", {
-						text,
-						user,
-						channel,
-					});
 					return c.text("OK");
 				}
 				c.set("auth", { clientId });
