@@ -131,6 +131,11 @@ export type SlackActorEvent = {
 	subtype?: string;
 };
 
+type SlackTextComposition = {
+	text?: string;
+	elements?: SlackTextComposition[];
+};
+
 // ============================================================================
 // Handlers
 // ============================================================================
@@ -367,6 +372,60 @@ export function getSlackActorId(event: SlackActorEvent): string | null {
 	return null;
 }
 
+function collectSlackText(parts: string[], value: SlackTextComposition | null | undefined) {
+	if (!value) {
+		return;
+	}
+	if (typeof value.text === "string") {
+		const trimmed = value.text.trim();
+		if (trimmed) {
+			parts.push(trimmed);
+		}
+	}
+	if (Array.isArray(value.elements)) {
+		for (const element of value.elements) {
+			collectSlackText(parts, element);
+		}
+	}
+}
+
+export function extractSlackMessageText(text: string | null | undefined, blocks: KnownBlock[] | null | undefined): string {
+	const trimmedText = typeof text === "string" ? text.trim() : "";
+	if (trimmedText) {
+		return trimmedText;
+	}
+	if (!Array.isArray(blocks) || !blocks.length) {
+		return "";
+	}
+
+	const parts: string[] = [];
+	for (const block of blocks) {
+		if (!block || typeof block !== "object") {
+			continue;
+		}
+
+		const maybeBlock = block as KnownBlock & {
+			text?: SlackTextComposition | null;
+			fields?: SlackTextComposition[] | null;
+			elements?: SlackTextComposition[] | null;
+		};
+
+		collectSlackText(parts, maybeBlock.text);
+		if (Array.isArray(maybeBlock.fields)) {
+			for (const field of maybeBlock.fields) {
+				collectSlackText(parts, field);
+			}
+		}
+		if (Array.isArray(maybeBlock.elements)) {
+			for (const element of maybeBlock.elements) {
+				collectSlackText(parts, element);
+			}
+		}
+	}
+
+	return parts.join("\n").trim();
+}
+
 export function isSlackEventFromFire(event: SlackActorEvent, integration: Pick<SlackIntegrationData, "appId" | "botUserId" | "botId">): boolean {
 	if (typeof event.user === "string" && event.user === integration.botUserId) {
 		return true;
@@ -388,6 +447,7 @@ type SlackRepliesMessage = {
 	user?: string;
 	bot_id?: string;
 	text?: string;
+	blocks?: KnownBlock[];
 	subtype?: string;
 };
 
@@ -425,11 +485,7 @@ function normalizeSlackThreadMessage(message: SlackRepliesMessage): SlackThreadM
 		(typeof message.bot_id === "string" && message.bot_id) ||
 		(typeof message.subtype === "string" && message.subtype ? `system:${message.subtype}` : "unknown");
 	const text =
-		typeof message.text === "string" && message.text.length > 0
-			? message.text
-			: typeof message.subtype === "string" && message.subtype
-				? `[subtype:${message.subtype}]`
-				: "[no-text-message]";
+		extractSlackMessageText(message.text, message.blocks) || (typeof message.subtype === "string" && message.subtype ? `[subtype:${message.subtype}]` : "[no-text-message]");
 
 	return {
 		messageId: message.ts,

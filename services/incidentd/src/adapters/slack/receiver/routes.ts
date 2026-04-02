@@ -1,4 +1,5 @@
 import type { IS } from "@fire/common";
+import type { KnownBlock } from "@slack/types";
 import { Hono } from "hono";
 import { parseAgentSuggestionPayload } from "../../../agent/slack";
 import { addMessage, addPrompt, startIncident, updateAffection, updateAssignee, updateSeverity, updateStatus } from "../../../handler/index";
@@ -8,6 +9,7 @@ import { ASSERT_NEVER } from "../../../lib/utils";
 import { verifySlackRequestMiddleware } from "./middleware";
 import {
 	buildThreadIncidentPrompt,
+	extractSlackMessageText,
 	fetchSlackThreadMessages,
 	getIncidentIdFromMessageMetadata,
 	getSlackActorId,
@@ -27,6 +29,7 @@ const slackRoutes = new Hono<SlackContext>().use(verifySlackRequestMiddleware);
 slackRoutes.post("/events", async (c) => {
 	try {
 		const body = await c.req.json<SlackEventPayload>();
+		console.log(JSON.stringify(body));
 
 		if (body.type === "url_verification") {
 			return c.text(body.challenge);
@@ -45,9 +48,10 @@ slackRoutes.post("/events", async (c) => {
 					bot_profile?: {
 						app_id?: string;
 					} | null;
+					blocks?: KnownBlock[];
 				};
 
-				const text = event.text;
+				const text = extractSlackMessageText(event.text, mentionEvent.blocks);
 				const promptThread = event.thread_ts ?? null;
 				const teamId = body.team_id ?? event.team;
 
@@ -69,11 +73,17 @@ slackRoutes.post("/events", async (c) => {
 				}
 				const { clientId, data: integrationData, services } = slackIntegration;
 				if (isSlackEventFromFire(mentionEvent, integrationData)) {
+					console.log("event is from fire");
 					return c.text("OK");
 				}
 				const user = getSlackActorId(mentionEvent);
 				const channel = event.channel;
 				if (!text || !user || !channel) {
+					console.log("missing text, user, channel", {
+						text,
+						user,
+						channel,
+					});
 					return c.text("OK");
 				}
 				c.set("auth", { clientId });
@@ -229,13 +239,14 @@ slackRoutes.post("/events", async (c) => {
 					} | null;
 					ts: string;
 					text: string;
+					blocks?: KnownBlock[];
 					team: string;
 					thread_ts?: string;
 					parent_user_id?: string;
 					channel: string;
 				};
 
-				const text = message.text;
+				const text = extractSlackMessageText(message.text, message.blocks);
 				const user = getSlackActorId(message);
 				const thread = message.thread_ts;
 				const channel = event.channel;
