@@ -37,6 +37,7 @@ const PARTIAL_OUTAGE_DOWNTIME_WEIGHT = 0.3;
 type DayStatus = {
 	color: string;
 	hasIncident: boolean;
+	incidentId?: string;
 	incidentTitle?: string;
 	impact?: "partial" | "major";
 };
@@ -47,6 +48,7 @@ type TimeInterval = {
 };
 
 type ServiceIncidentSegment = {
+	id: string;
 	startMs: number;
 	endMs: number;
 	impact: "partial" | "major";
@@ -56,6 +58,7 @@ type ServiceIncidentSegment = {
 type DowntimeStats = {
 	weightedDowntimeMs: number;
 	hasIncident: boolean;
+	incidentId?: string;
 	impact?: "partial" | "major";
 	incidentTitle?: string;
 };
@@ -151,6 +154,7 @@ function buildServiceIncidentSegments(data: StatusPagePublicData, nowMs: number)
 		for (const service of affection.services) {
 			const list = byServiceId.get(service.id);
 			const segment: ServiceIncidentSegment = {
+				id: affection.id,
 				startMs,
 				endMs,
 				impact: service.impact,
@@ -213,8 +217,8 @@ function getDowntimeStats(segments: ServiceIncidentSegment[], startMs: number, e
 
 	const majorIntervals: TimeInterval[] = [];
 	const partialIntervals: TimeInterval[] = [];
-	let majorTitle: { title: string; overlapMs: number } | null = null;
-	let partialTitle: { title: string; overlapMs: number } | null = null;
+	let majorIncident: { id: string; title: string; overlapMs: number } | null = null;
+	let partialIncident: { id: string; title: string; overlapMs: number } | null = null;
 
 	for (const segment of segments) {
 		const clippedStart = Math.max(segment.startMs, startMs);
@@ -224,13 +228,13 @@ function getDowntimeStats(segments: ServiceIncidentSegment[], startMs: number, e
 		const overlapMs = clippedEnd - clippedStart;
 		if (segment.impact === "major") {
 			majorIntervals.push({ start: clippedStart, end: clippedEnd });
-			if (!majorTitle || overlapMs > majorTitle.overlapMs) {
-				majorTitle = { title: segment.title, overlapMs };
+			if (!majorIncident || overlapMs > majorIncident.overlapMs) {
+				majorIncident = { id: segment.id, title: segment.title, overlapMs };
 			}
 		} else {
 			partialIntervals.push({ start: clippedStart, end: clippedEnd });
-			if (!partialTitle || overlapMs > partialTitle.overlapMs) {
-				partialTitle = { title: segment.title, overlapMs };
+			if (!partialIncident || overlapMs > partialIncident.overlapMs) {
+				partialIncident = { id: segment.id, title: segment.title, overlapMs };
 			}
 		}
 	}
@@ -247,16 +251,18 @@ function getDowntimeStats(segments: ServiceIncidentSegment[], startMs: number, e
 		return {
 			weightedDowntimeMs,
 			hasIncident: true,
+			incidentId: majorIncident?.id,
 			impact: "major",
-			incidentTitle: majorTitle?.title,
+			incidentTitle: majorIncident?.title,
 		};
 	}
 	if (partialDurationMs > 0) {
 		return {
 			weightedDowntimeMs,
 			hasIncident: true,
+			incidentId: partialIncident?.id,
 			impact: "partial",
-			incidentTitle: partialTitle?.title,
+			incidentTitle: partialIncident?.title,
 		};
 	}
 	return { weightedDowntimeMs: 0, hasIncident: false };
@@ -310,6 +316,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 	const formatTooltipDate = (date: Date): string => renderLocalizedTime(date, "date-weekday");
 
 	const getServiceStatus = (serviceId: string) => activeStatusByServiceId.get(serviceId) ?? "operational";
+	const getIncidentPath = (incidentId: string) => `${basePath}/history/${incidentId}`;
 
 	const getLastUpdate = (affectionId: string) => {
 		return latestUpdateByAffectionId.get(affectionId) ?? null;
@@ -394,6 +401,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 			return {
 				color: getBarColorClass(Math.max(0, Math.min(100, uptimePercent))),
 				hasIncident: true,
+				incidentId: downtimeStats.incidentId,
 				incidentTitle: downtimeStats.incidentTitle,
 				impact: downtimeStats.impact,
 			};
@@ -413,7 +421,8 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 
 			if (dayDate < serviceAddedDay) {
 				bars.push(`
-					<div class="uptime-bar flex-1 h-4 rounded-sm bg-slate-200 min-w-0.75 cursor-pointer">
+					<div class="uptime-bar-slot flex-1 min-w-0.75">
+						<div class="uptime-bar h-4 rounded-sm bg-slate-200"></div>
 						<div class="uptime-tooltip">
 							<div class="tooltip-date">${formattedDate}</div>
 							<div class="tooltip-status tooltip-none">
@@ -435,16 +444,35 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 							<path d="M8 0C3.589 0 0 3.589 0 8C0 12.411 3.589 16 8 16C12.411 16 16 12.411 16 8C16 3.589 12.411 0 8 0ZM11.947 5.641C10.088 7.023 8.512 8.931 7.264 11.31C7.135 11.557 6.879 11.712 6.6 11.712C6.323 11.715 6.062 11.555 5.933 11.305C5.358 10.188 4.715 9.28 3.968 8.529C3.676 8.236 3.677 7.76 3.971 7.468C4.263 7.176 4.739 7.176 5.032 7.471C5.605 8.047 6.122 8.699 6.595 9.443C7.834 7.398 9.329 5.717 11.053 4.436C11.385 4.19 11.855 4.258 12.102 4.591C12.349 4.923 12.28 5.394 11.947 5.641Z" fill="currentColor"/>
 						</svg>`;
 				const tooltipText = dayStatus.hasIncident ? escapeHtml(dayStatus.incidentTitle || "Incident") : "No incidents";
+				const tooltipId = `uptime-tooltip-${serviceId}-${i}`;
+				const tooltipBody = `
+					<div class="tooltip-date">${formattedDate}</div>
+					<div class="tooltip-status ${tooltipStatusClass}">
+						${tooltipIcon}
+						<span>${tooltipText}</span>
+					</div>
+					${dayStatus.incidentId ? '<div class="tooltip-link">View incident</div>' : ""}
+				`;
+				const tooltipMarkup = dayStatus.incidentId
+					? `<a id="${tooltipId}" href="${getIncidentPath(dayStatus.incidentId)}" class="uptime-tooltip uptime-tooltip-link" aria-label="View incident: ${tooltipText}">
+							${tooltipBody}
+						</a>`
+					: `<div class="uptime-tooltip">
+							${tooltipBody}
+						</div>`;
+				const barMarkup = dayStatus.incidentId
+					? `<button
+							type="button"
+							class="uptime-bar-trigger uptime-bar h-4 rounded-sm ${dayStatus.color}"
+							aria-label="Show incident details for ${tooltipText}"
+							aria-controls="${tooltipId}"
+						></button>`
+					: `<div class="uptime-bar h-4 rounded-sm ${dayStatus.color}"></div>`;
 
 				bars.push(`
-					<div class="uptime-bar flex-1 h-4 rounded-sm ${dayStatus.color} min-w-0.75 cursor-pointer">
-						<div class="uptime-tooltip">
-							<div class="tooltip-date">${formattedDate}</div>
-							<div class="tooltip-status ${tooltipStatusClass}">
-								${tooltipIcon}
-								<span>${tooltipText}</span>
-							</div>
-						</div>
+					<div class="uptime-bar-slot flex-1 min-w-0.75">
+						${barMarkup}
+						${tooltipMarkup}
 					</div>`);
 			}
 		}
@@ -536,12 +564,29 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 		body {
 			font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 		}
-		.uptime-bar {
+		.uptime-bar-slot {
 			position: relative;
+			padding-bottom: 12px;
+			margin-bottom: -12px;
+		}
+		.uptime-bar {
+			display: block;
+			width: 100%;
+		}
+		.uptime-bar-trigger {
+			cursor: pointer;
+			border: 0;
+			padding: 0;
+			background: transparent;
+			appearance: none;
+		}
+		.uptime-bar-trigger:focus-visible {
+			outline: 2px solid #2563eb;
+			outline-offset: 2px;
 		}
 		.uptime-tooltip {
 			position: absolute;
-			top: calc(100% + 8px);
+			top: calc(1rem + 8px);
 			left: 50%;
 			transform: translateX(-50%);
 			background: white;
@@ -555,6 +600,7 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 			visibility: hidden;
 			transition: opacity 0.15s, visibility 0.15s;
 			pointer-events: none;
+			text-decoration: none;
 		}
 		.uptime-tooltip::before {
 			content: '';
@@ -574,9 +620,17 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 			border: 5px solid transparent;
 			border-bottom-color: white;
 		}
-		.uptime-bar:hover .uptime-tooltip {
+		.uptime-bar-slot:hover .uptime-tooltip,
+		.uptime-bar-slot:focus-within .uptime-tooltip {
 			opacity: 1;
 			visibility: visible;
+			pointer-events: auto;
+		}
+		.uptime-tooltip-link:hover,
+		.uptime-tooltip-link:focus-visible {
+			border-color: #cbd5e1;
+			box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+			outline: none;
 		}
 		.tooltip-date {
 			font-size: 12px;
@@ -608,23 +662,31 @@ export function renderStatusPageHtml(data: StatusPagePublicData, timestamp: numb
 		.tooltip-none {
 			color: #94a3b8;
 		}
+		.tooltip-link {
+			margin-top: 8px;
+			padding-top: 6px;
+			border-top: 1px solid #f1f5f9;
+			font-size: 12px;
+			font-weight: 600;
+			color: #2563eb;
+		}
 		/* Prevent tooltip from overflowing on edges */
-		.uptime-bar:first-child .uptime-tooltip {
+		.uptime-bar-slot:first-child .uptime-tooltip {
 			left: 0;
 			transform: translateX(0);
 		}
-		.uptime-bar:first-child .uptime-tooltip::before,
-		.uptime-bar:first-child .uptime-tooltip::after {
+		.uptime-bar-slot:first-child .uptime-tooltip::before,
+		.uptime-bar-slot:first-child .uptime-tooltip::after {
 			left: 12px;
 			transform: translateX(0);
 		}
-		.uptime-bar:last-child .uptime-tooltip {
+		.uptime-bar-slot:last-child .uptime-tooltip {
 			left: auto;
 			right: 0;
 			transform: translateX(0);
 		}
-		.uptime-bar:last-child .uptime-tooltip::before,
-		.uptime-bar:last-child .uptime-tooltip::after {
+		.uptime-bar-slot:last-child .uptime-tooltip::before,
+		.uptime-bar-slot:last-child .uptime-tooltip::after {
 			left: auto;
 			right: 12px;
 			transform: translateX(0);
