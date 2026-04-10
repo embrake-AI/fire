@@ -1,5 +1,13 @@
 import { emailInDomains, type SHIFT_LENGTH_OPTIONS } from "@fire/common";
-import { getAddAssigneeSQL, getMoveAssigneeSQL, getRemoveAssigneeSQL, getSetOverrideSQL, getUpdateAnchorSQL, getUpdateIntervalSQL } from "@fire/db/rotation-helpers";
+import {
+	getAddAssigneeSQL,
+	getCurrentAssigneeSQL,
+	getMoveAssigneeSQL,
+	getRemoveAssigneeSQL,
+	getSetOverrideSQL,
+	getUpdateAnchorSQL,
+	getUpdateIntervalSQL,
+} from "@fire/db/rotation-helpers";
 import type { SlackIntegrationData } from "@fire/db/schema";
 import { client, entryPoint, integration, rotation, rotationOverride, rotationWithAssignee, user } from "@fire/db/schema";
 import { createServerFn } from "@tanstack/solid-start";
@@ -8,7 +16,7 @@ import { resumeHook, start } from "workflow/api";
 import { getDefaultRotationAnchor } from "~/lib/rotations/rotation-timezone";
 import { getRotationScheduleWakeToken, type RotationScheduleWakeAction, rotationScheduleWorkflow } from "~/workflows/rotation/schedule";
 import { authMiddleware } from "../auth/auth-middleware";
-import { isWorkspaceCatalogWriter, requirePermission } from "../auth/authorization";
+import { assertRolePermission, isWorkspaceCatalogWriter, requirePermission } from "../auth/authorization";
 import { assertTeamAdminOrWorkspaceCatalogWriter } from "../auth/authorization.server";
 import { queueBillingSeatSync } from "../billing/billing.server";
 import { uploadImageFromUrl } from "../blob";
@@ -279,14 +287,26 @@ export const updateRotationName = createServerFn({ method: "POST" })
 		return { id: updated.id, name: updated.name };
 	});
 
-export const updateRotationTeam = createServerFn({ method: "POST" })
-	.middleware([authMiddleware, requirePermission("catalog.write")])
-	.inputValidator((data: { id: string; teamId: string | null }) => data)
+type InferFromSQL<T> = T extends SQL<infer R> ? R : never;
+
+export const updateRotationConfig = createServerFn({ method: "POST" })
+	.middleware([authMiddleware])
+	.inputValidator((data: { id: string; teamId: string | null; slackChannelId: string | null; shiftLength: ShiftLength; timeZone: string; nextShiftStart: Date | null }) => data)
 	.handler(async ({ data, context }) => {
+		await assertRotationWriteAccess(context, data.id);
+
+		const timeZone = normalizeRotationTimeZone(data.timeZone);
 		const existingRotation = await db.query.rotation.findFirst({
 			where: {
 				id: data.id,
 				clientId: context.clientId,
+			},
+			columns: {
+				id: true,
+				teamId: true,
+				slackChannelId: true,
+				shiftLength: true,
+				timezone: true,
 			},
 			with: {
 				members: {
@@ -299,6 +319,11 @@ export const updateRotationTeam = createServerFn({ method: "POST" })
 
 		if (!existingRotation) {
 			throw new Error("Rotation not found");
+		}
+
+		const teamChanged = data.teamId !== existingRotation.teamId;
+		if (teamChanged) {
+			assertRolePermission(context.role, "catalog.write");
 		}
 
 		if (data.teamId) {
@@ -329,25 +354,6 @@ export const updateRotationTeam = createServerFn({ method: "POST" })
 				}
 			}
 		}
-
-		const [updated] = await db
-			.update(rotation)
-			.set({ teamId: data.teamId })
-			.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)))
-			.returning({ id: rotation.id, teamId: rotation.teamId });
-
-		if (!updated) {
-			throw new Error("Rotation not found");
-		}
-
-		return { id: updated.id, teamId: updated.teamId };
-	});
-
-export const updateRotationSlackChannel = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
-	.inputValidator((data: { id: string; slackChannelId: string | null }) => data)
-	.handler(async ({ data, context }) => {
-		await assertRotationWriteAccess(context, data.id);
 
 		if (data.slackChannelId) {
 			const [slackIntegration] = await db
@@ -385,60 +391,114 @@ export const updateRotationSlackChannel = createServerFn({ method: "POST" })
 			}
 		}
 
-		const [updated] = await db
-			.update(rotation)
-			.set({ slackChannelId: data.slackChannelId })
-			.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)))
-			.returning({ id: rotation.id, slackChannelId: rotation.slackChannelId });
+		const slackChannelChanged = data.slackChannelId !== existingRotation.slackChannelId;
+		const shiftLengthChanged = data.shiftLength !== existingRotation.shiftLength;
+		const timeZoneChanged = timeZone !== existingRotation.timezone;
 
-		if (!updated) {
+		let updatedRotation:
+			| {
+					id: string;
+					teamId: string | null;
+					slackChannelId: string | null;
+					shiftStart: Date | null;
+					shiftLength: ShiftLength;
+					timezone: string;
+			  }
+			| undefined;
+		let scheduleChanged = false;
+
+		await db.transaction(async (tx) => {
+			if (teamChanged) {
+				const [updated] = await tx
+					.update(rotation)
+					.set({ teamId: data.teamId })
+					.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)))
+					.returning({ id: rotation.id });
+
+				if (!updated) {
+					throw new Error("Rotation not found");
+				}
+			}
+
+			if (slackChannelChanged) {
+				const [updated] = await tx
+					.update(rotation)
+					.set({ slackChannelId: data.slackChannelId })
+					.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)))
+					.returning({ id: rotation.id });
+
+				if (!updated) {
+					throw new Error("Rotation not found");
+				}
+			}
+
+			if (timeZoneChanged) {
+				const [updated] = await tx
+					.update(rotation)
+					.set({ timezone: timeZone })
+					.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)))
+					.returning({ id: rotation.id });
+
+				if (!updated) {
+					throw new Error("Rotation not found");
+				}
+				scheduleChanged = true;
+			}
+
+			if (shiftLengthChanged) {
+				const { rows } = await tx.execute<InferFromSQL<ReturnType<typeof getUpdateIntervalSQL>>>(getUpdateIntervalSQL(data.id, data.shiftLength));
+				if (!rows[0]) {
+					throw new Error("Failed to update rotation");
+				}
+				scheduleChanged = true;
+			}
+
+			if (data.nextShiftStart) {
+				const { rows } = await tx.execute<{ shift_end: Date | string | null }>(getCurrentAssigneeSQL(data.id));
+				const currentNextShiftStartValue = rows[0]?.shift_end ?? null;
+				const currentNextShiftStart = currentNextShiftStartValue ? new Date(currentNextShiftStartValue) : null;
+
+				if (!currentNextShiftStart || Number.isNaN(currentNextShiftStart.getTime()) || currentNextShiftStart.getTime() !== data.nextShiftStart.getTime()) {
+					const { rows: updateRows } = await tx.execute<InferFromSQL<ReturnType<typeof getUpdateAnchorSQL>>>(getUpdateAnchorSQL(data.id, data.nextShiftStart));
+					if (!updateRows[0]) {
+						throw new Error("Failed to update rotation anchor");
+					}
+					scheduleChanged = true;
+				}
+			}
+
+			const [updated] = await tx
+				.select({
+					id: rotationWithAssignee.id,
+					teamId: rotationWithAssignee.teamId,
+					slackChannelId: rotationWithAssignee.slackChannelId,
+					shiftStart: rotationWithAssignee.shiftStart,
+					shiftLength: rotationWithAssignee.shiftLength,
+					timezone: rotationWithAssignee.timezone,
+				})
+				.from(rotationWithAssignee)
+				.where(and(eq(rotationWithAssignee.id, data.id), eq(rotationWithAssignee.clientId, context.clientId)))
+				.limit(1);
+
+			updatedRotation = updated
+				? {
+						...updated,
+						shiftLength: updated.shiftLength as ShiftLength,
+					}
+				: undefined;
+		});
+
+		if (!updatedRotation) {
 			throw new Error("Rotation not found");
 		}
 
-		await notifyRotationScheduleWorkflow(data.id, { action: "update_slack_channel" });
-
-		return { id: updated.id, slackChannelId: updated.slackChannelId };
-	});
-
-type InferFromSQL<T> = T extends SQL<infer R> ? R : never;
-export const updateRotationShiftLength = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
-	.inputValidator((data: { id: string; shiftLength: string }) => data)
-	.handler(async ({ data, context }) => {
-		await assertRotationWriteAccess(context, data.id);
-
-		const { rows } = await db.execute<InferFromSQL<ReturnType<typeof getUpdateIntervalSQL>>>(getUpdateIntervalSQL(data.id, data.shiftLength));
-		const result = rows[0];
-		if (!result) {
-			throw new Error("Failed to update rotation");
+		if (scheduleChanged) {
+			await notifyRotationScheduleWorkflow(data.id, { action: "update_anchor" });
+		} else if (slackChannelChanged) {
+			await notifyRotationScheduleWorkflow(data.id, { action: "update_slack_channel" });
 		}
 
-		await notifyRotationScheduleWorkflow(data.id, { action: "update_shift_length" });
-
-		return { id: result.id, shiftLength: result.shiftLength };
-	});
-
-export const updateRotationTimeZone = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
-	.inputValidator((data: { id: string; timeZone: string }) => data)
-	.handler(async ({ data, context }) => {
-		await assertRotationWriteAccess(context, data.id);
-
-		const timeZone = normalizeRotationTimeZone(data.timeZone);
-
-		const [updated] = await db
-			.update(rotation)
-			.set({ timezone: timeZone })
-			.where(and(eq(rotation.id, data.id), eq(rotation.clientId, context.clientId)))
-			.returning({ id: rotation.id, timezone: rotation.timezone });
-
-		if (!updated) {
-			throw new Error("Rotation not found");
-		}
-
-		await notifyRotationScheduleWorkflow(data.id, { action: "update_anchor" });
-
-		return updated;
+		return updatedRotation;
 	});
 
 export const addRotationAssignee = createServerFn({ method: "POST" })
@@ -678,21 +738,4 @@ export const updateRotationOverride = createServerFn({ method: "POST" })
 		await notifyRotationScheduleWorkflow(data.rotationId, { action: "update_override" });
 
 		return { id: updated[0]?.id };
-	});
-
-export const updateRotationAnchor = createServerFn({ method: "POST" })
-	.middleware([authMiddleware])
-	.inputValidator((data: { id: string; anchorAt: Date }) => data)
-	.handler(async ({ data, context }) => {
-		await assertRotationWriteAccess(context, data.id);
-
-		const { rows } = await db.execute<InferFromSQL<ReturnType<typeof getUpdateAnchorSQL>>>(getUpdateAnchorSQL(data.id, data.anchorAt));
-		const result = rows[0];
-		if (!result) {
-			throw new Error("Failed to update rotation anchor");
-		}
-
-		await notifyRotationScheduleWorkflow(data.id, { action: "update_anchor" });
-
-		return { id: result.id, anchorAt: result.anchorAt };
 	});

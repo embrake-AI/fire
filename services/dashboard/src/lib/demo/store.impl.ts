@@ -3,6 +3,7 @@ import type { GitHubRepositoryConfig } from "@fire/db/schema";
 import type { createEntryPoint, createEntryPointFromSlackUser, getEntryPoints, updateEntryPointPrompt } from "../entry-points/entry-points";
 import type { AffectionImpact, AffectionStatus, IncidentAffectionData } from "../incident-affections/incident-affections";
 import type { getAnalysisById, getMetrics, IncidentAction, IncidentEvent, ResolvedIncident } from "../incidents/incidents";
+import { getRotationShiftIndexAt, getRotationShiftStartAtIndex, parseRotationIntervalToMs } from "../rotations/rotation-timezone";
 import type { SlackChannel, SlackSelectableChannel, SlackUser } from "../slack";
 import type { verifyCustomDomain } from "../status-pages/status-pages";
 import { readKV, writeKV } from "./idb";
@@ -2308,47 +2309,46 @@ export async function updateRotationNameDemo(data: { id: string; name: string })
 	});
 }
 
-export async function updateRotationTeamDemo(data: { id: string; teamId: string | null }) {
+function getDemoCurrentShiftStartFromNextShiftStart(nextShiftStart: Date | null, shiftLength: string, timeZone: string, now = new Date()) {
+	if (!nextShiftStart) return null;
+
+	const shiftMs = parseRotationIntervalToMs(shiftLength);
+	if (!shiftMs) return null;
+
+	const shiftIndex = getRotationShiftIndexAt(nextShiftStart, shiftMs, timeZone, now);
+	if (shiftIndex === null) return null;
+
+	return getRotationShiftStartAtIndex(nextShiftStart, shiftMs, timeZone, shiftIndex);
+}
+
+export async function updateRotationConfigDemo(data: {
+	id: string;
+	teamId: string | null;
+	slackChannelId: string | null;
+	shiftLength: string;
+	timeZone: string;
+	nextShiftStart: Date | null;
+}) {
 	return withState(async (state) => {
 		const rotation = state.rotations.find((candidate) => candidate.id === data.id);
 		if (!rotation) {
 			throw new Error("Rotation not found");
 		}
+
 		rotation.teamId = data.teamId;
-		return { id: rotation.id, teamId: rotation.teamId };
-	});
-}
-
-export async function updateRotationSlackChannelDemo(data: { id: string; slackChannelId: string | null }) {
-	return withState(async (state) => {
-		const rotation = state.rotations.find((candidate) => candidate.id === data.id);
-		if (!rotation) {
-			throw new Error("Rotation not found");
-		}
 		rotation.slackChannelId = data.slackChannelId;
-		return { id: rotation.id, slackChannelId: rotation.slackChannelId };
-	});
-}
-
-export async function updateRotationShiftLengthDemo(data: { id: string; shiftLength: string }) {
-	return withState(async (state) => {
-		const rotation = state.rotations.find((candidate) => candidate.id === data.id);
-		if (!rotation) {
-			throw new Error("Rotation not found");
-		}
 		rotation.shiftLength = data.shiftLength;
-		return { id: rotation.id, shiftLength: rotation.shiftLength };
-	});
-}
-
-export async function updateRotationTimeZoneDemo(data: { id: string; timeZone: string }) {
-	return withState(async (state) => {
-		const rotation = state.rotations.find((candidate) => candidate.id === data.id);
-		if (!rotation) {
-			throw new Error("Rotation not found");
-		}
 		rotation.timezone = data.timeZone;
-		return { id: rotation.id, timezone: rotation.timezone };
+		rotation.shiftStart = getDemoCurrentShiftStartFromNextShiftStart(data.nextShiftStart, data.shiftLength, data.timeZone);
+
+		return {
+			id: rotation.id,
+			teamId: rotation.teamId,
+			slackChannelId: rotation.slackChannelId,
+			shiftStart: rotation.shiftStart,
+			shiftLength: rotation.shiftLength,
+			timezone: rotation.timezone,
+		};
 	});
 }
 
@@ -2464,17 +2464,6 @@ export async function updateRotationOverrideDemo(data: { rotationId: string; ove
 		override.startAt = data.startAt;
 		override.endAt = data.endAt;
 		return { id: override.id };
-	});
-}
-
-export async function updateRotationAnchorDemo(data: { id: string; anchorAt: Date }) {
-	return withState(async (state) => {
-		const rotation = state.rotations.find((candidate) => candidate.id === data.id);
-		if (!rotation) {
-			throw new Error("Rotation not found");
-		}
-		rotation.shiftStart = data.anchorAt;
-		return { id: rotation.id, anchorAt: rotation.shiftStart };
 	});
 }
 

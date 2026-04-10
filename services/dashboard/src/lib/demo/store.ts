@@ -236,20 +236,8 @@ export function updateRotationNameDemo(...args: Parameters<StoreModule["updateRo
 	return callDemo("updateRotationNameDemo", ...args) as ReturnType<StoreModule["updateRotationNameDemo"]>;
 }
 
-export function updateRotationTeamDemo(...args: Parameters<StoreModule["updateRotationTeamDemo"]>): ReturnType<StoreModule["updateRotationTeamDemo"]> {
-	return callDemo("updateRotationTeamDemo", ...args) as ReturnType<StoreModule["updateRotationTeamDemo"]>;
-}
-
-export function updateRotationSlackChannelDemo(...args: Parameters<StoreModule["updateRotationSlackChannelDemo"]>): ReturnType<StoreModule["updateRotationSlackChannelDemo"]> {
-	return callDemo("updateRotationSlackChannelDemo", ...args) as ReturnType<StoreModule["updateRotationSlackChannelDemo"]>;
-}
-
-export function updateRotationShiftLengthDemo(...args: Parameters<StoreModule["updateRotationShiftLengthDemo"]>): ReturnType<StoreModule["updateRotationShiftLengthDemo"]> {
-	return callDemo("updateRotationShiftLengthDemo", ...args) as ReturnType<StoreModule["updateRotationShiftLengthDemo"]>;
-}
-
-export function updateRotationTimeZoneDemo(...args: Parameters<StoreModule["updateRotationTimeZoneDemo"]>): ReturnType<StoreModule["updateRotationTimeZoneDemo"]> {
-	return callDemo("updateRotationTimeZoneDemo", ...args) as ReturnType<StoreModule["updateRotationTimeZoneDemo"]>;
+export function updateRotationConfigDemo(...args: Parameters<StoreModule["updateRotationConfigDemo"]>): ReturnType<StoreModule["updateRotationConfigDemo"]> {
+	return callDemo("updateRotationConfigDemo", ...args) as ReturnType<StoreModule["updateRotationConfigDemo"]>;
 }
 
 export function addRotationAssigneeDemo(...args: Parameters<StoreModule["addRotationAssigneeDemo"]>): ReturnType<StoreModule["addRotationAssigneeDemo"]> {
@@ -288,10 +276,6 @@ export function clearRotationOverrideDemo(...args: Parameters<StoreModule["clear
 
 export function updateRotationOverrideDemo(...args: Parameters<StoreModule["updateRotationOverrideDemo"]>): ReturnType<StoreModule["updateRotationOverrideDemo"]> {
 	return callDemo("updateRotationOverrideDemo", ...args) as ReturnType<StoreModule["updateRotationOverrideDemo"]>;
-}
-
-export function updateRotationAnchorDemo(...args: Parameters<StoreModule["updateRotationAnchorDemo"]>): ReturnType<StoreModule["updateRotationAnchorDemo"]> {
-	return callDemo("updateRotationAnchorDemo", ...args) as ReturnType<StoreModule["updateRotationAnchorDemo"]>;
 }
 
 export function getStatusPagesDemo(...args: Parameters<StoreModule["getStatusPagesDemo"]>): ReturnType<StoreModule["getStatusPagesDemo"]> {

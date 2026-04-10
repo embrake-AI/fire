@@ -1,9 +1,9 @@
 import { SHIFT_LENGTH_OPTIONS } from "@fire/common";
 import { useQuery } from "@tanstack/solid-query";
-import { createFileRoute, Link } from "@tanstack/solid-router";
+import { createFileRoute } from "@tanstack/solid-router";
 import { useServerFn } from "@tanstack/solid-start";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, GripVertical, Hash, LoaderCircle, Lock, Pencil, Plus, Trash2, Users as UsersIcon, X } from "lucide-solid";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show, Suspense } from "solid-js";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, GripVertical, Hash, LoaderCircle, Lock, Pencil, Plus, Trash2, Users as UsersIcon, X } from "lucide-solid";
+import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, Show, Suspense } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { EntityPicker } from "~/components/EntityPicker";
 import { TimeZonePicker } from "~/components/TimeZonePicker";
@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~
 import { Skeleton } from "~/components/ui/skeleton";
 import { requireRoutePermission } from "~/lib/auth/route-guards";
 import { runDemoAware } from "~/lib/demo/runtime";
-import { getSlackSelectableChannelsDemo } from "~/lib/demo/store";
+import { getSlackSelectableChannelsDemo, getTeamsDemo } from "~/lib/demo/store";
 import {
 	formatRotationDateTimeInput,
 	getNextRotationShiftStart,
@@ -40,16 +40,12 @@ import {
 	useReorderRotationAssignee,
 	useRotationOverrides,
 	useRotations,
-	useUpdateRotationAnchor,
+	useUpdateRotationConfig,
 	useUpdateRotationName,
 	useUpdateRotationOverride,
-	useUpdateRotationShiftLength,
-	useUpdateRotationSlackChannel,
-	useUpdateRotationTeam,
-	useUpdateRotationTimeZone,
 } from "~/lib/rotations/rotations.hooks";
 import type { SlackSelectableChannel } from "~/lib/slack";
-import { useTeams } from "~/lib/teams/teams.hooks";
+import { getTeams } from "~/lib/teams/teams";
 import { usePossibleSlackUsers, useUsers } from "~/lib/users/users.hooks";
 import { cn } from "~/lib/utils/client";
 
@@ -60,6 +56,14 @@ export const Route = createFileRoute("/_authed/rotations/$rotationId")({
 
 type Rotation = Awaited<ReturnType<typeof getRotations>>[number];
 type SlackChannelOption = SlackSelectableChannel & { isUnknown?: boolean };
+type RotationConfigDraft = {
+	shiftLength: string;
+	teamId: string | null;
+	slackChannelId: string | null;
+	timeZone: string;
+	anchorInput: string;
+	isAnchorEdited: boolean;
+};
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -68,12 +72,106 @@ const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const ALL_OVERRIDES_START = new Date("1970-01-01T00:00:00.000Z");
 const ALL_OVERRIDES_END = new Date("9999-12-31T23:59:59.999Z");
 
+function getRotationNextShiftStart(shiftStart: Date | string | null | undefined, shiftLength: string, timeZone: string) {
+	if (!shiftStart) return null;
+
+	const currentShiftStart = new Date(shiftStart);
+	if (Number.isNaN(currentShiftStart.getTime())) return null;
+
+	const shiftMs = parseRotationIntervalToMs(shiftLength);
+	if (!shiftMs) return null;
+
+	return getNextRotationShiftStart(currentShiftStart, shiftMs, timeZone, currentShiftStart);
+}
+
+function getRotationCurrentShiftStartFromNextShiftStart(nextShiftStart: Date | null, shiftLength: string, timeZone: string, now = new Date()) {
+	if (!nextShiftStart) return null;
+
+	const shiftMs = parseRotationIntervalToMs(shiftLength);
+	if (!shiftMs) return null;
+
+	const shiftIndex = getRotationShiftIndexAt(nextShiftStart, shiftMs, timeZone, now);
+	if (shiftIndex === null) return null;
+
+	return getRotationShiftStartAtIndex(nextShiftStart, shiftMs, timeZone, shiftIndex);
+}
+
+function createRotationConfigDraft(rotation: Rotation): RotationConfigDraft {
+	const nextShiftStart = getRotationNextShiftStart(rotation.shiftStart, rotation.shiftLength, rotation.timezone);
+
+	return {
+		shiftLength: normalizeShiftLength(rotation.shiftLength),
+		teamId: rotation.teamId ?? null,
+		slackChannelId: rotation.slackChannelId ?? null,
+		timeZone: rotation.timezone,
+		anchorInput: nextShiftStart ? formatRotationDateTimeInput(nextShiftStart, rotation.timezone) : "",
+		isAnchorEdited: false,
+	};
+}
+
+function isRotationConfigDraftEqual(left: RotationConfigDraft, right: RotationConfigDraft) {
+	return (
+		left.shiftLength === right.shiftLength &&
+		left.teamId === right.teamId &&
+		left.slackChannelId === right.slackChannelId &&
+		left.timeZone === right.timeZone &&
+		left.anchorInput === right.anchorInput &&
+		left.isAnchorEdited === right.isAnchorEdited
+	);
+}
+
+function hasRotationConfigDraftChanges(rotation: Rotation, draft: RotationConfigDraft) {
+	const currentNextShiftStart = getRotationNextShiftStart(rotation.shiftStart, rotation.shiftLength, rotation.timezone)?.getTime() ?? null;
+	const parsedAnchor = parseRotationDateTimeInput(draft.anchorInput, draft.timeZone);
+	const anchorChanged = draft.isAnchorEdited && !!parsedAnchor && parsedAnchor.getTime() !== currentNextShiftStart;
+
+	return (
+		draft.shiftLength !== normalizeShiftLength(rotation.shiftLength) ||
+		draft.teamId !== (rotation.teamId ?? null) ||
+		draft.slackChannelId !== (rotation.slackChannelId ?? null) ||
+		draft.timeZone !== rotation.timezone ||
+		anchorChanged
+	);
+}
+
 function RotationDetailsPage() {
 	const params = Route.useParams();
 	const rotationsQuery = useRotations();
+	const [isConfigOpen, setIsConfigOpen] = createSignal(false);
+	const [isAddingAssignee, setIsAddingAssignee] = createSignal(false);
+	const [draft, setDraft] = createSignal<RotationConfigDraft | null>(null);
 
 	const rotationId = createMemo(() => params().rotationId);
 	const rotation = createMemo(() => rotationsQuery.data?.find((r) => r.id === rotationId()));
+	const hasDraftChanges = createMemo(() => {
+		const currentRotation = rotation();
+		const currentDraft = draft();
+		if (!currentRotation || !currentDraft) return false;
+		return hasRotationConfigDraftChanges(currentRotation, currentDraft);
+	});
+	const previewShiftStart = createMemo(() => {
+		const currentRotation = rotation();
+		const currentDraft = draft();
+		if (!currentRotation) return null;
+		if (!currentDraft) {
+			return currentRotation.shiftStart ? new Date(currentRotation.shiftStart) : null;
+		}
+		const nextShiftStart = parseRotationDateTimeInput(currentDraft.anchorInput, currentDraft.timeZone);
+		return (
+			getRotationCurrentShiftStartFromNextShiftStart(nextShiftStart, currentDraft.shiftLength, currentDraft.timeZone) ??
+			(currentRotation.shiftStart ? new Date(currentRotation.shiftStart) : null)
+		);
+	});
+
+	createEffect(() => {
+		const currentRotation = rotation();
+		if (!currentRotation) return;
+		const currentDraft = draft();
+		const nextDraft = createRotationConfigDraft(currentRotation);
+		if (!currentDraft || (!hasRotationConfigDraftChanges(currentRotation, currentDraft) && !isRotationConfigDraftEqual(currentDraft, nextDraft))) {
+			setDraft(nextDraft);
+		}
+	});
 
 	return (
 		<div class="flex-1 bg-background p-6 md:p-8">
@@ -84,8 +182,56 @@ function RotationDetailsPage() {
 							<>
 								<RotationHeader rotation={data()} />
 								<div class="grid gap-6 lg:grid-cols-[320px_1fr]">
-									<RotationAssigneesPanel rotation={data()} />
-									<RotationSchedulePanel rotation={data()} />
+									<div class="space-y-3">
+										<div class="flex items-center justify-between">
+											<RotationSidebarModeToggle
+												isConfigOpen={isConfigOpen()}
+												onSelectOrder={() => setIsConfigOpen(false)}
+												onSelectConfig={() => {
+													setIsAddingAssignee(false);
+													setIsConfigOpen(true);
+												}}
+											/>
+											<div class="flex min-w-[60px] justify-end">
+												<Show when={!isConfigOpen() && !isAddingAssignee()}>
+													<Button variant="ghost" size="sm" class="h-7 text-xs" onClick={() => setIsAddingAssignee(true)}>
+														<Plus class="w-3 h-3" />
+														Add
+													</Button>
+												</Show>
+											</div>
+										</div>
+										<Show
+											when={isConfigOpen()}
+											fallback={<RotationAssigneesPanel rotation={data()} isAddingAssignee={isAddingAssignee} setIsAddingAssignee={setIsAddingAssignee} />}
+										>
+											<RotationConfigPanel
+												rotation={data()}
+												draft={draft() ?? createRotationConfigDraft(data())}
+												onDraftChange={(patch) => {
+													setDraft((current) => ({ ...(current ?? createRotationConfigDraft(data())), ...patch }));
+												}}
+												onDiscard={() => {
+													setDraft(createRotationConfigDraft(data()));
+													setIsConfigOpen(false);
+												}}
+												onSaved={() => setIsConfigOpen(false)}
+											/>
+										</Show>
+									</div>
+									<RotationSchedulePanel
+										rotation={data()}
+										preview={
+											draft()
+												? {
+														active: hasDraftChanges(),
+														shiftLength: draft()!.shiftLength,
+														timeZone: draft()!.timeZone,
+														shiftStart: previewShiftStart(),
+													}
+												: undefined
+										}
+									/>
 								</div>
 							</>
 						)}
@@ -96,59 +242,130 @@ function RotationDetailsPage() {
 	);
 }
 
+function RotationSidebarModeToggle(props: { isConfigOpen: boolean; onSelectOrder: () => void; onSelectConfig: () => void }) {
+	return (
+		<div class="inline-flex items-center rounded-md border border-border/60 bg-muted/30 p-0.5">
+			<Button variant="ghost" size="sm" class={cn("h-7 px-2 text-xs", !props.isConfigOpen && "bg-background text-foreground shadow-sm")} onClick={props.onSelectOrder}>
+				Members
+			</Button>
+			<Button variant="ghost" size="sm" class={cn("h-7 px-2 text-xs", props.isConfigOpen && "bg-background text-foreground shadow-sm")} onClick={props.onSelectConfig}>
+				Configuration
+			</Button>
+		</div>
+	);
+}
+
 function RotationHeader(props: { rotation: Rotation }) {
-	const teamsQuery = useTeams();
-	const usersQuery = useUsers();
+	const getTeamsFn = useServerFn(getTeams);
 	const updateNameMutation = useUpdateRotationName({
 		onMutate: () => setIsEditingName(false),
 	});
-	const updateShiftLengthMutation = useUpdateRotationShiftLength();
-	const updateAnchorMutation = useUpdateRotationAnchor();
-	const updateTeamMutation = useUpdateRotationTeam();
-	const updateSlackChannelMutation = useUpdateRotationSlackChannel();
-	const updateTimeZoneMutation = useUpdateRotationTimeZone();
-	const getSlackBotChannelsFn = useServerFn(getRotationSelectableSlackChannels);
-	const slackChannelsQuery = useQuery(() => ({
-		queryKey: ["rotation-slack-selectable-channels"],
+	const teamsQuery = useQuery(() => ({
+		queryKey: ["teams"],
 		queryFn: () =>
 			runDemoAware({
-				demo: () => getSlackSelectableChannelsDemo(),
-				remote: () => getSlackBotChannelsFn(),
+				demo: () => getTeamsDemo(),
+				remote: () => getTeamsFn(),
 			}),
-		staleTime: Infinity,
+		staleTime: 60_000,
+		suspense: false,
+		placeholderData: (previous) => previous ?? [],
 	}));
 
 	const [isEditingName, setIsEditingName] = createSignal(false);
 	const [name, setName] = createSignal(props.rotation.name);
-	const [isEditingAnchor, setIsEditingAnchor] = createSignal(false);
-	const [anchorInput, setAnchorInput] = createSignal("");
+	const team = createMemo(() => (props.rotation.teamId ? teamsQuery.data?.find((candidate) => candidate.id === props.rotation.teamId) : undefined));
+
+	const handleUpdateName = () => {
+		const trimmed = name().trim();
+		if (!trimmed || trimmed === props.rotation.name) {
+			setIsEditingName(false);
+			return;
+		}
+		updateNameMutation.mutate({ id: props.rotation.id, name: trimmed });
+	};
+
+	return (
+		<div class="flex flex-col gap-3">
+			<div class="flex flex-wrap items-center gap-3">
+				<Show when={team()}>
+					{(currentTeam) => (
+						<span class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+							<Show when={currentTeam().imageUrl} fallback={<UsersIcon class="h-4 w-4 text-muted-foreground" />}>
+								{(imageUrl) => <img src={imageUrl()} alt={currentTeam().name} class="h-full w-full object-cover" />}
+							</Show>
+						</span>
+					)}
+				</Show>
+				<Show
+					when={isEditingName()}
+					fallback={
+						<button type="button" class="flex items-center gap-2 group/title cursor-pointer bg-transparent border-none p-0" onClick={() => setIsEditingName(true)}>
+							<h1 class="text-2xl font-bold tracking-tight">{props.rotation.name}</h1>
+							<Pencil class="w-4 h-4 text-muted-foreground opacity-0 group-hover/title:opacity-100 transition-opacity" />
+						</button>
+					}
+				>
+					<form
+						class="flex items-center gap-2"
+						onSubmit={(e) => {
+							e.preventDefault();
+							handleUpdateName();
+						}}
+						onFocusOut={(e) => {
+							if (!e.currentTarget.contains(e.relatedTarget as Node) && !updateNameMutation.isPending) {
+								setIsEditingName(false);
+							}
+						}}
+						onKeyDown={(e) => {
+							if (e.key === "Escape") {
+								setIsEditingName(false);
+							}
+						}}
+					>
+						<Input value={name()} onInput={(e) => setName(e.currentTarget.value)} class="h-9 text-lg font-bold w-full max-w-sm" autofocus />
+						<Button size="sm" type="submit" disabled={updateNameMutation.isPending || !name().trim()}>
+							<Check class="w-4 h-4" />
+						</Button>
+					</form>
+				</Show>
+			</div>
+		</div>
+	);
+}
+
+function RotationConfigPanel(props: {
+	rotation: Rotation;
+	draft: RotationConfigDraft;
+	onDraftChange: (patch: Partial<RotationConfigDraft>) => void;
+	onDiscard: () => void;
+	onSaved: () => void;
+}) {
+	const getTeamsFn = useServerFn(getTeams);
+	const usersQuery = useUsers();
+	const updateRotationConfigMutation = useUpdateRotationConfig();
+
+	const teamsQuery = useQuery(() => ({
+		queryKey: ["teams"],
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getTeamsDemo(),
+				remote: () => getTeamsFn(),
+			}),
+		staleTime: 60_000,
+		suspense: false,
+		placeholderData: (previous) => previous ?? [],
+	}));
 
 	const NO_TEAM_VALUE = "none";
-	const teamOptions = createMemo(() => [NO_TEAM_VALUE, ...(teamsQuery.data?.map((t) => t.id) ?? [])]);
-	const teamsById = createMemo(() => new Map(teamsQuery.data?.map((t) => [t.id, t]) ?? []));
-	const slackChannelOptions = createMemo<SlackChannelOption[]>(() => {
-		const channels = slackChannelsQuery.data ?? [];
-		if (props.rotation.slackChannelId && !channels.some((channel) => channel.id === props.rotation.slackChannelId)) {
-			return [
-				{
-					id: props.rotation.slackChannelId,
-					name: `Unknown channel (${props.rotation.slackChannelId})`,
-					isPrivate: false,
-					isMember: false,
-					isUnknown: true,
-				},
-				...channels,
-			];
-		}
-		return channels;
-	});
-	const team = createMemo(() => (props.rotation.teamId ? teamsById().get(props.rotation.teamId) : undefined));
+	const teamOptions = createMemo(() => [NO_TEAM_VALUE, ...(teamsQuery.data?.map((team) => team.id) ?? [])]);
+	const teamsById = createMemo(() => new Map(teamsQuery.data?.map((team) => [team.id, team]) ?? []));
 	const eligibleTeamIds = createMemo(() => {
 		if (!teamsQuery.data || !usersQuery.data) {
 			return new Set<string>();
 		}
 		if (props.rotation.assignees.length === 0) {
-			return new Set(teamsQuery.data.map((t) => t.id));
+			return new Set(teamsQuery.data.map((team) => team.id));
 		}
 		const usersById = new Map(usersQuery.data.map((user) => [user.id, user]));
 		const eligible = new Set<string>();
@@ -160,235 +377,187 @@ function RotationHeader(props: { rotation: Rotation }) {
 		}
 		return eligible;
 	});
-	const currentTeamValue = createMemo(() => props.rotation.teamId ?? NO_TEAM_VALUE);
-	const currentShiftLength = createMemo(() => normalizeShiftLength(props.rotation.shiftLength));
+	const parsedAnchor = createMemo(() => parseRotationDateTimeInput(props.draft.anchorInput, props.draft.timeZone));
+	const hasChanges = createMemo(() => hasRotationConfigDraftChanges(props.rotation, props.draft));
+	const isSaveDisabled = createMemo(() => !hasChanges() || (props.draft.anchorInput.trim().length > 0 && !parsedAnchor()));
 
-	createEffect(() => {
-		if (props.rotation.shiftStart) {
-			setAnchorInput(formatRotationDateTimeInput(new Date(props.rotation.shiftStart), props.rotation.timezone));
-		}
-	});
-
-	const formattedNextShiftStart = createMemo(() => {
-		if (!props.rotation.shiftStart) return "Not set";
-		const shiftMs = parseRotationIntervalToMs(props.rotation.shiftLength);
-		if (!shiftMs) return "Not set";
-		const nextShiftStart = getNextRotationShiftStart(new Date(props.rotation.shiftStart), shiftMs, props.rotation.timezone);
-		if (!nextShiftStart) return "Not set";
-		return nextShiftStart.toLocaleDateString(undefined, {
-			weekday: "short",
-			month: "short",
-			day: "numeric",
-			hour: "numeric",
-			minute: "2-digit",
-			timeZone: props.rotation.timezone,
-		});
-	});
-
-	const handleUpdateName = () => {
-		const trimmed = name().trim();
-		if (!trimmed || trimmed === props.rotation.name) {
-			setIsEditingName(false);
+	const handleTimeZoneDraftChange = (value: string) => {
+		if (!value) return;
+		if (!props.draft.isAnchorEdited && props.rotation.shiftStart) {
+			const nextShiftStart = getRotationNextShiftStart(props.rotation.shiftStart, props.rotation.shiftLength, props.rotation.timezone);
+			const parsedCurrentAnchor = parseRotationDateTimeInput(props.draft.anchorInput, props.draft.timeZone);
+			props.onDraftChange({
+				timeZone: value,
+				anchorInput: parsedCurrentAnchor ? formatRotationDateTimeInput(parsedCurrentAnchor, value) : nextShiftStart ? formatRotationDateTimeInput(nextShiftStart, value) : "",
+			});
 			return;
 		}
-		updateNameMutation.mutate({ id: props.rotation.id, name: trimmed });
+		props.onDraftChange({ timeZone: value });
 	};
 
-	const handleShiftLengthChange = (value: string | null) => {
-		if (!value || value === props.rotation.shiftLength) return;
-		updateShiftLengthMutation.mutate({ id: props.rotation.id, shiftLength: value });
-	};
+	const handleSave = async () => {
+		const parsed = parsedAnchor();
 
-	const handleTeamChange = (value: string | null) => {
-		if (!value) return;
-		const nextTeamId = value === NO_TEAM_VALUE ? null : value;
-		const currentTeamId = props.rotation.teamId ?? null;
-		if (nextTeamId === currentTeamId) return;
-		updateTeamMutation.mutate({ id: props.rotation.id, teamId: nextTeamId });
-	};
-
-	const handleSlackChannelChange = (value: string | null) => {
-		const nextChannelId = value ?? null;
-		const currentChannelId = props.rotation.slackChannelId ?? null;
-		if (nextChannelId === currentChannelId) return;
-		updateSlackChannelMutation.mutate({ id: props.rotation.id, slackChannelId: nextChannelId });
-	};
-
-	const handleAnchorSave = () => {
-		const parsed = parseRotationDateTimeInput(anchorInput(), props.rotation.timezone);
-		if (!parsed) return;
-		updateAnchorMutation.mutate({ id: props.rotation.id, anchorAt: parsed });
-		setIsEditingAnchor(false);
-	};
-
-	const handleAnchorCancel = () => {
-		if (props.rotation.shiftStart) {
-			setAnchorInput(formatRotationDateTimeInput(new Date(props.rotation.shiftStart), props.rotation.timezone));
+		if (!hasChanges()) {
+			props.onSaved();
+			return;
 		}
-		setIsEditingAnchor(false);
-	};
 
-	const handleTimeZoneChange = (value: string) => {
-		if (!value || value === props.rotation.timezone) return;
-		updateTimeZoneMutation.mutate({ id: props.rotation.id, timeZone: value });
+		updateRotationConfigMutation.mutate({
+			id: props.rotation.id,
+			teamId: props.draft.teamId,
+			slackChannelId: props.draft.slackChannelId,
+			shiftLength: props.draft.shiftLength as (typeof SHIFT_LENGTH_OPTIONS)[number]["value"],
+			timeZone: props.draft.timeZone,
+			nextShiftStart: parsed ?? null,
+		});
+		props.onSaved();
 	};
 
 	return (
-		<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-			<div class="space-y-1">
-				<div class="flex flex-wrap items-center gap-2">
-					<Show
-						when={isEditingName()}
-						fallback={
-							<button type="button" class="flex items-center gap-2 group/title cursor-pointer bg-transparent border-none p-0" onClick={() => setIsEditingName(true)}>
-								<h1 class="text-2xl font-bold tracking-tight">{props.rotation.name}</h1>
-								<Pencil class="w-4 h-4 text-muted-foreground opacity-0 group-hover/title:opacity-100 transition-opacity" />
-							</button>
-						}
+		<div class="rounded-2xl bg-muted/20 px-4 py-4 md:px-5">
+			<div class="grid gap-3">
+				<div class="grid gap-1 md:grid-cols-[116px_minmax(0,1fr)] md:items-center">
+					<Label class="pt-1 text-xs font-medium text-muted-foreground">Duration</Label>
+					<Select
+						value={props.draft.shiftLength}
+						onChange={(value) => value && props.onDraftChange({ shiftLength: value })}
+						options={SHIFT_LENGTH_OPTIONS.map((option) => option.value)}
+						itemComponent={(itemProps) => <SelectItem item={itemProps.item}>{SHIFT_LENGTH_OPTIONS.find((option) => option.value === itemProps.item.rawValue)?.label}</SelectItem>}
 					>
-						<form
-							class="flex items-center gap-2"
-							onSubmit={(e) => {
-								e.preventDefault();
-								handleUpdateName();
-							}}
-							onFocusOut={(e) => {
-								if (!e.currentTarget.contains(e.relatedTarget as Node) && !updateNameMutation.isPending) {
-									setIsEditingName(false);
-								}
-							}}
-							onKeyDown={(e) => {
-								if (e.key === "Escape") {
-									setIsEditingName(false);
-								}
-							}}
-						>
-							<Input value={name()} onInput={(e) => setName(e.currentTarget.value)} class="h-9 text-lg font-bold w-full max-w-sm" autofocus />
-							<Button size="sm" type="submit" disabled={updateNameMutation.isPending || !name().trim()}>
-								<Check class="w-4 h-4" />
-							</Button>
-						</form>
-					</Show>
+						<SelectTrigger class="h-8 w-full justify-between px-2.5 text-xs md:max-w-[168px]">
+							<SelectValue<string>>{(state) => SHIFT_LENGTH_OPTIONS.find((option) => option.value === state.selectedOption())?.label}</SelectValue>
+						</SelectTrigger>
+						<SelectContent />
+					</Select>
+				</div>
 
-					<Select
-						value={currentShiftLength()}
-						onChange={handleShiftLengthChange}
-						options={SHIFT_LENGTH_OPTIONS.map((o) => o.value)}
-						itemComponent={(itemProps) => <SelectItem item={itemProps.item}>{SHIFT_LENGTH_OPTIONS.find((o) => o.value === itemProps.item.rawValue)?.label}</SelectItem>}
-						disabled={updateShiftLengthMutation.isPending}
-					>
-						<SelectTrigger class="h-auto py-0.5 px-2.5 text-xs font-normal border-border bg-transparent hover:bg-muted/50 w-auto gap-1 [&>svg]:w-3 [&>svg]:h-3">
-							<SelectValue<string>>{(state) => SHIFT_LENGTH_OPTIONS.find((o) => o.value === state.selectedOption())?.label}</SelectValue>
-						</SelectTrigger>
-						<SelectContent />
-					</Select>
-					<Show
-						when={!isEditingAnchor()}
-						fallback={
-							<div class="flex items-center gap-2">
-								<Input
-									type="datetime-local"
-									value={anchorInput()}
-									onInput={(e) => setAnchorInput(e.currentTarget.value)}
-									class="h-7 text-xs w-auto"
-									disabled={updateAnchorMutation.isPending}
-									onKeyDown={(e) => {
-										if (e.key === "Escape") handleAnchorCancel();
-										if (e.key === "Enter") handleAnchorSave();
-									}}
-									autofocus
-								/>
-								<Button size="sm" class="h-7 px-2" onClick={handleAnchorSave} disabled={updateAnchorMutation.isPending || !anchorInput()}>
-									<Show when={updateAnchorMutation.isPending} fallback={<Check class="w-3.5 h-3.5" />}>
-										<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
-									</Show>
-								</Button>
-								<Button variant="ghost" size="sm" class="h-7 px-2" onClick={handleAnchorCancel} disabled={updateAnchorMutation.isPending}>
-									<X class="w-3.5 h-3.5" />
-								</Button>
-							</div>
-						}
-					>
-						<button
-							type="button"
-							class="text-xs text-muted-foreground hover:text-foreground cursor-pointer bg-transparent border-none p-0 inline-flex items-center gap-1.5 group"
-							onClick={() => setIsEditingAnchor(true)}
+				<div class="grid gap-1 md:grid-cols-[116px_minmax(0,1fr)] md:items-start">
+					<Label for="rotation-config-anchor" class="pt-1 text-xs font-medium text-muted-foreground">
+						Next shift start
+					</Label>
+					<div class="grid min-w-0 gap-1.5">
+						<Input
+							id="rotation-config-anchor"
+							type="datetime-local"
+							value={props.draft.anchorInput}
+							onInput={(e) => {
+								props.onDraftChange({
+									anchorInput: e.currentTarget.value,
+									isAnchorEdited: true,
+								});
+							}}
+							class="h-9 min-w-0 w-full max-w-full text-xs sm:max-w-[18rem] [&::-webkit-calendar-picker-indicator]:hidden"
+						/>
+						<Show when={props.draft.anchorInput.trim().length > 0 && !parsedAnchor()}>
+							<p class="text-xs text-destructive">Enter a valid date and time.</p>
+						</Show>
+					</div>
+				</div>
+
+				<div class="grid gap-1 md:grid-cols-[116px_minmax(0,1fr)] md:items-start">
+					<Label class="pt-1 text-xs font-medium text-muted-foreground">Team</Label>
+					<div class="grid gap-1.5">
+						<Select
+							value={props.draft.teamId ?? NO_TEAM_VALUE}
+							onChange={(value) => value && props.onDraftChange({ teamId: value === NO_TEAM_VALUE ? null : value })}
+							options={teamOptions()}
+							optionDisabled={(option) => option !== NO_TEAM_VALUE && !eligibleTeamIds().has(option)}
+							itemComponent={(itemProps) => {
+								const teamId = itemProps.item.rawValue;
+								const isDisabled = itemProps.item.disabled;
+								if (teamId === NO_TEAM_VALUE) {
+									return <SelectItem item={itemProps.item}>No team</SelectItem>;
+								}
+								return (
+									<SelectItem item={itemProps.item} class={isDisabled ? "opacity-50" : ""}>
+										<div class="flex flex-col gap-0.5">
+											<span>{teamsById().get(teamId)?.name ?? "Unknown team"}</span>
+											<Show when={isDisabled}>
+												<span class="text-[10px] text-muted-foreground">At least one member is not in this team</span>
+											</Show>
+										</div>
+									</SelectItem>
+								);
+							}}
 						>
-							<span>Next shift starts</span>
-							<span class="font-medium text-foreground">{formattedNextShiftStart()}</span>
-							<Pencil class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-						</button>
-					</Show>
+							<SelectTrigger class="h-8 w-full justify-between px-2.5 text-xs md:max-w-[220px]">
+								<SelectValue<string>>
+									{(state) => {
+										const selected = state.selectedOption();
+										if (!selected || selected === NO_TEAM_VALUE) return "No team";
+										return teamsById().get(selected)?.name ?? (teamsQuery.data ? "Unknown team" : "Loading teams...");
+									}}
+								</SelectValue>
+							</SelectTrigger>
+							<SelectContent />
+						</Select>
+					</div>
 				</div>
-				<div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-					<UsersIcon class="w-4 h-4" />
-					<Select
-						value={currentTeamValue()}
-						onChange={handleTeamChange}
-						options={teamOptions()}
-						optionDisabled={(option) => option !== NO_TEAM_VALUE && !eligibleTeamIds().has(option)}
-						itemComponent={(itemProps) => {
-							const teamId = itemProps.item.rawValue;
-							const isDisabled = itemProps.item.disabled;
-							if (teamId === NO_TEAM_VALUE) {
-								return <SelectItem item={itemProps.item}>No team</SelectItem>;
-							}
-							return (
-								<SelectItem item={itemProps.item} class={isDisabled ? "opacity-50" : ""}>
-									<div class="flex flex-col gap-0.5">
-										<span>{teamsById().get(teamId)?.name ?? "Unknown team"}</span>
-										<Show when={isDisabled}>
-											<span class="text-[10px] text-muted-foreground">At least one member is not in this team</span>
-										</Show>
-									</div>
-								</SelectItem>
-							);
-						}}
-						disabled={!teamsQuery.data || !usersQuery.data || updateTeamMutation.isPending}
-					>
-						<SelectTrigger class="h-auto py-0.5 px-2.5 text-xs font-normal border-border bg-transparent hover:bg-muted/50 w-auto gap-1 [&>svg]:w-3 [&>svg]:h-3">
-							<SelectValue<string>>
-								{(state) => {
-									const selected = state.selectedOption();
-									if (!selected || selected === NO_TEAM_VALUE) return "No team";
-									return teamsById().get(selected)?.name ?? (teamsQuery.data ? "Unknown team" : "Loading teams...");
-								}}
-							</SelectValue>
-						</SelectTrigger>
-						<SelectContent />
-					</Select>
-					<Show when={team()}>
-						{(t) => (
-							<Link to="/teams/$teamId" params={{ teamId: t().id }} target="_blank" class="text-muted-foreground hover:text-foreground" title="Open team">
-								<ExternalLink class="w-3.5 h-3.5" />
-							</Link>
-						)}
-					</Show>
+
+				<div class="grid gap-1 md:grid-cols-[116px_minmax(0,1fr)] md:items-center">
+					<Label class="pt-1 text-xs font-medium text-muted-foreground">Slack</Label>
 					<RotationSlackChannelPicker
-						value={props.rotation.slackChannelId}
-						channels={slackChannelOptions()}
-						disabled={updateSlackChannelMutation.isPending}
-						isLoading={slackChannelsQuery.isPending}
-						isSaving={updateSlackChannelMutation.isPending}
-						onChange={handleSlackChannelChange}
+						value={props.draft.slackChannelId}
+						onChange={(value) => props.onDraftChange({ slackChannelId: value })}
+						triggerClass="h-8 w-full max-w-[220px] justify-between px-2.5 py-0 text-xs font-normal"
 					/>
-					<TimeZonePicker value={props.rotation.timezone} disabled={updateTimeZoneMutation.isPending} isSaving={updateTimeZoneMutation.isPending} onChange={handleTimeZoneChange} />
 				</div>
+
+				<div class="grid gap-1 md:grid-cols-[116px_minmax(0,1fr)] md:items-center">
+					<Label class="pt-1 text-xs font-medium text-muted-foreground">Timezone</Label>
+					<TimeZonePicker
+						value={props.draft.timeZone}
+						isSaving={false}
+						onChange={handleTimeZoneDraftChange}
+						triggerClass="h-8 w-full max-w-[220px] min-w-0 px-2.5 text-xs font-normal"
+					/>
+				</div>
+			</div>
+			<div class="mt-4 flex items-center justify-end gap-2">
+				<Button variant="outline" size="sm" onClick={props.onDiscard} disabled={!hasChanges()}>
+					Discard
+				</Button>
+				<Button size="sm" onClick={() => void handleSave()} disabled={isSaveDisabled()}>
+					Save
+				</Button>
 			</div>
 		</div>
 	);
 }
 
-function RotationSlackChannelPicker(props: {
-	value?: string | null;
-	channels: SlackChannelOption[];
-	disabled?: boolean;
-	isLoading?: boolean;
-	isSaving?: boolean;
-	onChange: (value: string | null) => void;
-}) {
+function RotationSlackChannelPicker(props: { value?: string | null; disabled?: boolean; isSaving?: boolean; triggerClass?: string; onChange: (value: string | null) => void }) {
+	const getSlackBotChannelsFn = useServerFn(getRotationSelectableSlackChannels);
 	const [open, setOpen] = createSignal(false);
-	const selectedChannel = createMemo(() => props.channels.find((channel) => channel.id === props.value));
+	const slackChannelsQuery = useQuery(() => ({
+		queryKey: ["rotation-slack-selectable-channels"],
+		queryFn: () =>
+			runDemoAware({
+				demo: () => getSlackSelectableChannelsDemo(),
+				remote: () => getSlackBotChannelsFn(),
+			}),
+		enabled: true,
+		staleTime: Infinity,
+		suspense: false,
+		placeholderData: (previous) => previous ?? [],
+	}));
+	const channels = createMemo<SlackChannelOption[]>(() => {
+		const options = slackChannelsQuery.data ?? [];
+		if (props.value && !slackChannelsQuery.isPending && !options.some((channel) => channel.id === props.value)) {
+			return [
+				{
+					id: props.value,
+					name: props.value,
+					isPrivate: false,
+					isMember: false,
+					isUnknown: true,
+				},
+				...options,
+			];
+		}
+		return options;
+	});
+	const selectedChannel = createMemo(() => channels().find((channel) => channel.id === props.value));
 
 	const triggerLabel = createMemo(() => {
 		if (!props.value) {
@@ -397,7 +566,10 @@ function RotationSlackChannelPicker(props: {
 
 		const channel = selectedChannel();
 		if (!channel) {
-			return `Unknown channel (${props.value})`;
+			if (slackChannelsQuery.isPending) {
+				return "Loading channel...";
+			}
+			return props.value;
 		}
 
 		return channel.isUnknown ? channel.name : `#${channel.name}`;
@@ -416,7 +588,7 @@ function RotationSlackChannelPicker(props: {
 				size="sm"
 				type="button"
 				disabled={props.disabled}
-				class="h-auto max-w-[280px] justify-between gap-1 border-border bg-transparent px-2.5 py-0.5 text-xs font-normal hover:bg-muted/50"
+				class={cn("h-auto max-w-[280px] justify-between gap-1 border-border bg-transparent px-2.5 py-0.5 text-xs font-normal hover:bg-muted/50", props.triggerClass)}
 			>
 				<span class="flex min-w-0 items-center gap-1.5">
 					<Show when={props.value && selectedChannel() && !selectedChannel()?.isUnknown}>
@@ -434,7 +606,7 @@ function RotationSlackChannelPicker(props: {
 				<Command>
 					<CommandInput placeholder="Search channels..." />
 					<CommandList class="max-h-[260px]">
-						<Show when={!props.isLoading} fallback={<div class="py-6 text-center text-sm text-muted-foreground">Loading channels...</div>}>
+						<Show when={!slackChannelsQuery.isPending} fallback={<div class="py-6 text-center text-sm text-muted-foreground">Loading channels...</div>}>
 							<CommandEmpty>No channels found.</CommandEmpty>
 							<CommandItem value="No Slack channel" onSelect={() => handleSelect(null)}>
 								<div class="flex w-full items-center gap-2">
@@ -444,7 +616,7 @@ function RotationSlackChannelPicker(props: {
 									</Show>
 								</div>
 							</CommandItem>
-							<For each={props.channels}>
+							<For each={channels()}>
 								{(channel) => (
 									<CommandItem
 										value={`${channel.name} ${channel.isPrivate ? "private" : "public"} ${channel.isMember ? "joined" : "auto join"}`}
@@ -475,13 +647,12 @@ function RotationSlackChannelPicker(props: {
 	);
 }
 
-function RotationAssigneesPanel(props: { rotation: Rotation }) {
+function RotationAssigneesPanel(props: { rotation: Rotation; isAddingAssignee: Accessor<boolean>; setIsAddingAssignee: (value: boolean) => void }) {
 	const addAssigneeMutation = useAddRotationAssignee();
 	const addSlackUserAsAssigneeMutation = useAddSlackUserAsRotationAssignee();
 	const removeAssigneeMutation = useRemoveRotationAssignee();
 	const reorderMutation = useReorderRotationAssignee();
 
-	const [isAddingAssignee, setIsAddingAssignee] = createSignal(false);
 	const [assignees, setAssignees] = createStore<Rotation["assignees"]>([]);
 	const [draggedId, setDraggedId] = createSignal<string | null>(null);
 	const [dropTargetIndex, setDropTargetIndex] = createSignal<number | null>(null);
@@ -496,7 +667,7 @@ function RotationAssigneesPanel(props: { rotation: Rotation }) {
 		} else {
 			addSlackUserAsAssigneeMutation.mutate(toAddSlackUserAssigneeInput(props.rotation.id, { id: user.id, name: user.name, avatar: user.avatar ?? undefined }));
 		}
-		setIsAddingAssignee(false);
+		props.setIsAddingAssignee(false);
 	};
 
 	const handleDragStart = (assigneeId: string) => {
@@ -526,21 +697,11 @@ function RotationAssigneesPanel(props: { rotation: Rotation }) {
 
 	return (
 		<div class="space-y-3">
-			<div class="flex items-center justify-between">
-				<span class="text-sm font-medium text-muted-foreground">Rotation Order</span>
-				<Show when={!isAddingAssignee()}>
-					<Button variant="ghost" size="sm" class="h-7 text-xs" onClick={() => setIsAddingAssignee(true)}>
-						<Plus class="w-3 h-3" />
-						Add
-					</Button>
-				</Show>
-			</div>
-
-			<Show when={isAddingAssignee()}>
+			<Show when={props.isAddingAssignee()}>
 				<div class="rounded-lg border border-border overflow-hidden">
 					<header class="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
 						<span class="text-xs font-medium text-muted-foreground">Select user to add</span>
-						<Button variant="ghost" size="icon" class="h-6 w-6 cursor-pointer" onClick={() => setIsAddingAssignee(false)}>
+						<Button variant="ghost" size="icon" class="h-6 w-6 cursor-pointer" onClick={() => props.setIsAddingAssignee(false)}>
 							<X class="w-3 h-3" />
 						</Button>
 					</header>
@@ -564,7 +725,7 @@ function RotationAssigneesPanel(props: { rotation: Rotation }) {
 			<Show
 				when={assignees.length > 0}
 				fallback={
-					<Show when={!isAddingAssignee()}>
+					<Show when={!props.isAddingAssignee()}>
 						<AssigneesEmptyState />
 					</Show>
 				}
@@ -657,8 +818,19 @@ function AssigneeRow(props: {
 	);
 }
 
-function RotationSchedulePanel(props: { rotation: Rotation }) {
+function RotationSchedulePanel(props: {
+	rotation: Rotation;
+	preview?: {
+		active: boolean;
+		shiftLength: string;
+		timeZone: string;
+		shiftStart: Date | null;
+	};
+}) {
 	const usersQuery = useUsers();
+	const effectiveShiftLength = createMemo(() => props.preview?.shiftLength ?? props.rotation.shiftLength);
+	const effectiveTimeZone = createMemo(() => props.preview?.timeZone ?? props.rotation.timezone);
+	const effectiveShiftStart = createMemo(() => props.preview?.shiftStart ?? (props.rotation.shiftStart ? new Date(props.rotation.shiftStart) : null));
 
 	const rangeOptions = [
 		{ label: "1 day", days: 1 },
@@ -735,15 +907,15 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 
 	const baseSegments = createMemo(() => {
 		if (!props.rotation.assignees.length) return [];
-		const shiftMs = parseRotationIntervalToMs(props.rotation.shiftLength);
+		const shiftMs = parseRotationIntervalToMs(effectiveShiftLength());
 		if (!shiftMs) return [];
 
-		const shiftStart = props.rotation.shiftStart ? new Date(props.rotation.shiftStart) : new Date();
+		const shiftStart = effectiveShiftStart() ?? new Date();
 		return buildBaseSegments({
 			assignees: props.rotation.assignees,
 			shiftStart,
 			shiftMs,
-			timeZone: props.rotation.timezone,
+			timeZone: effectiveTimeZone(),
 			viewStart: scheduleStart(),
 			viewEnd: scheduleEnd(),
 		});
@@ -1120,6 +1292,11 @@ function RotationSchedulePanel(props: { rotation: Rotation }) {
 					</Show>
 					<Show when={!isCalendarView()}>
 						<span class="ml-2 text-sm font-medium text-muted-foreground">{timelineRangeLabel()}</span>
+					</Show>
+					<Show when={props.preview?.active}>
+						<Badge variant="secondary" class="ml-2 h-6 rounded-full bg-amber-100 px-2.5 text-[11px] font-medium text-amber-700">
+							Preview
+						</Badge>
 					</Show>
 				</div>
 				<div class="flex-1" />
