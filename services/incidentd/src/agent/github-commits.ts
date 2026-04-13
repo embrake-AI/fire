@@ -153,13 +153,20 @@ type GitHubCommitDetailsResponse = {
 	}>;
 };
 
+export function normalizeGitHubPrivateKey(privateKey: string) {
+	return privateKey
+		.trim()
+		.replace(/^['"]|['"]$/g, "")
+		.replace(/\\n/g, "\n");
+}
+
 function getGitHubSecrets(env: Env) {
 	const appId = env.GITHUB_APP_ID;
 	const privateKey = env.GITHUB_APP_PRIVATE_KEY;
 
 	return {
 		appId,
-		privateKey: privateKey.replace(/\\n/g, "\n"),
+		privateKey: normalizeGitHubPrivateKey(privateKey),
 	};
 }
 
