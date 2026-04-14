@@ -5,6 +5,8 @@ import { and, eq } from "drizzle-orm";
 import type OpenAI from "openai";
 import { getDB } from "../lib/db";
 
+const GITHUB_API_USER_AGENT = "incidentd-github-commits";
+
 export const GITHUB_COMMITS_PROVIDER_SYSTEM_PROMPT = `You are the github-commits context provider.
 You have incident context plus repository descriptions for the workspace.
 Use tools to inspect recent commits only when they can help explain the current incident.
@@ -198,6 +200,7 @@ async function createInstallationAccessToken(env: Env, installationId: string): 
 			Accept: "application/vnd.github+json",
 			Authorization: `Bearer ${createGitHubAppJwt(env)}`,
 			"X-GitHub-Api-Version": "2022-11-28",
+			"User-Agent": GITHUB_API_USER_AGENT,
 		},
 	});
 	if (!response.ok) {
@@ -217,6 +220,7 @@ async function fetchGitHubJson<T>(token: string, path: string): Promise<T> {
 			Accept: "application/vnd.github+json",
 			Authorization: `Bearer ${token}`,
 			"X-GitHub-Api-Version": "2022-11-28",
+			"User-Agent": GITHUB_API_USER_AGENT,
 		},
 	});
 	if (!response.ok) {
