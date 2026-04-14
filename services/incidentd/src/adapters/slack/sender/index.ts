@@ -1070,7 +1070,7 @@ function addIncidentChannelPointerBlock(blocks: KnownBlock[], channelId: string)
 }
 
 export async function messageAdded(params: SenderParams["messageAdded"]) {
-	const { step: stepDo, message, metadata, sourceAdapter, slackUserToken, eventMetadata } = params;
+	const { step: stepDo, message, metadata, sourceAdapter, slackUserToken, eventMetadata, userId } = params;
 
 	if (sourceAdapter === "slack") {
 		return;
@@ -1090,6 +1090,12 @@ export async function messageAdded(params: SenderParams["messageAdded"]) {
 
 	if (!targetChannel) {
 		return;
+	}
+
+	if (incidentChannelId && targetChannel === incidentChannelId && slackUserToken && botToken) {
+		await inviteToChannel(stepDo, botToken, incidentChannelId, userId).catch((err) => {
+			console.warn("Failed to invite sender to incident channel", err);
+		});
 	}
 
 	const token = slackUserToken ?? botToken;
